@@ -14,7 +14,7 @@ export interface RegionCell {
   label: string;
 }
 
-const fixedRegions = new Set(['Labio superior', 'Labio inferior', 'Comisuras', 'Dorso nasal', 'Contorno ocular (revisar)']);
+const fixedRegions = new Set(['Labio superior', 'Labio inferior', 'Comisuras', 'Dorso nasal', 'Contorno ocular (revisar)', 'Ojeras']);
 const midpoint = (a: number[], b: number[]) => a.map((v, i) => (v + b[i]) / 2);
 
 /** Subdivide solo bordes semánticos; mantiene las direcciones originales de registro. */

@@ -500,6 +500,7 @@ const DRAWING_GUIDE: Record<DrawingTool, string> = {
   'straight-line': 'Recta: añade una referencia visual. Arrastra desde el inicio hasta el final sobre la piel.',
   'shape-arrow': 'Flecha: señala una observación o dirección documentada. Arrastra hasta el lugar al que apunta.',
   'shape-circle': 'Círculo: resalta una zona de interés. Arrastra sobre la piel para definir su tamaño.',
+  'shape-ellipse': 'Óvalo: resalta una región con ancho y alto independientes; no registra volumen.',
   'shape-rect': 'Rectángulo: encuadra una región que deseas documentar. Arrastra para definir su tamaño.',
   'ha-fan': 'Abanico: documenta un patrón gráfico. No calcula volumen ni selecciona dosis; configura el patrón y arrastra sobre la piel.',
   'ha-grid': 'Malla: documenta un patrón gráfico. Elige una esquina inicial, define el ancho y luego el largo con tres clics; no representa dosis.',

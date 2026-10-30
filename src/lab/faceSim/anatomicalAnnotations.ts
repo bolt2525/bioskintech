@@ -103,7 +103,7 @@ export function shapeOutline(s: SurfaceShape): Vec3[] {
   const w = s.shapeType === 'circle' ? s.radius ?? 0 : (s.width ?? 0) / 2;
   const h = s.shapeType === 'circle' ? w : (s.height ?? 0) / 2;
   if (![w, h].every(v => Number.isFinite(v) && v > 0)) return [];
-  const coords: [number, number][] = s.shapeType === 'circle'
+  const coords: [number, number][] = s.shapeType === 'circle' || s.shapeType === 'ellipse'
     ? Array.from({ length: 49 }, (_, i) => [Math.cos(i * Math.PI / 24) * w, Math.sin(i * Math.PI / 24) * h])
     : [[-w, -h], [w, -h], [w, h], [-w, h], [-w, -h]];
   return coords.map(([x, y]) => ({ x: s.center.x + u.x * x + v.x * y, y: s.center.y + u.y * x + v.y * y, z: s.center.z + u.z * x + v.z * y }));

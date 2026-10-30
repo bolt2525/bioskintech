@@ -1,5 +1,5 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Download, ImagePlus, Trash2, Wand2, Undo2, FileJson, ScanFace, Box, Image as ImageIcon, Move3d, MousePointer2, Crosshair, Brush, Spline, Slash, ArrowUpRight, Circle, Square, Fan, Grid3x3, Leaf, Layers, Scissors, Columns2, Syringe, ListChecks, Eye, Sparkles, UserRound, Gauge, type LucideIcon } from 'lucide-react';
+import { Download, ImagePlus, Trash2, Wand2, Undo2, FileJson, ScanFace, Box, Image as ImageIcon, Move3d, MousePointer2, Crosshair, Brush, Spline, Slash, ArrowUpRight, Circle, Square, Fan, Grid3x3, Leaf, Layers, Scissors, Columns2, Syringe, ListChecks, Eye, Sparkles, UserRound, Gauge, Magnet, Type, Ruler, type LucideIcon } from 'lucide-react';
 import injectablesCatalog from '../../components/admin/ficha-clinica/data/injectables.json';
 import Clinical3DViewer, {
   type AnatomicalSurfaceOverlay, type DrawingTool, type FreehandLine, type Marker3D, type SurfaceShape,
@@ -26,14 +26,14 @@ import {
   addressHasPhotoCoverage, anatomicalPhotoElements, annotationViews, bindAnatomicalPaths, photoPatternPaths, requireMappedPoint, shapeOutline, surfaceNormal,
   DEFAULT_PATTERN, type AnatomicalBinding, type AnatomicalBindings, type PatternConfig,
 } from './anatomicalAnnotations';
-import { annotationHistory, annotationLaterality, canonicalAnnotationPoint, mirrorAnnotation, transformAnnotation, translateAnnotation } from './annotationSymmetry';
+import { annotationHistory, annotationLaterality, annotationProportion, canonicalAnnotationPoint, mirrorAnnotation, moveAnnotationTip, transformAnnotation, translateAnnotation } from './annotationSymmetry';
 import { annotationPhotoLayer, annotationUVs, bindingsOnLayer, buildAnnotationLayerView, type AnnotationLayerView } from './annotationLayerView';
 import { loadDefaultLayers, registerLayers, ANATOMY_PLANES } from './defaultLayers';
 import { AnatomyLayerControls, chooseAnatomyDisplay, depthPeelDisplay, initialAnatomyDisplay } from './anatomyDisplay';
 import { initialQuickRecordSettings, type QuickRecordSettings } from './quickRecord';
 import { EXTENDED_ZONE, KIND_LABELS, formatVolume, ledgerRows, patternTips, volumeTotals } from './markingModel';
 import { CheckChip, CutControls, EditorTabs, EffectMixer, IconToggle, ModeCards, PatternSetupDialog, NO_CUT, PanelSection, PointLedger, SelectionInspector, ToolDock, VolumeDialog, VolumeHud, ZoneChip, ZoneView, createZoneStore, editorPanel, hudChip, isDepthCut, type MarkingCut, type ZoneStore } from './MarkingPanels';
-import { DEFAULT_PREVIEW, PREVIEW_DESCRIPTIONS, buildIllustrativeEffects, previewPixels, previewSurface } from './injectablePreview';
+import { DEFAULT_PREVIEW, PREVIEW_DESCRIPTIONS, buildIllustrativeEffects, previewCoverage, previewPixels, previewSurface } from './injectablePreview';
 import { importLocalRecord, localRecord } from './injectableLocalRecord';
 
 const modelPoint = (...args: Parameters<typeof tryModelPoint>): Vec3 => requireMappedPoint(tryModelPoint(...args));
@@ -54,11 +54,12 @@ const FaceBoundaryReview = lazy(() => import('./FaceBoundaryReview'));
 const VERT = `attribute vec2 p;varying vec2 uv;void main(){uv=p*0.5+0.5;uv.y=1.0-uv.y;gl_Position=vec4(p,0.0,1.0);}`;
 const FRAG = `precision highp float;
 #define N ${MAX_EFFECTS}
-varying vec2 uv;uniform sampler2D tex;uniform vec2 res;uniform float aspect;uniform int count;uniform float split;
+varying vec2 uv;uniform sampler2D tex;uniform sampler2D preparedTex;uniform bool prepared;uniform vec2 res;uniform float aspect;uniform int count;uniform float split;
 uniform vec4 A[N];uniform vec4 B[N];uniform vec4 C[N];
 float wgt(vec2 q,vec4 a){float d=length((q-a.xy)*vec2(aspect,1.0));return exp(-(d*d)/(a.z*a.z*0.5));}
 void main(){
   if(uv.x<split){gl_FragColor=texture2D(tex,uv);return;}
+  if(prepared){gl_FragColor=texture2D(preparedTex,uv);return;}
   vec2 src=uv;float sm=0.0,gl=0.0;
   for(int i=0;i<N;i++){if(i>=count)break;
     vec4 a=A[i],b=B[i];float w=wgt(uv,a)*a.w;
@@ -81,7 +82,11 @@ void main(){
   gl_FragColor=vec4(clamp(col,0.0,1.0),1.0);
 }`;
 
-interface Renderer { draw: (fx: ReturnType<typeof buildIllustrativeEffects>, aspect: number, split: number) => void; dispose: () => void }
+interface Renderer {
+  draw: (fx: ReturnType<typeof buildIllustrativeEffects>, aspect: number, split: number) => void;
+  setPreview: (canvas: HTMLCanvasElement | null) => void;
+  dispose: () => void;
+}
 
 function createRenderer(canvas: HTMLCanvasElement, img: HTMLCanvasElement): Renderer | null {
   const gl = canvas.getContext('webgl', { preserveDrawingBuffer: true });
@@ -101,16 +106,31 @@ function createRenderer(canvas: HTMLCanvasElement, img: HTMLCanvasElement): Rend
   gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, img);
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  const preparedTex = gl.createTexture();
+  gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, preparedTex);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array([0, 0, 0, 255]));
+  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, tex);
+  let hasPreview = false;
   canvas.width = img.width; canvas.height = img.height; gl.viewport(0, 0, img.width, img.height);
   const u = (n: string) => gl.getUniformLocation(prog, n);
   return {
+    setPreview: previewCanvas => {
+      hasPreview = !!previewCanvas;
+      if (!previewCanvas) return;
+      gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, preparedTex);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, previewCanvas);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+      gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, tex);
+    },
     draw: (fx, aspect, split) => {
+      gl.uniform1i(u('tex'), 0); gl.uniform1i(u('preparedTex'), 1); gl.uniform1i(u('prepared'), hasPreview ? 1 : 0);
       gl.uniform2f(u('res'), img.width, img.height); gl.uniform1f(u('aspect'), aspect);
       gl.uniform1i(u('count'), fx.count); gl.uniform1f(u('split'), split);
       gl.uniform4fv(u('A[0]'), fx.a); gl.uniform4fv(u('B[0]'), fx.b); gl.uniform4fv(u('C[0]'), fx.c);
       gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
     },
-    dispose: () => { gl.deleteTexture(tex); gl.deleteBuffer(buf); gl.deleteProgram(prog); },
+    dispose: () => { gl.deleteTexture(tex); gl.deleteTexture(preparedTex); gl.deleteBuffer(buf); gl.deleteProgram(prog); },
   };
 }
 
@@ -216,18 +236,29 @@ const VIEWS: { id: ViewKind; label: string }[] = [{ id: 'frontal', label: 'Front
 type PhotoSlotId = ViewKind | 'extra_a' | 'extra_b';
 const PHOTO_SLOTS: { id: PhotoSlotId; label: string }[] = [...VIEWS, { id: 'extra_a', label: 'Foto 4' }, { id: 'extra_b', label: 'Foto 5' }];
 type WorkMode = '3d' | 'foto';
-type Tool3D = 'navigate' | 'select' | 'point' | Exclude<DrawingTool, 'none'>;
+type Tool3D = 'navigate' | 'select' | 'point' | 'text' | 'ruler' | Exclude<DrawingTool, 'none'>;
+type PhotoTool = ElemKind | 'ellipse' | 'text' | 'ruler';
 const TOOLS_3D: { id: Tool3D; label: string; icon: LucideIcon }[] = [
   { id: 'navigate', label: 'Mover cámara', icon: Move3d }, { id: 'select', label: 'Seleccionar / editar', icon: MousePointer2 },
   { id: 'point', label: 'Punto', icon: Crosshair }, { id: 'freehand-brush', label: 'Pincel', icon: Brush },
   { id: 'freehand-poly', label: 'Polilínea', icon: Spline }, { id: 'straight-line', label: 'Línea', icon: Slash }, { id: 'shape-arrow', label: 'Flecha', icon: ArrowUpRight },
   { id: 'shape-circle', label: 'Círculo', icon: Circle }, { id: 'shape-rect', label: 'Rectángulo', icon: Square }, { id: 'ha-fan', label: 'Abanico', icon: Fan },
   { id: 'ha-grid', label: 'Malla', icon: Grid3x3 }, { id: 'ha-fern', label: 'Helecho', icon: Leaf },
+  { id: 'shape-ellipse', label: 'Óvalo', icon: Circle }, { id: 'text', label: 'Texto', icon: Type }, { id: 'ruler', label: 'Regla de proporciones', icon: Ruler },
 ];
-const TOOLS_PHOTO: { id: ElemKind; label: string; icon: LucideIcon }[] = [
+const TOOLS_PHOTO: { id: PhotoTool; label: string; icon: LucideIcon }[] = [
   { id: 'point', label: 'Punto', icon: Crosshair }, { id: 'line', label: 'Línea', icon: Slash }, { id: 'arrow', label: 'Flecha', icon: ArrowUpRight },
   { id: 'free', label: 'Libre', icon: Brush }, { id: 'circle', label: 'Círculo', icon: Circle }, { id: 'rect', label: 'Rectángulo', icon: Square },
   { id: 'pattern', label: 'Patrón', icon: Fan },
+  { id: 'ellipse', label: 'Óvalo', icon: Circle }, { id: 'text', label: 'Texto', icon: Type }, { id: 'ruler', label: 'Regla de proporciones', icon: Ruler },
+];
+const TOOL_GROUPS: { label: string; ids: readonly string[] }[] = [
+  { label: 'Vista', ids: ['navigate', 'select'] },
+  { label: 'Marcar', ids: ['point'] },
+  { label: 'Trazos', ids: ['straight-line', 'shape-arrow', 'line', 'arrow', 'freehand-brush', 'freehand-poly', 'free'] },
+  { label: 'Figuras', ids: ['shape-circle', 'shape-rect', 'shape-ellipse', 'circle', 'rect', 'ellipse'] },
+  { label: 'Patrones', ids: ['ha-fan', 'ha-grid', 'ha-fern', 'pattern'] },
+  { label: 'Notas', ids: ['text', 'ruler'] },
 ];
 type PatternTool = 'ha-fan' | 'ha-grid' | 'ha-fern' | 'photo-pattern';
 const PHOTO_PATTERN_NAMES = { fan: 'Abanico', grid: 'Malla', fern: 'Helecho' } as const;
@@ -282,6 +313,12 @@ function pixelsUrl(pixels: Uint8ClampedArray, width: number, height: number): st
   return canvas.toDataURL('image/png');
 }
 
+function illustrativeSkinMask(map: FaceRegionMap, width: number, height: number): Uint8Array {
+  const coverage = rasterizeFaceRegions(map, width, height, () => '#ffffff', triangle =>
+    !map.triangles.slice(triangle * 3, triangle * 3 + 3).some(id => /ocular|labio|comisura|ceja/i.test(map.labels[id])));
+  return Uint8Array.from({ length: width * height }, (_, i) => coverage[i * 4 + 3] ? 1 : 0);
+}
+
 const segDist = (p: P2, a: P2, b: P2, k: number) => {
   const ax = (b.x - a.x) * k, ay = b.y - a.y, px = (p.x - a.x) * k, py = p.y - a.y, l2 = ax * ax + ay * ay;
   const t = l2 ? Math.max(0, Math.min(1, (px * ax + py * ay) / l2)) : 0;
@@ -302,7 +339,7 @@ export default function FaceSimLab() {
   const [workMode, setWorkMode] = useState<WorkMode>('3d');
   const [splitAnnotations, setSplitAnnotations] = useState(false);
   const [tool3d, setTool3d] = useState<Tool3D>('navigate');
-  const [toolPhoto, setToolPhoto] = useState<ElemKind>('point');
+  const [toolPhoto, setToolPhoto] = useState<PhotoTool>('point');
   const [photoPattern, setPhotoPattern] = useState<'fan' | 'grid' | 'fern'>('fan');
   const [haConfig, setHaConfig] = useState<PatternConfig>(DEFAULT_PATTERN);
   /** Patrón en ajuste: se configura y previsualiza antes de trazar, como en Fichas → Inyectables. */
@@ -313,7 +350,7 @@ export default function FaceSimLab() {
   const [meta, setMeta] = useState<Record<string, Meta>>({});
   const [photoEls, setPhotoEls] = useState<PhotoEl[]>([]);
   const [history, setHistory] = useState<Snapshot[]>([]);
-  const [draft, setDraft] = useState<{ kind: ElemKind; pts: P2[] } | null>(null);
+  const [draft, setDraft] = useState<{ kind: ElemKind; pts: P2[]; annotationKind?: Meta['annotationKind'] } | null>(null);
   const [calibrating, setCalibrating] = useState(false);
   const [photoAnchor, setPhotoAnchor] = useState<number | null>(null);
   const [mode, setMode] = useState<SimMode>('toxina');
@@ -325,6 +362,15 @@ export default function FaceSimLab() {
   const [correct, setCorrect] = useState({ enabled: false, linear: true, mirror: true, tolerance: 0.02 });
   const [flipX, setFlipX] = useState(false);
   const [showMarks, setShowMarks] = useState(true);
+  const [showTraces, setShowTraces] = useState(true);
+  const [showReferences, setShowReferences] = useState(true);
+  const [annotationSnap, setAnnotationSnap] = useState(true);
+  const [snapTarget, setSnapTarget] = useState<P2 | null>(null);
+  const [cancellationToken, setCancellationToken] = useState(0);
+  const [createPoints, setCreatePoints] = useState(true);
+  const [annotationText, setAnnotationText] = useState('Nota');
+  const photoMoveRef = useRef<{ id: string; origin: FaceAddress; binding: AnatomicalBinding } | null>(null);
+  const [photoMovePreview, setPhotoMovePreview] = useState<{ id: string; binding: AnatomicalBinding; point?: P2 } | null>(null);
   const [status, setStatus] = useState('Laboratorio local. Revisa las capturas o abre Simular y marcar para usar el modelo genérico.');
   const [importText, setImportText] = useState('');
   const [modelKind, setModelKind] = useState<ModelKind>('generico');
@@ -363,6 +409,18 @@ export default function FaceSimLab() {
   const hasQuickEntries = Object.keys(quickRecord.entries).length > 0;
   const hasLocalRecord = Object.keys(bindings).length > 0 || markers.length > 0 || hasQuickEntries;
   useEffect(() => {
+    const cancel = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape' || workspace !== 'simulate' || document.querySelector('dialog[open]')
+        || event.target instanceof Element && event.target.closest('input, textarea, select, [contenteditable="true"]')) return;
+      setDraft(null); photoMoveRef.current = null; setPhotoMovePreview(null); setSnapTarget(null);
+      setCancellationToken(value => value + 1);
+      setTool3d('navigate'); setPhotoInteraction('select');
+      setStatus('Trazado cancelado. Cámara activa; las marcas guardadas no cambian.');
+    };
+    window.addEventListener('keydown', cancel);
+    return () => window.removeEventListener('keydown', cancel);
+  }, [workspace]);
+  useEffect(() => {
     if (!hasLocalRecord) return;
     const warnBeforeLeaving = (event: BeforeUnloadEvent) => {
       event.preventDefault();
@@ -390,7 +448,7 @@ export default function FaceSimLab() {
   const hairPatches = hairAnalysis?.personal === personal ? hairAnalysis?.patches : undefined;
   useEffect(() => { setHairAnalysis(null); }, [personal]);
   const activePhotoRef = useRef<HTMLCanvasElement>();
-  const showRegions = meshVisible && overlayMode !== 'none';
+  const showRegions = meshVisible && overlayMode !== 'none' && (markTab !== 'revisar' || showReferences);
   const toggleMesh = (visible: boolean) => {
     setMeshVisible(visible);
     if (visible && overlayMode === 'none') setOverlayMode('regions');
@@ -433,22 +491,24 @@ export default function FaceSimLab() {
     return address && tryModelPoint(address, genericFaceAtlas)
       && (!landmarks || addressHasPhotoCoverage(address, landmarks, genericFaceAtlas)) ? address : null;
   }, [personal, slot?.landmarks]);
-  const previewModeKey = JSON.stringify(Object.fromEntries(Object.entries(meta).map(([id, entry]) => [id, entry.mode])));
+  const previewModeKey = JSON.stringify(Object.fromEntries(Object.entries(meta)
+    .filter(([, entry]) => !entry.graphicOnly && !entry.entry)
+    .map(([id, entry]) => [id, entry.mode])));
   const previewModes = useMemo<Record<string, SimMode>>(() => JSON.parse(previewModeKey), [previewModeKey]);
   useEffect(() => {
     let active = true;
-    setAppearanceGlb(null);
     if (!personal) return;
     const source = personal, review = currentSkinReview?.result.usable && currentSkinReview.canvas === personal.canvas ? currentSkinReview : null;
     const previewActive = workspace === 'simulate' && preview.after && Object.keys(bindings).length > 0;
-    if (!review && !previewActive && !(personal.closedHead && hair.enabled && hairPatches?.length)) return;
+    if (!review && !previewActive && !(personal.closedHead && hair.enabled && hairPatches?.length)) { setAppearanceGlb(null); return; }
     void (async () => {
       try {
         const canvas = document.createElement('canvas');
-        canvas.width = source.canvas.width; canvas.height = source.canvas.height;
+        const textureScale = previewActive ? Math.min(1, 1024 / Math.max(source.canvas.width, source.canvas.height)) : 1;
+        canvas.width = Math.max(1, Math.round(source.canvas.width * textureScale)); canvas.height = Math.max(1, Math.round(source.canvas.height * textureScale));
         const context = canvas.getContext('2d');
         if (!context) throw new Error('No se pudo preparar la textura RGB.');
-        context.drawImage(source.canvas, 0, 0);
+        context.drawImage(source.canvas, 0, 0, canvas.width, canvas.height);
         if (review) {
           const overlay = document.createElement('canvas');
           overlay.width = review.width; overlay.height = review.height;
@@ -460,12 +520,12 @@ export default function FaceSimLab() {
         }
         const visualMeta = Object.fromEntries(Object.entries(previewModes).map(([id, mode]) => [id, { mode, dose: 0, zone: AUTO_ZONE }]));
         const samples = anatomicalPhotoElements(bindings, visualMeta, source.regionMap.landmarks, genericFaceAtlas)
+          .filter(element => element.kind === 'point')
           .flatMap(element => element.paths.flatMap(path => path.filter((_, i) => i % Math.max(1, Math.ceil(path.length / 8)) === 0)
             .map(point => ({ ...point, mode: element.mode }))));
         if (previewActive) {
           const pixels = context.getImageData(0, 0, canvas.width, canvas.height);
-          const coverage = rasterizeFaceRegions(source.regionMap, canvas.width, canvas.height, () => '#ffffff');
-          const mask = Uint8Array.from({ length: canvas.width * canvas.height }, (_, i) => coverage[i * 4 + 3] ? 1 : 0);
+          const mask = illustrativeSkinMask(source.regionMap, canvas.width, canvas.height);
           pixels.data.set(previewPixels(pixels.data, canvas.width, canvas.height, samples, preview, mask));
           context.putImageData(pixels, 0, 0);
         }
@@ -486,7 +546,7 @@ export default function FaceSimLab() {
           const landmarks = Array.from({ length: 468 }, (_, i) => ({ x: patch.uvs[i * 2], y: patch.uvs[i * 2 + 1] }));
           const projected = Object.entries(bindings).flatMap(([id, binding]) => {
             const mode = previewModes[id];
-            return mode ? binding.paths.flatMap(path => path.filter((_, i) => i % Math.max(1, Math.ceil(path.length / 8)) === 0)
+            return mode && binding.kind === 'point' ? binding.paths.flatMap(path => path.filter((_, i) => i % Math.max(1, Math.ceil(path.length / 8)) === 0)
               .flatMap(address => {
                 const p = tryPhotoPoint(address, landmarks, genericFaceAtlas);
                 return p ? [{ ...p, mode }] : [];
@@ -495,7 +555,7 @@ export default function FaceSimLab() {
           maskContext.fillStyle = '#fff';
           for (let i = 0; i < patch.indices.length; i += 3) {
             const ids = Array.from(patch.indices.subarray(i, i + 3));
-            if (ids.some(id => id >= 468)) continue;
+            if (ids.some(id => id >= 468 || /ocular|labio|comisura|ceja/i.test(source.regionMap.labels[id]))) continue;
             maskContext.beginPath();
             ids.forEach((id, j) => maskContext[j ? 'lineTo' : 'moveTo'](landmarks[id].x * texture.width, landmarks[id].y * texture.height));
             maskContext.closePath(); maskContext.fill();
@@ -605,11 +665,11 @@ export default function FaceSimLab() {
     });
     return { generic: build(annotationLayers.generic), personal: build(annotationLayers.personal) };
   }, [annotationLayers, anatomyDisplay]);
-  const annotationOverlays = useMemo(() => {
-    const build = (source: 'generico' | 'personal'): AnatomicalSurfaceOverlay => {
+  const annotationGeometry = useMemo(() => {
+    const build = (source: 'generico' | 'personal') => {
       const available = source === 'generico' ? annotationLayers.generic : annotationLayers.personal;
       const active = available.find(layer => layer.reference.kind === anatomyDisplay.anatomy);
-      const base = source === 'generico' ? regionOverlays?.generic : regionOverlays?.personal;
+      if (!active) return null;
       const positions: number[] = [], colors: number[] = [], labels: string[] = [];
       if (active) for (const cell of regionCells) {
         const weights = [0, 1, 2].map(axis => cell.corners.reduce((sum, corner) => sum + corner[axis] / 3, 0)) as [number, number, number];
@@ -621,20 +681,31 @@ export default function FaceSimLab() {
           positions.push(point.x, point.y, point.z); colors.push(...zoneTint(label));
         }
       }
+      return { positions: Float32Array.from(positions), colors: Float32Array.from(colors), labels, active };
+    };
+    return { generic: build('generico'), personal: build('personal') };
+  }, [annotationLayers, anatomyDisplay.anatomy, regionCells]);
+  const annotationOverlays = useMemo(() => {
+    const build = (source: 'generico' | 'personal'): AnatomicalSurfaceOverlay => {
+      const original = source === 'generico', geometry = original ? annotationGeometry.generic : annotationGeometry.personal;
+      const base = original ? regionOverlays.generic : regionOverlays.personal;
+      const settings = original ? renderLayerSettings.generic : renderLayerSettings.personal;
+      const referencesVisible = markTab !== 'revisar' || showReferences;
       return {
-        ...(active ? { positions: Float32Array.from(positions), colors: Float32Array.from(colors), labels,
+        ...(geometry ? { positions: geometry.positions, colors: geometry.colors, labels: geometry.labels,
           wireframe: true, opacity: showRegions && layerIsVisible ? 0.32 : 0, onHover: setHoveredZone, highlight: 'mesh' as const,
           zoneAt: (point: Vec3) => {
             const address = locateSkinAnnotation(source, point);
-            return address && layerIsVisible ? active.zone(address) : null;
+            return address && layerIsVisible && referencesVisible ? geometry.active.zone(address) : null;
           },
         } : base ?? { positions: new Float32Array(), colors: new Float32Array() }),
-        ...(source === 'generico' ? renderLayerSettings.generic : renderLayerSettings.personal),
+        ...settings,
+        ...(!referencesVisible ? { skin: { visible: true, opacity: 1 }, references: settings.references.map(layer => ({ ...layer, opacity: 0 })) } : {}),
         depthTest: !anatomyDisplay.overlay,
       };
     };
     return { generic: build('generico'), personal: build('personal') };
-  }, [annotationLayers, anatomyDisplay, regionOverlays, regionCells, showRegions, layerIsVisible, locateSkinAnnotation, renderLayerSettings, setHoveredZone]);
+  }, [annotationGeometry, anatomyDisplay.overlay, regionOverlays, showRegions, layerIsVisible, locateSkinAnnotation, renderLayerSettings, setHoveredZone, markTab, showReferences]);
   const photoRegionOverlay = useMemo(() => {
     if (!regionMap || !slot?.landmarks) return null;
     if (photoLayer && !layerIsVisible) return null;
@@ -676,7 +747,7 @@ export default function FaceSimLab() {
   const captureBlocked = unreviewedPhotos.length > 0 || incompatiblePhotos.length > 0;
   const hasPendingPhotos = Object.values(pendingPhotos).some(Boolean);
   const captureSource = photos.frontal?.landmarks ? 'frontal' : photos[view]?.landmarks ? view : VIEWS.find(v => photos[v.id]?.landmarks)?.id;
-  const curMeta = (): Meta => ({ mode, dose, zone, product: product || undefined });
+  const curMeta = (): Meta => ({ mode, dose, zone, product: product.trim() || undefined });
 
   const photoBindings = useMemo(() => slot?.landmarks ? Object.fromEntries(Object.entries(bindings).filter(([, binding]) =>
     binding.paths.flat().every(a => addressHasPhotoCoverage(a, slot.landmarks!, genericFaceAtlas)))) : {},
@@ -687,12 +758,16 @@ export default function FaceSimLab() {
   const elems = useMemo<Elem[]>(() => slot?.landmarks
     ? anatomicalPhotoElements(bindingsOnLayer(photoBindings, photoLayer), meta, slot.landmarks, genericFaceAtlas) : [],
   [photoBindings, meta, slot?.landmarks, photoLayer]);
-  const genericAnnotations = useMemo(() => annotationViews(markers, lines, shapes, bindingsOnLayer(bindings, genericLayer), genericFaceAtlas,
-    genericLayer ? genericLayer.point : a => modelPoint(a, genericFaceAtlas)), [markers, lines, shapes, bindings, genericLayer]);
+  const styledLines = useMemo(() => lines.map(line => ({ ...line,
+    color: meta[line.id]?.strokeColor ?? SIM_MODES[meta[line.id]?.mode ?? mode].color,
+    thickness: meta[line.id]?.strokeWidth ?? line.thickness,
+  })), [lines, meta, mode]);
+  const genericAnnotations = useMemo(() => annotationViews(markers, styledLines, shapes, bindingsOnLayer(bindings, genericLayer), genericFaceAtlas,
+    genericLayer ? genericLayer.point : a => modelPoint(a, genericFaceAtlas)), [markers, styledLines, shapes, bindings, genericLayer]);
   const personalAnnotations = useMemo(() => personal
-    ? annotationViews(markers, lines, shapes, bindingsOnLayer(surfaceBindings, personalLayer), genericFaceAtlas,
+    ? annotationViews(markers, styledLines, shapes, bindingsOnLayer(surfaceBindings, personalLayer), genericFaceAtlas,
       personalLayer ? personalLayer.point : a => surfacePoint(a, personal.surface, genericFaceAtlas))
-    : { markers: [], lines: [] }, [markers, lines, shapes, surfaceBindings, personal, personalLayer]);
+    : { markers: [], lines: [] }, [markers, styledLines, shapes, surfaceBindings, personal, personalLayer]);
   const transferStats = useMemo(() => {
     if (!slot?.landmarks) return { count: 0, max: 0 };
     const addresses = Object.values(photoBindings).flatMap(b => b.paths.flatMap(path => path.filter((_, i) => i % 4 === 0)));
@@ -720,9 +795,31 @@ export default function FaceSimLab() {
     const fixed = corrected.filter(p => p.corrected);
     return { fixed: fixed.length, asis: corrected.length - fixed.length, mean: fixed.length ? fixed.reduce((s, p) => s + p.shift, 0) / fixed.length : 0 };
   }, [corrected]);
-  const previewSamples = useMemo(() => elems.flatMap(element => element.paths.flatMap(path =>
+  const previewSamples = useMemo(() => elems.filter(element => element.kind === 'point' && !element.graphicOnly && !element.entry)
+    .flatMap(element => element.paths.flatMap(path =>
     path.filter((_, i) => i % Math.max(1, Math.ceil(path.length / 8)) === 0).map(p => ({ ...p, mode: element.mode })))),
   [elems]);
+  const photoPreviewBase = useMemo(() => {
+    if (!slot?.regionMap || workspace !== 'simulate' || workMode !== 'foto') return null;
+    const canvas = document.createElement('canvas'), scale = Math.min(1, 768 / Math.max(slot.canvas.width, slot.canvas.height));
+    canvas.width = Math.max(1, Math.round(slot.canvas.width * scale)); canvas.height = Math.max(1, Math.round(slot.canvas.height * scale));
+    const context = canvas.getContext('2d');
+    if (!context) { console.error('[FaceSimLab] No se pudo preparar la base RGB de la foto.'); return null; }
+    context.drawImage(slot.canvas, 0, 0, canvas.width, canvas.height);
+    return { canvas, rgba: context.getImageData(0, 0, canvas.width, canvas.height).data,
+      mask: illustrativeSkinMask(slot.regionMap, canvas.width, canvas.height) };
+  }, [slot?.canvas, slot?.regionMap, workspace, workMode]);
+  const preparedPhoto = useMemo(() => {
+    if (!photoPreviewBase || !preview.after) return null;
+    const { canvas, rgba, mask } = photoPreviewBase, output = document.createElement('canvas');
+    output.width = canvas.width; output.height = canvas.height;
+    const context = output.getContext('2d');
+    if (!context) { console.error('[FaceSimLab] No se pudo preparar el filtro ilustrativo de la foto.'); return null; }
+    const image = context.createImageData(canvas.width, canvas.height);
+    image.data.set(previewPixels(rgba, canvas.width, canvas.height, previewSamples, preview, mask));
+    context.putImageData(image, 0, 0);
+    return output;
+  }, [photoPreviewBase, previewSamples, preview]);
   // El atlas genérico es la misma referencia usada por los bindings.
   useEffect(() => {
     let active = true;
@@ -738,7 +835,7 @@ export default function FaceSimLab() {
           ? [(positions[i] - left) / (right - left), (top - positions[i + 1]) / (top - bottom)] : []));
         const samples = Object.entries(bindings).flatMap(([id, binding]) => {
           const mode = previewModes[id];
-          if (!mode) return [];
+          if (!mode || binding.kind !== 'point') return [];
           return binding.paths.flatMap(path => path.filter((_, i) => i % Math.max(1, Math.ceil(path.length / 8)) === 0)
             .map(address => {
               const p = modelPoint(address, genericFaceAtlas);
@@ -780,12 +877,13 @@ export default function FaceSimLab() {
   // Render en tiempo real
   useEffect(() => {
     if (!rendererRef.current) return;
+    rendererRef.current.setPreview(preparedPhoto);
     const id = requestAnimationFrame(() => rendererRef.current?.draw(
       buildIllustrativeEffects(previewSamples, { ...preview, after: workspace === 'simulate' && preview.after }, aspect, MAX_EFFECTS),
       aspect, preview.after ? split : 1,
     ));
     return () => cancelAnimationFrame(id);
-  }, [previewSamples, preview, workspace, aspect, split, renderTick]);
+  }, [previewSamples, preview, workspace, aspect, split, renderTick, preparedPhoto]);
 
   const snap = useCallback(() => setHistory(h => annotationHistory(h, { markers, lines, shapes, meta, photoEls, bindings, quickRecord })), [markers, lines, shapes, meta, photoEls, bindings, quickRecord]);
   const undo = () => {
@@ -1087,14 +1185,17 @@ export default function FaceSimLab() {
       containers.push([uid(), mirrored]);
     }
     // Trazo de entrada: la aguja entra por el inicio (zona) y la dosis se deposita en cada punta.
-    const own: Meta = { ...properties, parent: undefined, tip: undefined, entry: undefined, technique: undefined };
+    const graphicOnly = !!properties.graphicOnly || binding.kind === 'circle' || binding.kind === 'rect'
+      || binding.kind === 'free' || !updating && !askVolume && !createPoints && binding.kind !== 'point';
+    const own: Meta = { ...properties, ...(binding.kind === 'point' ? {} : { parent: undefined, tip: undefined }), entry: undefined, technique: undefined,
+      ...(graphicOnly ? { graphicOnly: true, dose: 0, plane: undefined } : {}) };
     const technique = properties.technique ?? KIND_LABELS[binding.kind];
     const tipMeta: Record<string, Meta> = {}, staleTips = new Set<string>();
     const entries: [string, AnatomicalBinding][] = [];
     for (const [key, entry] of containers) {
       entries.push([key, entry]);
-      const tips = patternTips(entry);
-      if (!tips.length) continue;
+      const tips = graphicOnly ? [] : patternTips(entry);
+      if (!tips.length) { tipMeta[key] = own; continue; }
       const previous = Object.entries(meta).filter(([, m]) => m.parent === key);
       previous.forEach(([tipId, m]) => { if ((m.tip ?? 0) >= tips.length) staleTips.add(tipId); });
       tips.forEach((address, tip) => {
@@ -1121,7 +1222,7 @@ export default function FaceSimLab() {
         const paths = entry.paths.map(path => path.map(address => modelPoint(address, genericFaceAtlas)));
         const previous = current.find(line => line.id === key);
         return { ...previous, id: key, points: paths[0], segments: paths.length > 1 ? paths : undefined,
-          color: SIM_MODES[properties.mode].color, thickness: previous?.thickness ?? LINE_THICKNESS,
+          color: properties.strokeColor ?? SIM_MODES[properties.mode].color, thickness: properties.strokeWidth ?? previous?.thickness ?? LINE_THICKNESS,
           ...(entry.kind === 'arrow' ? { technique_preset: 'Flecha' } : {}) };
       }),
     ]);
@@ -1131,7 +1232,7 @@ export default function FaceSimLab() {
     setBindings(current => ({ ...drop(current), ...Object.fromEntries(entries) }));
     setMeta(current => ({ ...drop(current), ...Object.fromEntries(entries.map(([key]) => [key, tipMeta[key] ?? { ...properties }])) }));
     setSelectedId(id);
-    if (!updating && askVolume) setPendingVolume(entries.filter(([key]) => !tipMeta[key]?.entry).map(([key]) => key));
+    if (!updating && askVolume && !graphicOnly) setPendingVolume(entries.filter(([key]) => !tipMeta[key]?.entry).map(([key]) => key));
     return true;
   };
   /** Marca solo en la cabeza completa (cuello, cuero cabelludo): sin binding, no se transfiere. */
@@ -1163,10 +1264,23 @@ export default function FaceSimLab() {
     if (!next) { blockedMark(); return; }
     if (commitBinding(selectedId, next, source, true)) setStatus('Figura ajustada sobre la superficie; registro y volumen conservados.');
   };
+  const moveRegisteredPoint = (id: string, address: FaceAddress, source: 'generico' | 'personal' | 'foto') => {
+    const item = meta[id], parent = item?.parent;
+    if (parent && bindings[parent]) {
+      const next = moveAnnotationTip(bindings[parent], item.tip ?? 0, address, genericFaceAtlas, point => acceptsAddress(source, point));
+      if (!next) { blockedMark(); return; }
+      if (commitBinding(parent, next, source, true)) {
+        setSelectedId(id);
+        setStatus('Punta y rama movidas juntas; dosis, vial y plano conservados.');
+      }
+    } else if (commitBinding(id, { paths: [[address]], kind: 'point', illustrativePlane: bindings[id]?.illustrativePlane }, source, true)) {
+      setStatus('Punto movido. Mismo registro, sin duplicados.');
+    }
+  };
   const onMarker = (m: Marker3D, source: 'generico' | 'personal') => {
     if (workspace !== 'simulate' && !calibrating) return;
     if (preview.after && !calibrating) return;
-    if (tool3d !== 'point' || !m.id) return;
+    if (tool3d !== 'point' && tool3d !== 'text' || !m.id) return;
     if (calibrating && source === 'generico') {
       const current = slot?.modelAnchors ?? [];
       if (!slot || current.length >= anchorCount) return;
@@ -1197,7 +1311,9 @@ export default function FaceSimLab() {
       if (source === 'generico' && extendedZone && isOutsideMask(m.position)) { commitExtendedPoint(m); return; }
       blockedMark(); return;
     }
-    if (!commitBinding(m.id, binding, source)) return;
+    if (!commitBinding(m.id, binding, source, false, tool3d === 'text'
+      ? { ...curMeta(), graphicOnly: true, annotationKind: 'text', annotationText: annotationText.trim() || 'Nota' }
+      : curMeta())) return;
     setStatus('Marcación anatómica compartida entre modelo original, superficie y foto. Cambiar de vista no la elimina.');
   };
   const onLine = (l: FreehandLine, source: 'generico' | 'personal', updating = false) => {
@@ -1228,15 +1344,17 @@ export default function FaceSimLab() {
     }
     if (previous?.illustrativePlane) binding.illustrativePlane = previous.illustrativePlane;
     if (!commitBinding(l.id, binding, source, updating,
-      meta[l.id] ?? { ...curMeta(), ...(l.technique_preset ? { technique: l.technique_preset } : {}) })) return;
+      meta[l.id] ?? { ...curMeta(), ...(l.technique_preset ? { technique: l.technique_preset } : {}),
+        ...(tool3d === 'ruler' ? { graphicOnly: true, annotationKind: 'ruler', technique: 'Regla de proporciones' } : {}) })) return;
     setStatus('Trazo anatómico compartido actualizado. Se conserva al cambiar modelo, superficie o foto.');
   };
   const onShape = (s: SurfaceShape, source: 'generico' | 'personal') => {
     if (workspace !== 'simulate' || preview.after || tool3d === 'navigate' || calibrating) return;
-    const binding = makeBinding([shapeOutline(s)], source, s.shapeType === 'circle' ? 'circle' : 'rect');
+    const binding = makeBinding([s.outline ?? shapeOutline(s)], source, s.shapeType === 'rectangle' ? 'rect' : 'circle');
     const center = locateAnnotation(source, s.center);
     if (!binding || !center) { blockedMark(); return; }
-    if (!commitBinding(s.id, { ...binding, center }, source)) return;
+    if (!commitBinding(s.id, { ...binding, center }, source, false,
+      { ...curMeta(), graphicOnly: true, ...(s.shapeType === 'ellipse' ? { annotationKind: 'ellipse' } : {}) })) return;
     setStatus('Contorno anatómico compartido entre modelo, superficie y foto; revisa su cobertura completa.');
   };
 
@@ -1245,14 +1363,31 @@ export default function FaceSimLab() {
     const r = e.currentTarget.getBoundingClientRect();
     return { x: Math.min(1, Math.max(0, (e.clientX - r.left) / r.width)), y: Math.min(1, Math.max(0, (e.clientY - r.top) / r.height)) };
   };
-  const hitPhoto = (n: P2) => {
-    let best: string | null = null, bd = 0.025;
-    elems.forEach(e => {
-      const path = e.boundary ?? e.paths[0];
-      const d = e.kind === 'point' ? Math.hypot((path[0].x - n.x) * aspect, path[0].y - n.y)
-        : Math.min(...path.slice(1).map((q, i) => segDist(n, path[i], q, aspect)));
-      if (d < bd) { bd = d; best = e.id; }
-    });
+  const hitPhoto = (n: P2, tolerance: number) => {
+    const distance = (element: Elem) => element.kind === 'point'
+      ? Math.hypot((element.paths[0][0].x - n.x) * aspect, element.paths[0][0].y - n.y)
+      : Math.min(...(element.boundary ? [element.boundary] : element.paths)
+        .flatMap(path => path.slice(1).map((q, i) => segDist(n, path[i], q, aspect))));
+    const nearest = (list: Elem[]) => list.map(element => ({ id: element.id, distance: distance(element) }))
+      .filter(hit => hit.distance <= tolerance).sort((a, b) => a.distance - b.distance)[0]?.id ?? null;
+    return nearest(elems.filter(element => element.kind === 'point' && (showMarks || element.graphicOnly && showTraces)))
+      ?? nearest(showTraces ? elems.filter(element => element.kind !== 'point') : []);
+  };
+  const snapPhotoPoint = (n: P2, height: number): P2 => {
+    if (!annotationSnap || !showTraces) { setSnapTarget(null); return n; }
+    let best = n, distance = 12 / height;
+    for (const element of elems) {
+      if (element.kind === 'point') continue;
+      for (const path of element.boundary ? [element.boundary] : element.paths) for (let i = 1; i < path.length; i++) {
+        const a = path[i - 1], b = path[i], dx = (b.x - a.x) * aspect, dy = b.y - a.y;
+        const length = dx * dx + dy * dy;
+        const t = length ? Math.max(0, Math.min(1, ((n.x - a.x) * aspect * dx + (n.y - a.y) * dy) / length)) : 0;
+        const point = { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t };
+        const d = Math.hypot((n.x - point.x) * aspect, n.y - point.y);
+        if (d < distance) { distance = d; best = point; }
+      }
+    }
+    setSnapTarget(best === n ? null : best);
     return best;
   };
   const onDown = (e: React.PointerEvent<HTMLDivElement>) => {
@@ -1271,16 +1406,25 @@ export default function FaceSimLab() {
       return;
     }
     if (workspace !== 'simulate' || !hasImage || workMode !== 'foto') return;
-    const n = toNorm(e), id = hitPhoto(n);
+    const bounds = e.currentTarget.getBoundingClientRect();
+    const raw = toNorm(e), id = hitPhoto(raw, 12 / bounds.height);
+    const n = photoInteraction === 'draw' && toolPhoto === 'point' ? snapPhotoPoint(raw, bounds.height) : raw;
     if (e.button !== 0 && e.button !== 2) return;
     setSelectedId(id);
     if (preview.after) return;
-    if (photoInteraction === 'select') return;
+    if (photoInteraction === 'select') {
+      const address = locateAnnotation('foto', { ...n, z: 0 });
+      if (id && address && bindings[id]) {
+        photoMoveRef.current = { id, origin: address, binding: bindings[id] };
+        e.currentTarget.setPointerCapture(e.pointerId);
+      }
+      return;
+    }
     if (!locateAnnotation('foto', { ...n, z: 0 })) { blockedMark(); return; }
     if (e.button === 2 || e.altKey) { if (id) { snap(); removeEl(id); } return; }
-    const hitEl = elems.find(p => p.id === id);
-    if (hitEl?.kind === 'point') { snap(); dragRef.current = id; e.currentTarget.setPointerCapture(e.pointerId); return; }
-    setDraft({ kind: toolPhoto, pts: [n] });
+    const annotationKind = toolPhoto === 'ellipse' || toolPhoto === 'text' || toolPhoto === 'ruler' ? toolPhoto : undefined;
+    const kind = toolPhoto === 'ellipse' ? 'circle' : toolPhoto === 'text' ? 'point' : toolPhoto === 'ruler' ? 'line' : toolPhoto;
+    setDraft({ kind, pts: [n], ...(annotationKind ? { annotationKind } : {}) });
     e.currentTarget.setPointerCapture(e.pointerId);
   };
   const applyLandmarks = (landmarks: Landmark[], triangles: number[], contourAdjusted = slot?.contourAdjusted, foreheadReviewed = slot?.foreheadReviewed, target: PhotoSlotId = view) => {
@@ -1386,10 +1530,28 @@ export default function FaceSimLab() {
   };
   const onMove = (e: React.PointerEvent) => {
     if (workspace !== 'simulate' || preview.after || workMode !== 'foto') return;
-    const n = toNorm(e);
+    const raw = toNorm(e);
+    const n = photoInteraction === 'draw' && toolPhoto === 'point' ? snapPhotoPoint(raw, e.currentTarget.getBoundingClientRect().height) : raw;
     const address = locateAnnotation('foto', { ...n, z: 0 });
     if (!address) {
       if (draft) setDraft(null);
+      return;
+    }
+    const moving = photoMoveRef.current;
+    if (moving) {
+      const item = meta[moving.id];
+      let next: AnatomicalBinding | null, id = moving.id;
+      if (moving.binding.kind === 'point') {
+        if (item.parent && bindings[item.parent]) {
+          id = item.parent;
+          next = moveAnnotationTip(bindings[id], item.tip ?? 0, address, genericFaceAtlas, point => acceptsAddress('foto', point));
+        } else next = { ...moving.binding, paths: [[address]] };
+      } else {
+        const from = canonicalAnnotationPoint(moving.origin, genericFaceAtlas), to = canonicalAnnotationPoint(address, genericFaceAtlas);
+        next = translateAnnotation(moving.binding, { x: to.x - from.x, y: to.y - from.y }, genericFaceAtlas, point => acceptsAddress('foto', point));
+      }
+      if (next) setPhotoMovePreview({ id, binding: next, point: moving.binding.kind === 'point' ? n : undefined });
+      else { setPhotoMovePreview(null); blockedMark(); }
       return;
     }
     if (dragRef.current) {
@@ -1411,6 +1573,17 @@ export default function FaceSimLab() {
   };
   const onUp = () => {
     dragRef.current = null;
+    const moved = photoMovePreview, moving = photoMoveRef.current;
+    photoMoveRef.current = null; setPhotoMovePreview(null);
+    if (moving) {
+      if (moved && workspace === 'simulate' && !preview.after) {
+        if (commitBinding(moved.id, moved.binding, 'foto', true)) {
+          setSelectedId(moving.id);
+          setStatus('Elemento movido sobre la foto; puntos asociados y registro conservados.');
+        }
+      }
+      return;
+    }
     if (workspace !== 'simulate' || preview.after) { setDraft(null); return; }
     if (!draft) return;
     const d = draft; setDraft(null);
@@ -1420,7 +1593,10 @@ export default function FaceSimLab() {
     let path = d.pts;
     if (d.kind === 'circle') {
       const end = d.pts[1], radius = Math.hypot((end.x - center.x) * aspect, end.y - center.y);
-      path = Array.from({ length: 49 }, (_, i) => ({ x: center.x + Math.cos(i * Math.PI / 24) * radius / aspect, y: center.y + Math.sin(i * Math.PI / 24) * radius }));
+      const rx = d.annotationKind === 'ellipse' ? Math.abs(end.x - center.x) : radius / aspect;
+      const ry = d.annotationKind === 'ellipse' ? Math.abs(end.y - center.y) : radius;
+      if (rx < 0.003 || ry < 0.003) { setStatus('Amplía ambos ejes del óvalo para dibujar un contorno válido.'); return; }
+      path = Array.from({ length: 49 }, (_, i) => ({ x: center.x + Math.cos(i * Math.PI / 24) * rx, y: center.y + Math.sin(i * Math.PI / 24) * ry }));
     } else if (d.kind === 'rect') {
       const end = d.pts[1];
       path = [center, { x: end.x, y: center.y }, end, { x: center.x, y: end.y }, center];
@@ -1434,7 +1610,12 @@ export default function FaceSimLab() {
       if (!address) { blockedMark(); return; }
       binding.center = address;
     }
-    if (!commitBinding(id, binding, 'foto', false, d.kind === 'pattern' ? { ...curMeta(), technique: PHOTO_PATTERN_NAMES[photoPattern] } : curMeta())) return;
+    const properties: Meta = { ...curMeta(),
+      ...(d.kind === 'pattern' ? { technique: PHOTO_PATTERN_NAMES[photoPattern] } : {}),
+      ...(d.annotationKind ? { annotationKind: d.annotationKind, graphicOnly: true,
+        ...(d.annotationKind === 'text' ? { annotationText: annotationText.trim() || 'Nota' } : {}) } : {}),
+    };
+    if (!commitBinding(id, binding, 'foto', false, properties)) return;
     setStatus('Marcación creada desde la foto y compartida con modelo original y superficie personal.');
   };
 
@@ -1491,7 +1672,7 @@ export default function FaceSimLab() {
         return !!binding;
       });
       const keepShapes = importedShapes.filter(s => {
-        const binding = makeBinding([shapeOutline(s)], 'generico', s.shapeType === 'circle' ? 'circle' : 'rect', true);
+        const binding = makeBinding([shapeOutline(s)], 'generico', s.shapeType === 'rectangle' ? 'rect' : 'circle', true);
         const center = locateSkinAnnotation('generico', s.center);
         if (binding && center) mapped[s.id] = { ...binding, center };
         return !!binding && !!center;
@@ -1524,6 +1705,8 @@ export default function FaceSimLab() {
   const beginEditing = () => {
     setPreview(p => p.after ? { ...p, after: false } : p);
     setDraft(null); dragRef.current = null;
+    setShowMarks(true); setShowTraces(true);
+    photoMoveRef.current = null; setPhotoMovePreview(null); setSnapTarget(null);
     setStatus('Marcación y edición sobre Antes (geometría original). Después es solo inspección: así la posición visible coincide con el registro común.');
   };
   const comparePreview = (after: boolean) => {
@@ -1531,6 +1714,16 @@ export default function FaceSimLab() {
     if (after) {
       setTool3d('navigate'); setPhotoInteraction('select');
       setStatus('Después · solo cámara/inspección. Elige una herramienta de dibujo o edición para volver a Antes sin alterar dosis ni posiciones registradas.');
+    }
+  };
+  const chooseMarkTab = (next: typeof markTab) => {
+    setMarkTab(next);
+    if (next === 'revisar') {
+      setShowMarks(false); setShowTraces(false); setShowReferences(false);
+      setDraft(null); setSelectedId(null); setTool3d('navigate'); setPhotoInteraction('select');
+      setCancellationToken(value => value + 1);
+    } else {
+      setShowMarks(true); setShowTraces(true); setShowReferences(true);
     }
   };
 
@@ -1546,7 +1739,7 @@ export default function FaceSimLab() {
   const poly = (pts: P2[]) => pts.map(p => `${p.x},${p.y}`).join(' ');
   const draftEl: Elem | null = draft ? draft.kind === 'pattern' && draft.pts.length > 1
     ? { ...curMeta(), id: 'draft', kind: 'pattern', paths: photoPatternPaths(draft.pts[0], draft.pts[1], aspect, photoPattern, haConfig) }
-    : elemsFromPhoto([{ ...curMeta(), id: 'draft', view, kind: draft.kind, pts: draft.pts }], aspect)[0] : null;
+    : elemsFromPhoto([{ ...curMeta(), id: 'draft', view, kind: draft.kind, pts: draft.pts, annotationKind: draft.annotationKind }], aspect)[0] : null;
 
   const freeMarkerIds = useMemo(() => markers.flatMap(m => m.id && !bindings[m.id] ? [m.id] : []), [markers, bindings]);
   const rows = useMemo(() => ledgerRows(meta, bindings, freeMarkerIds), [meta, bindings, freeMarkerIds]);
@@ -1555,7 +1748,7 @@ export default function FaceSimLab() {
   const editableBySource = useMemo(() => {
     const build = (original: boolean) => [...(original ? genericAnnotations : personalAnnotations).markers,
       ...(original ? markers.filter(m => m.id && !bindings[m.id]) : [])]
-      .flatMap(marker => marker.id ? [{ id: marker.id, type: 'free' as const, ...marker.position, lineIds: [],
+      .flatMap(marker => marker.id && (!meta[marker.id]?.graphicOnly || meta[marker.id]?.annotationKind === 'text') ? [{ id: marker.id, type: 'free' as const, ...marker.position, lineIds: [],
         name: meta[marker.id]?.zone, color: meta[marker.id] ? SIM_MODES[meta[marker.id].mode].color : undefined }] : []);
     return { generico: build(true), personal: build(false) };
   }, [genericAnnotations, personalAnnotations, markers, bindings, meta]);
@@ -1565,6 +1758,44 @@ export default function FaceSimLab() {
   const renderViewer = (source: 'generico' | 'personal') => {
     const original = source === 'generico';
     const annotations = original ? genericAnnotations : personalAnnotations;
+    const visibleBindings = original ? bindingsOnLayer(bindings, genericLayer) : bindingsOnLayer(surfaceBindings, personalLayer);
+    const labels = showTraces ? Object.entries(visibleBindings).flatMap(([id, binding]) => {
+      const item = meta[id];
+      if (!item?.annotationKind || item.annotationKind === 'ellipse') return [];
+      const address = binding.paths[0]?.[0];
+      if (!address) return [];
+      const layer = original ? genericLayer : personalLayer;
+      const position = layer ? layer.point(address) : original ? modelPoint(address, genericFaceAtlas)
+        : personal ? surfacePoint(address, personal.surface, genericFaceAtlas) : null;
+      return position ? [{ id, position, text: item.annotationKind === 'ruler'
+        ? `${annotationProportion(binding, genericFaceAtlas).toFixed(1)}% ancho facial · referencial`
+        : item.annotationText || 'Nota', color: item.strokeColor ?? SIM_MODES[item.mode].color }] : [];
+    }) : [];
+    const coverageLines: FreehandLine[] = [];
+    if (preview.after && preview.showCoverage) {
+      const height = Math.abs(genericFaceAtlas.positions[10 * 3 + 1] - genericFaceAtlas.positions[152 * 3 + 1]);
+      const landmarks = Array.from({ length: 468 }, (_, i) => ({ x: genericFaceAtlas.positions[i * 3], y: genericFaceAtlas.positions[i * 3 + 1] }));
+      for (const [id, binding] of Object.entries(bindings)) {
+        const item = meta[id];
+        if (binding.kind !== 'point' || !item || item.graphicOnly || item.entry) continue;
+        const center = canonicalAnnotationPoint(binding.paths[0][0], genericFaceAtlas);
+        const coverage = previewCoverage([{ ...center, mode: item.mode }], preview)[0];
+        if (!coverage) continue;
+        const radius = coverage.radius * height;
+        const paths: Vec3[][] = [];
+        let segment: Vec3[] = [];
+        for (let i = 0; i <= 48; i++) {
+          const angle = i * Math.PI / 24;
+          const address = locatePhotoPoint({ x: center.x + Math.cos(angle) * radius, y: center.y + Math.sin(angle) * radius }, landmarks, genericFaceAtlas);
+          const point = address && (original ? tryModelPoint(address, genericFaceAtlas) : personal && addressHasPhotoCoverage(address, personal.regionMap.landmarks, genericFaceAtlas)
+            ? trySurfacePoint(address, personal.surface, genericFaceAtlas) : null);
+          if (point) segment.push(point);
+          else { if (segment.length > 1) paths.push(segment); segment = []; }
+        }
+        if (segment.length > 1) paths.push(segment);
+        if (paths.length) coverageLines.push({ id: `coverage:${id}`, points: paths[0], segments: paths, color: SIM_MODES[item.mode].color, thickness: 1 });
+      }
+    }
     // Visor dividido: SIEMPRE la cabeza GLB completa sin deformar como referencia.
     // Vista única: Antes = cabeza completa; Después/calibración = cara del atlas deformable.
     const splitHead = original && splitAnnotations && workspace === 'simulate' && !calibrating;
@@ -1583,8 +1814,10 @@ export default function FaceSimLab() {
       {overlayMode === 'attention' && <p className="bg-amber-100 px-3 py-2 text-xs font-semibold text-amber-950">SIMULACIÓN · No detecta vasos ni certifica zonas seguras.</p>}
       {ready ? <Clinical3DViewer
         key={`${source}-${preview.after && !calibrating && !splitHead ? 'after' : 'before'}-${splitHead ? 'split' : fullHead ? 'head' : 'atlas'}`}
-        markers={[]} freehandLines={annotations.lines} surfaceShapes={[]}
-        editablePoints={editableBySource[source]}
+        markers={[]} freehandLines={[...(showTraces ? annotations.lines : []), ...coverageLines]} surfaceShapes={[]}
+        editablePoints={editableBySource[source].filter(point => meta[point.id]?.annotationKind === 'text' ? showTraces : showMarks)}
+        annotationLabels={labels}
+        annotationSnap={annotationSnap} labInteraction cancellationToken={cancellationToken}
         pointMode="none" selectedPointId={selectedId ?? undefined}
         onEditablePointClicked={id => { setSelectedId(id); beginEditing(); }}
         onEditablePointMoved={(id, point) => {
@@ -1593,10 +1826,9 @@ export default function FaceSimLab() {
             snap(); setMarkers(current => current.map(m => m.id === id ? { ...m, position: point } : m));
             return;
           }
-          const binding = makeBinding([[point]], source, 'point');
-          if (!binding) { blockedMark(); return; }
-          binding.illustrativePlane = bindings[id]?.illustrativePlane;
-          if (commitBinding(id, binding, source, true)) setStatus('Punto movido. Mismo registro, sin duplicados.');
+          const address = locateAnnotation(source, point);
+          if (!address) { blockedMark(); return; }
+          moveRegisteredPoint(id, address, source);
         }}
         selectedPathology="filler" skipConfirmation readOnly={workMode !== '3d' || tool3d === 'navigate' || preview.after && !calibrating || workspace !== 'simulate' && !calibrating}
         occludeAnnotations={!anatomyDisplay.overlay && anatomyDisplay.skin.visible && anatomyDisplay.skin.opacity >= 0.99
@@ -1612,7 +1844,7 @@ export default function FaceSimLab() {
         onElementSelected={id => { setSelectedId(id); if (id) beginEditing(); }}
         highlightedPointIds={highlightedIds}
         onMarkerPlaced={(m: Marker3D) => onMarker(m, source)}
-        activeTool={workspace !== 'simulate' || preview.after || workMode !== '3d' || tool3d === 'navigate' || tool3d === 'select' || tool3d === 'point' ? 'none' : tool3d}
+        activeTool={workspace !== 'simulate' || preview.after || workMode !== '3d' || tool3d === 'navigate' || tool3d === 'select' || tool3d === 'point' || tool3d === 'text' ? 'none' : tool3d === 'ruler' ? 'straight-line' : tool3d}
         pendingBrushColor={color} pendingBrushThickness={LINE_THICKNESS}
         onFreehandLineComplete={l => onLine(l, source)}
         onShapeComplete={s => onShape(s, source)}
@@ -1638,8 +1870,8 @@ export default function FaceSimLab() {
   };
 
   const renderShapes = (list: Elem[], dashed = false) => list.filter(e => e.kind !== 'point').map(e => {
-    const width = selectedId === e.id ? 4.5 : 3.5;
-    const col = selectedId === e.id ? '#fbbf24' : SIM_MODES[e.mode].color, common = { stroke: col, strokeWidth: width, strokeLinecap: 'round' as const, fill: 'none', vectorEffect: 'non-scaling-stroke' as const, strokeDasharray: dashed ? '5 4' : undefined };
+    const width = (e.strokeWidth ?? 3.5) + (selectedId === e.id ? 1 : 0);
+    const col = e.strokeColor ?? SIM_MODES[e.mode].color, common = { stroke: col, strokeWidth: width, strokeLinecap: 'round' as const, fill: 'none', vectorEffect: 'non-scaling-stroke' as const, strokeDasharray: dashed ? '5 4' : undefined };
     // Halo oscuro bajo cada trazo: se distingue sobre piel clara, oscura o con barba.
     const halo = { ...common, stroke: '#0c0a09', strokeOpacity: 0.6, strokeWidth: width + 2.5, strokeDasharray: undefined };
     if (e.boundary) return <polygon key={e.id} points={poly(e.boundary)} {...common} fill={col} fillOpacity={0.15} />;
@@ -1658,8 +1890,8 @@ export default function FaceSimLab() {
     );
   });
   const photoUsesPreview = (!preview.after || workspace === 'capture') && !!slot?.previewUrl;
-  const photoSkinOpacity = workspace === 'simulate' ? anatomyDisplay.skin.visible ? anatomyDisplay.skin.opacity : 0 : 1;
-  const photoLayerOverlay = workspace === 'simulate' ? photoLayerImages.map(({ kind, url }) => anatomyDisplay.references[kind].visible && <img
+  const photoSkinOpacity = workspace === 'simulate' && (markTab !== 'revisar' || showReferences) ? anatomyDisplay.skin.visible ? anatomyDisplay.skin.opacity : 0 : 1;
+  const photoLayerOverlay = workspace === 'simulate' && (markTab !== 'revisar' || showReferences) ? photoLayerImages.map(({ kind, url }) => anatomyDisplay.references[kind].visible && <img
     key={kind} src={url} alt="" aria-hidden="true" className="pointer-events-none absolute inset-0 h-full w-full"
     style={{ opacity: anatomyDisplay.references[kind].opacity }} />) : null;
 
@@ -1727,7 +1959,7 @@ export default function FaceSimLab() {
       </Suspense>}
       {(workspace === 'capture' || editorGroup === 'annotations') && <aside aria-label={workspace === 'capture' ? 'Revisión de capturas' : 'Herramientas de marcación'} className={`min-w-0 space-y-4 rounded-2xl border p-3 shadow-sm lg:self-start ${workspace === 'simulate' ? `${editorPanel} lg:sticky lg:top-4` : 'border-slate-200 bg-white'}`}>
         {workspace === 'simulate' && <div className="flex min-h-0 flex-col gap-3 lg:max-h-[calc(100dvh-7rem)]">
-          <EditorTabs idBase="marcacion" value={markTab} onChange={setMarkTab} tabs={[
+          <EditorTabs idBase="marcacion" value={markTab} onChange={chooseMarkTab} tabs={[
             { id: 'inyectable', label: 'Inyectable', step: 1, icon: Syringe, done: !!product.trim() },
             { id: 'capas', label: 'Capas y corte', step: 2, icon: Layers, done: rows.length > 0 },
             { id: 'revisar', label: 'Revisar', step: 3, icon: ListChecks },
@@ -1741,11 +1973,19 @@ export default function FaceSimLab() {
                     className="admin-focus-ring mt-1 min-h-10 w-full rounded-lg border border-white/10 bg-stone-900 px-2 text-sm text-stone-100 placeholder:text-stone-500" />
                 </label>
                 <CheckChip label="Pedir volumen al marcar" icon={Gauge} checked={askVolume} onChange={setAskVolume}>Volumen al marcar</CheckChip>
+                <CheckChip label="Crear puntos de registro en trazos" icon={Crosshair} checked={createPoints} onChange={setCreatePoints}>Puntos en trazos</CheckChip>
                 {!askVolume && <label className="flex items-center gap-2 text-[11px] text-stone-400">Dosis fija
                   <input aria-label="Dosis para nuevas marcas" type="number" min={0} step="any" value={dose}
                     onChange={e => { const n = Number(e.target.value); if (Number.isFinite(n) && n >= 0) setDose(n); }}
                     className="admin-focus-ring min-h-10 w-24 rounded-lg border border-white/10 bg-stone-900 px-2 text-sm text-stone-100" />{SIM_MODES[mode].unit}
                 </label>}
+              </PanelSection>
+              <PanelSection title="Anotación gráfica" icon={Type}>
+                <label className="block text-[11px] text-stone-400">Texto para nuevas notas
+                  <input aria-label="Texto para nuevas notas" value={annotationText} maxLength={120} onChange={e => setAnnotationText(e.target.value)}
+                    className="admin-focus-ring mt-1 min-h-10 w-full rounded-lg border border-white/10 bg-stone-900 px-2 text-sm text-stone-100" />
+                </label>
+                <p className="text-[11px] text-stone-400">Círculo, rectángulo, óvalo, texto y regla son gráficos: no registran dosis. La regla expresa proporciones del atlas, no milímetros.</p>
               </PanelSection>
               <p className="rounded-xl border border-gold/20 bg-gold/5 p-2.5 text-[11px] leading-relaxed text-stone-300">
                 Elige una herramienta en la barra <b className="text-gold">Marcar</b> sobre el visor y haz clic en el rostro. Cada punto pide su volumen.
@@ -1789,6 +2029,12 @@ export default function FaceSimLab() {
                 <p className="text-[11px] leading-relaxed text-stone-500">Los filtros se aplican sobre la máscara personal y la foto en «Después». Marcar se pausa mientras lo ves.</p>
               </PanelSection>
               <PanelSection title="Filtros por inyectable" icon={Sparkles}><EffectMixer value={preview} onChange={setPreview} /></PanelSection>
+              <PanelSection title="Visibilidad de revisión" icon={Eye}>
+                <CheckChip label="Mostrar puntos registrados" icon={Crosshair} checked={showMarks} onChange={setShowMarks}>Puntos</CheckChip>
+                <CheckChip label="Mostrar trazos y notas" icon={Brush} checked={showTraces} onChange={setShowTraces}>Trazos y notas</CheckChip>
+                <CheckChip label="Mostrar referencias anatómicas" icon={Layers} checked={showReferences} onChange={setShowReferences}>Referencias</CheckChip>
+                <p className="text-[11px] text-stone-400">Ocultar no borra el registro ni desactiva los filtros ilustrativos.</p>
+              </PanelSection>
               <PanelSection title="Exportar" icon={FileJson}>
                 <div className="grid grid-cols-3 gap-1.5">
                   <IconToggle label="Exportar JSON de Inyectables" icon={FileJson} disabled={!hasLocalRecord} onClick={exportJson}>JSON</IconToggle>
@@ -2173,7 +2419,10 @@ export default function FaceSimLab() {
 
       <div className={`min-w-0 space-y-4 ${workspace === 'simulate' && editorGroup === 'appearance' ? 'lg:col-span-2' : ''}`}>
         {appearanceOpened && <div hidden={workspace !== 'simulate' || editorGroup !== 'appearance'} data-face-appearance-group>
-          <Suspense fallback={<p role="status">Preparando morfología, piel y capas…</p>}>
+          <Suspense fallback={<div role="status" aria-live="polite" className={`${editorPanel} flex min-h-64 flex-col items-center justify-center gap-3 p-6 text-center text-sm text-gold`}>
+            <span aria-hidden="true" className="h-9 w-9 animate-spin rounded-full border-2 border-gold/20 border-t-gold motion-reduce:animate-none" />
+            Preparando morfología, piel y capas…
+          </div>}>
             {modelKind === 'personal' && !personal ? <p role="status" className="rounded-xl border p-4">
               {buildingPersonal ? 'Calculando superficie fotografiada…' : 'Calcula la superficie personal en Capturas o selecciona el modelo genérico.'}
             </p> : <FacialSimulationViewer
@@ -2221,20 +2470,29 @@ export default function FaceSimLab() {
             }} />
           </>}
           <span aria-hidden="true" className="hidden h-8 w-px bg-white/10 sm:block" />
-          {workMode === '3d'
-            ? <ToolDock label="Herramientas de marcación" items={TOOLS_3D} value={tool3d} accent={SIM_MODES[mode].color}
-              disabled={id => calibrating && id !== 'point'} onSelect={id => {
-                if (id === 'ha-fan' || id === 'ha-grid' || id === 'ha-fern') { setPatternSetup(id); return; }
-                setTool3d(id); if (id !== 'navigate') beginEditing();
-              }} />
-            : <ToolDock label="Herramientas de marcación" items={TOOLS_PHOTO} value={photoInteraction === 'draw' ? toolPhoto : null} accent={SIM_MODES[mode].color}
-              onSelect={id => { if (id === 'pattern') { setPatternSetup('photo-pattern'); return; } setToolPhoto(id); setPhotoInteraction('draw'); beginEditing(); }} />}
+          <div role="group" aria-label="Herramientas de marcación" className="flex flex-wrap items-end gap-2">
+            {TOOL_GROUPS.filter(group => (workMode === '3d' ? TOOLS_3D : TOOLS_PHOTO).some(item => group.ids.includes(item.id))).map(group => (
+              <div key={group.label} className="space-y-1 border-r border-white/10 pr-2 last:border-0">
+                <span className="block text-[10px] font-semibold text-stone-400">{group.label}</span>
+                {workMode === '3d'
+                  ? <ToolDock label={group.label} items={TOOLS_3D.filter(item => group.ids.includes(item.id))} value={tool3d} accent={SIM_MODES[mode].color}
+                    disabled={id => calibrating && id !== 'point'} onSelect={id => {
+                      setCancellationToken(value => value + 1);
+                      if (id === 'ha-fan' || id === 'ha-grid' || id === 'ha-fern') { setPatternSetup(id); return; }
+                      setTool3d(id); if (id !== 'navigate') beginEditing();
+                    }} />
+                  : <ToolDock label={group.label} items={TOOLS_PHOTO.filter(item => group.ids.includes(item.id))} value={photoInteraction === 'draw' ? toolPhoto : null} accent={SIM_MODES[mode].color}
+                    onSelect={id => { if (id === 'pattern') { setPatternSetup('photo-pattern'); return; } setToolPhoto(id); setPhotoInteraction('draw'); beginEditing(); }} />}
+              </div>
+            ))}
+          </div>
           {workMode === 'foto' && toolPhoto === 'pattern' && <select aria-label="Patrón ilustrativo" value={photoPattern} onChange={e => setPhotoPattern(e.target.value as typeof photoPattern)}
             className="admin-focus-ring min-h-10 rounded-lg border border-white/10 bg-stone-900 px-2 text-xs text-stone-100">
             <option value="fan">Abanico</option><option value="grid">Malla</option><option value="fern">Helecho</option>
           </select>}
           <span aria-hidden="true" className="hidden h-8 w-px bg-white/10 sm:block" />
           <CheckChip label="Modo bilateral · crear ambos lados en una acción" icon={Sparkles} checked={bilateral} onChange={setBilateral}>Bilateral</CheckChip>
+          <CheckChip label="Imán sobre puntos y trazos" icon={Magnet} checked={annotationSnap} onChange={setAnnotationSnap}>Imán</CheckChip>
           {workMode === '3d' && <CheckChip label="Zona extendida (cuello/cuero cabelludo)" icon={Move3d} checked={extendedZone}
             onChange={checked => { setExtendedZone(checked); setOutsideHint(false); }}>Extendida</CheckChip>}
           <IconToggle label="Deshacer" icon={Undo2} disabled={!history.length} onClick={undo} />
@@ -2246,7 +2504,10 @@ export default function FaceSimLab() {
           {preview.after && <button type="button" onClick={() => comparePreview(false)} className={`${hudChip} border-gold/50 text-gold`}>
             <Eye className="h-3.5 w-3.5" aria-hidden="true" />Vista «Después» · volver a marcar</button>}
           <span className="ml-auto" />
-          {totals.length ? <VolumeHud totals={totals} /> : <span className={`${hudChip} text-stone-400`}><Gauge className="h-3.5 w-3.5" aria-hidden="true" />0 {SIM_MODES[mode].unit}</span>}
+          <span className={`${hudChip} border-gold/50 text-gold`}>Herramienta: {workMode === '3d' ? TOOLS_3D.find(item => item.id === tool3d)?.label : photoInteraction === 'select' ? 'Seleccionar / mover' : TOOLS_PHOTO.find(item => item.id === toolPhoto)?.label}</span>
+          {totals.length ? <VolumeHud totals={totals} activeMode={mode} activeProduct={product}
+            onSelect={(nextMode, nextProduct) => { setMode(nextMode); setProduct(nextProduct); setDose(0); setStatus(`${nextProduct || SIM_MODES[nextMode].label} activo para nuevas marcas. El registro anterior no cambia.`); }} />
+            : <span className={`${hudChip} text-stone-400`}><Gauge className="h-3.5 w-3.5" aria-hidden="true" />0 {SIM_MODES[mode].unit}</span>}
         </div>}
       <div className={`grid min-w-0 content-start gap-4 ${workspace === 'simulate' && workMode === '3d' && splitAnnotations ? 'lg:grid-cols-2' : ''}`}>
         {workspace === 'simulate' && workMode === '3d' && (splitAnnotations
@@ -2267,8 +2528,8 @@ export default function FaceSimLab() {
                   : patientZone(regionCellAt(address, regionCells), address) : null);
 
               }
-            }} onPointerLeave={() => setHoveredZone(null)} onPointerUp={onUp}
-            onPointerCancel={() => { setDraft(null); dragRef.current = null; }} onContextMenu={e => e.preventDefault()}>
+            }} onPointerLeave={() => { setHoveredZone(null); setSnapTarget(null); }} onPointerUp={onUp}
+            onPointerCancel={() => { setDraft(null); dragRef.current = null; photoMoveRef.current = null; setPhotoMovePreview(null); }} onContextMenu={e => e.preventDefault()}>
             {!anatomyDisplay.overlay && photoLayerOverlay}
             <canvas ref={glRef} className="relative h-full w-full" aria-label="Simulación del rostro"
               style={{ opacity: photoUsesPreview ? 0 : photoSkinOpacity }} />
@@ -2276,18 +2537,18 @@ export default function FaceSimLab() {
               style={{ opacity: photoSkinOpacity }}
               className="pointer-events-none absolute inset-0 h-full w-full" />}
             {anatomyDisplay.overlay && photoLayerOverlay}
-            {photoRegionOverlay && <ZoneView store={hoverStore}>{hoveredZone => <svg viewBox="0 0 1 1" preserveAspectRatio="none" aria-hidden="true" className="pointer-events-none absolute inset-0 h-full w-full">
+            {photoRegionOverlay && (markTab !== 'revisar' || showReferences) && <ZoneView store={hoverStore}>{hoveredZone => <svg viewBox="0 0 1 1" preserveAspectRatio="none" aria-hidden="true" className="pointer-events-none absolute inset-0 h-full w-full">
               {photoRegionOverlay.map(({ label, path }) => <path key={label} d={path}
                 fill={hoveredZone === label ? photoLayer ? '#38bdf8' : faceRegionColor(label) : 'none'} fillOpacity={0.3}
                 stroke={overlayMode === 'attention' ? faceAttentionColor(label) : '#7dd3fc'} strokeOpacity={hoveredZone === label ? 0.9 : showRegions ? 0.35 : 0} strokeWidth="0.0008" />)}
             </svg>}</ZoneView>}
-            {currentSkinReview?.result.usable && <img src={currentSkinReview.urls[skinChannel]} alt="" aria-hidden="true" style={{ opacity: skinOpacity }} className="pointer-events-none absolute inset-0 h-full w-full" />}
+            {currentSkinReview?.result.usable && (markTab !== 'revisar' || showReferences) && <img src={currentSkinReview.urls[skinChannel]} alt="" aria-hidden="true" style={{ opacity: skinOpacity }} className="pointer-events-none absolute inset-0 h-full w-full" />}
             {currentForeheadPreview && <svg aria-hidden="true" className="pointer-events-none absolute inset-0 h-full w-full" viewBox="0 0 1 1" preserveAspectRatio="none">
               <line x1={Math.max(0, currentForeheadPreview.point.x - 0.12)} x2={Math.min(1, currentForeheadPreview.point.x + 0.12)} y1={currentForeheadPreview.point.y} y2={currentForeheadPreview.point.y} stroke="#f59e0b" strokeWidth="0.003" strokeDasharray="0.008 0.005" />
               <circle cx={currentForeheadPreview.point.x} cy={currentForeheadPreview.point.y} r="0.008" fill="#f59e0b" stroke="white" strokeWidth="0.002" />
             </svg>}
             {split > 0 && <div className="pointer-events-none absolute inset-y-0 w-0.5 bg-white/80" style={{ left: `${split * 100}%` }} />}
-            {hasImage && frame.outline && (
+            {hasImage && frame.outline && (workspace === 'capture' || markTab !== 'revisar' || showReferences) && (
               <svg className="pointer-events-none absolute inset-0 h-full w-full" viewBox="0 0 1 1" preserveAspectRatio="none" aria-hidden="true">
                 <polygon points={poly(frame.outline)} fill="rgba(56,189,248,0.06)" stroke="#38bdf8" strokeWidth="0.0025" strokeDasharray="0.01 0.006" />
                 <line x1={frame.axisTop.x} y1={frame.axisTop.y} x2={frame.axisBottom.x} y2={frame.axisBottom.y} stroke="#38bdf8" strokeWidth="0.002" strokeDasharray="0.008 0.006" />
@@ -2307,12 +2568,30 @@ export default function FaceSimLab() {
                 ))}
               </svg>
             )}
-            {workspace === 'simulate' && showMarks && (
+            {workspace === 'simulate' && showTraces && (
               <svg className="pointer-events-none absolute inset-0 h-full w-full" viewBox="0 0 1 1" preserveAspectRatio="none" aria-hidden="true">
                 {renderShapes(elems)}
                 {draftEl && renderShapes([draftEl], true)}
+                {slot?.landmarks && photoMovePreview && renderShapes(anatomicalPhotoElements(
+                  { [photoMovePreview.id]: photoMovePreview.binding }, { [photoMovePreview.id]: meta[photoMovePreview.id] }, slot.landmarks, genericFaceAtlas), true)}
+                {elems.filter(element => element.annotationKind === 'text' || element.annotationKind === 'ruler').map(element => {
+                  const point = element.paths[0][0], text = element.annotationKind === 'ruler' && bindings[element.id]
+                    ? `${annotationProportion(bindings[element.id], genericFaceAtlas).toFixed(1)}% ancho facial · referencial` : element.annotationText || 'Nota';
+                  return <text key={`text-${element.id}`} x={point.x + 0.012} y={point.y - 0.012} fontSize="0.024" fill={element.strokeColor ?? SIM_MODES[element.mode].color}
+                    stroke="#0c0a09" strokeWidth="0.004" paintOrder="stroke" fontWeight="bold">{text}</text>;
+                })}
               </svg>
             )}
+            {workspace === 'simulate' && preview.after && preview.showCoverage && <svg viewBox="0 0 1 1" preserveAspectRatio="none" aria-hidden="true" className="pointer-events-none absolute inset-0 h-full w-full">
+              {previewCoverage(previewSamples, preview).map((point, i) => <ellipse key={i} cx={point.x} cy={point.y}
+                rx={point.radius / aspect} ry={point.radius}
+                fill={SIM_MODES[point.mode].color} fillOpacity={0.06} stroke={SIM_MODES[point.mode].color} strokeWidth="0.0015" strokeDasharray="0.006 0.004" />)}
+            </svg>}
+            {workspace === 'simulate' && snapTarget && <span aria-hidden="true" className="pointer-events-none absolute h-5 w-5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-gold bg-gold/20"
+              style={{ left: `${snapTarget.x * 100}%`, top: `${snapTarget.y * 100}%` }} />}
+            {workspace === 'simulate' && showMarks && photoMovePreview?.point && <span aria-hidden="true"
+              className="pointer-events-none absolute z-10 h-4 w-4 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white bg-gold ring-2 ring-gold"
+              style={{ left: `${photoMovePreview.point.x * 100}%`, top: `${photoMovePreview.point.y * 100}%` }} />}
             {workspace === 'simulate' && showMarks && corrected.filter(p => !p.id.includes(':')).map(p => (
               <span key={p.id} className={`pointer-events-none absolute block h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white shadow ${selectedId === p.id ? 'ring-4 ring-amber-400' : ''}`}
                 style={{ left: `${p.rawX * 100}%`, top: `${p.rawY * 100}%`, background: SIM_MODES[p.mode].color }}
@@ -2340,17 +2619,35 @@ export default function FaceSimLab() {
           }}
           onHover={row => setHoveredZone(row ? `${row.zone} · ${row.side}` : null)}
           onDose={editDose} onDelete={id => { snap(); removeEl(id); }}
-          onPlane={(ids, plane) => { snap(); setMeta(m => ({ ...m, ...Object.fromEntries(ids.filter(id => m[id]).map(id => [id, { ...m[id], plane: plane || undefined }])) })); }}
+          onPlane={(ids, plane) => {
+            const targets = ids.filter(id => meta[id] && !meta[id].graphicOnly && !meta[id].entry);
+            if (!targets.length) { setStatus('Selecciona puntos de registro antes de aplicar un plano.'); return; }
+            snap(); setMeta(m => ({ ...m, ...Object.fromEntries(targets.map(id => [id, { ...m[id], plane: plane || undefined }])) }));
+            setStatus(`Plano ${plane || 'sin registrar'} aplicado a ${targets.length} punto(s).`);
+          }}
           header={selectedRow && meta[selectedRow.id] && <SelectionInspector row={selectedRow} onDose={editDose}
             onDelete={id => { snap(); removeEl(id); setSelectedId(null); }} onMirror={mirrorSelected} mirrorDisabled={preview.after || !bindings[selectedRow.id]}
-            onTransform={bindings[selectedRow.id] && !preview.after ? transformSelected : undefined}>
-            <details className="rounded-lg border border-white/10 bg-black/30 p-2">
+            onTransform={bindings[selectedRow.id] && !preview.after ? transformSelected : undefined}
+            tipDose={(() => { const tips = rows.filter(row => row.parent === selectedRow.id); return tips.length && tips.every(row => row.dose === tips[0].dose) ? tips[0].dose : null; })()}
+            strokeColor={meta[selectedRow.id].strokeColor ?? SIM_MODES[selectedRow.mode].color}
+            strokeWidth={meta[selectedRow.id].strokeWidth ?? LINE_THICKNESS}
+            onStyle={style => {
+              snap(); setMeta(current => ({ ...current, [selectedRow.id]: { ...current[selectedRow.id],
+                ...(style.color ? { strokeColor: style.color } : {}),
+                ...(style.thickness ? { strokeWidth: style.thickness } : {}) } }));
+              setStatus('Estilo gráfico actualizado; categoría, dosis y plano no cambian.');
+            }}
+            onText={text => {
+              snap(); setMeta(current => ({ ...current, [selectedRow.id]: { ...current[selectedRow.id], annotationText: text.slice(0, 120) } }));
+            }}>
+            {!selectedRow.graphicOnly && <details className="rounded-lg border border-white/10 bg-black/30 p-2">
               <summary className="flex min-h-8 cursor-pointer list-none items-center text-[11px] font-bold text-stone-300">Editar categoría, zona y producto</summary>
               <form key={selectedRow.id} aria-label="Editar marca seleccionada" className="mt-2 grid gap-2" onSubmit={e => {
                 e.preventDefault();
                 const data = new FormData(e.currentTarget), nextMode = data.get('mode') as SimMode, id = selectedRow.id;
-                snap(); setMeta(m => ({ ...m, [id]: { ...m[id], mode: nextMode,
-                  zone: String(data.get('zone')), product: String(data.get('product')) || undefined } }));
+                const ids = [id, ...Object.keys(meta).filter(key => meta[key].parent === id)];
+                snap(); setMeta(m => ({ ...m, ...Object.fromEntries(ids.map(key => [key, { ...m[key], mode: nextMode,
+                  zone: String(data.get('zone')), product: String(data.get('product')).trim() || undefined }])) }));
                 setStatus('Marca actualizada.');
               }}>
                 <label className="text-[11px] text-stone-400">Categoría
@@ -2366,7 +2663,7 @@ export default function FaceSimLab() {
                 </label>
                 <button type="submit" className="admin-focus-ring min-h-10 rounded-lg bg-gold px-3 text-xs font-bold text-stone-950">Guardar cambios de marca</button>
               </form>
-            </details>
+            </details>}
           </SelectionInspector>} />
       </div>}
       {patternSetup && <PatternSetupDialog open color={SIM_MODES[mode].color} config={haConfig}
@@ -2390,8 +2687,22 @@ export default function FaceSimLab() {
           place={`${(parentRow ?? row)?.zone ?? first.zone}${(parentRow ?? row) ? ` · ${(parentRow ?? row)!.side}` : ''}`}
           targets={pendingVolume.map(id => ({ id, label: `${meta[id]?.parent ? `Punta ${(meta[id].tip ?? 0) + 1}` : 'Punto'}${multiSide ? ` · ${sideOf(id) === 'derecho' ? 'D' : sideOf(id) === 'izquierdo' ? 'I' : 'C'}` : ''}` }))}
           initialDose={dose}
-          onSave={(value, plane, perTarget) => {
+          allowWithoutPoints={!!first.parent} initialWithPoints={createPoints}
+          onSave={(value, plane, perTarget, withPoints = true) => {
             const ids = pendingVolume;
+            if (first.parent) setCreatePoints(withPoints);
+            if (!withPoints && first.parent) {
+              const parents = new Set(ids.flatMap(id => meta[id]?.parent ? [meta[id].parent!] : []));
+              const removed = new Set(Object.keys(meta).filter(id => meta[id].parent && parents.has(meta[id].parent!)));
+              const keep = <T,>(record: Record<string, T>) => Object.fromEntries(Object.entries(record).filter(([id]) => !removed.has(id)));
+              setMarkers(current => current.filter(marker => !marker.id || !removed.has(marker.id)));
+              setBindings(keep);
+              setMeta(current => ({ ...keep(current), ...Object.fromEntries([...parents].map(id => [id,
+                { ...current[id], graphicOnly: true, dose: 0, plane: undefined, entry: undefined }])) }));
+              setSelectedId(first.parent); setPendingVolume(null);
+              setStatus('Dibujo guardado sin puntos, dosis ni plano. No contribuye al efecto ilustrativo.');
+              return;
+            }
             setMeta(m => ({ ...m, ...Object.fromEntries(ids.filter(id => m[id]).map(id => [id, { ...m[id], dose: perTarget?.[id] ?? value, plane: plane || undefined }])) }));
             setDose(value); setPendingVolume(null);
             const total = ids.reduce((sum, id) => sum + (perTarget?.[id] ?? value), 0);

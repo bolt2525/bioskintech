@@ -520,6 +520,11 @@ export interface P2 { x: number; y: number }
 export interface Vec3 { x: number; y: number; z: number }
 export interface Meta {
   mode: SimMode; dose: number; zone: string; product?: string; plane?: string;
+  graphicOnly?: boolean;
+  strokeColor?: string;
+  strokeWidth?: number;
+  annotationText?: string;
+  annotationKind?: 'ellipse' | 'text' | 'ruler';
   /** Trazo de entrada de aguja (patrón, línea, flecha): define zona y no lleva dosis; la llevan sus puntas. */
   entry?: boolean;
   /** Técnica del trazo de entrada (Abanico, Malla, Helecho, Línea, Flecha). */
@@ -1006,6 +1011,7 @@ export function elemsFromPhoto(list: PhotoEl[], aspect: number): Elem[] {
     if (e.kind === 'circle' || e.kind === 'rect') {
       const [a, b] = [pts[0], pts[1] ?? pts[0]];
       if (e.kind === 'circle') {
+        if (e.annotationKind === 'ellipse') return { ...rest, paths: [[a]], rx: Math.abs(b.x - a.x), ry: Math.abs(b.y - a.y) };
         const d = Math.hypot((b.x - a.x) * aspect, b.y - a.y);
         return { ...rest, paths: [[a]], rx: d / aspect, ry: d };
       }
@@ -1047,6 +1053,7 @@ export function expandElems(
   const share = Math.max(4, Math.floor(Math.max(MAX_EFFECTS - elems.filter(e => e.kind === 'point').length, 8) / Math.max(areaElems.length, 1)));
 
   elems.forEach(e => {
+    if (e.graphicOnly || e.entry) return;
     if (e.kind === 'point') {
       const p = e.paths[0]?.[0]; if (p) points.push({ id: e.id, mode: e.mode, x: p.x, y: p.y, dose: e.dose, zone: zoneAt(e, p), product: e.product });
       return;

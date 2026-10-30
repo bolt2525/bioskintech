@@ -3,6 +3,9 @@ import { Tooltip } from '../../components/ui/Tooltip';
 import type { P2 } from './engine';
 import { SKIN_CANDIDATE_COLORS, SKIN_CANDIDATE_LABELS, skinSignalLayer, skinVisualCandidates, type SkinAppearanceResult, type SkinSignalChannel, type SkinVisualCandidate } from './skinAppearance';
 import { analyzeSkinSignalCanvas, composeSkinCandidateTexture, composeSkinSignalTexture, createSkinSignalMask, skinSignalPreview, SKIN_SIGNAL_RESOLUTIONS, type SkinSignalResolution } from './skinSignalTexture';
+import SkinRegionEditor from './SkinRegionEditor';
+import type { SkinReviewRegion } from './skinRegionReview';
+export type { SkinReviewRegion } from './skinRegionReview';
 
 export interface SkinSignalPanelProps {
   /** Imagen local estable. Si sus píxeles cambian, entrega una nueva instancia. */
@@ -11,6 +14,8 @@ export interface SkinSignalPanelProps {
   landmarks?: readonly P2[];
   /** undefined restaura la textura original; nunca se entrega el canvas de entrada. */
   onTexture: (canvas: HTMLCanvasElement | undefined) => void;
+  /** Revisión local manual por ROI; no persiste y se invalida al cambiar la fuente. */
+  onRegionsChange?: (regions: readonly SkinReviewRegion[]) => void;
 }
 
 const MODES = [
@@ -50,7 +55,7 @@ function sameCandidateContext(a: CandidateContext | undefined, b: CandidateConte
     && a.sensitivity === b.sensitivity && a.resolution === b.resolution;
 }
 
-export default function SkinSignalPanel({ canvas, landmarks, onTexture }: SkinSignalPanelProps) {
+function LegacySkinSignalPanel({ canvas, landmarks, onTexture }: SkinSignalPanelProps) {
   const [mode, setMode] = useState<Mode>('original');
   const [sensitivity, setSensitivity] = useState(50);
   const [resolution, setResolution] = useState<SkinSignalResolution>(384);
@@ -141,7 +146,7 @@ export default function SkinSignalPanel({ canvas, landmarks, onTexture }: SkinSi
       if (preview.current) { preview.current.width = 0; preview.current.height = 0; }
       fail(error);
     }
-    return () => { clearTimeout(timer); callback.current(undefined); };
+    return () => { clearTimeout(timer); };
   }, [canvas, landmarks, mode, sensitivity, analysisResolution, confirmedSource, review, viewerBoxes]);
 
   return <section aria-label="Señales visuales aproximadas de piel" className="min-w-0 space-y-3 rounded-xl border border-slate-200 bg-white p-3 text-sm text-slate-800">
@@ -213,5 +218,26 @@ export default function SkinSignalPanel({ canvas, landmarks, onTexture }: SkinSi
     </canvas>
     <p role="status" aria-live="polite" aria-busy={busy} className="text-xs text-slate-600">{message}</p>
     <p className="text-xs text-slate-500">Solo en memoria local · sin subidas ni guardado.</p>
+  </section>;
+}
+
+export default function SkinSignalPanel({ canvas, landmarks, onTexture, onRegionsChange }: SkinSignalPanelProps) {
+  const [advancedOpen, setAdvancedOpen] = useState(false);
+  return <section className="min-w-0 space-y-3">
+    <SkinRegionEditor canvas={canvas} landmarks={landmarks} onTexture={onTexture} onRegionsChange={onRegionsChange} />
+    <div className="overflow-hidden rounded-xl border border-amber-900/50 bg-slate-950">
+      <button type="button" aria-expanded={advancedOpen} aria-controls="skin-rgb-advanced"
+        onClick={() => {
+          if (advancedOpen) onTexture(undefined);
+          setAdvancedOpen(open => !open);
+        }}
+        className="admin-focus-ring flex w-full items-center justify-between gap-3 px-3 py-2.5 text-left text-sm font-medium text-amber-200 hover:bg-slate-900">
+        <span>Análisis RGB avanzado</span>
+        <span aria-hidden="true" className="text-xs">{advancedOpen ? '−' : '+'}</span>
+      </button>
+      {advancedOpen && <div id="skin-rgb-advanced" className="border-t border-amber-900/50 p-2 sm:p-3">
+        <LegacySkinSignalPanel canvas={canvas} landmarks={landmarks} onTexture={onTexture} />
+      </div>}
+    </div>
   </section>;
 }

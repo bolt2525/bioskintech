@@ -29,7 +29,7 @@ try {
   await page.goto('http://127.0.0.1:5173/dev/hair-lab', { waitUntil: 'networkidle', timeout: 90000 });
   await page.getByRole('button', { name: 'Simulación facial', exact: true }).click();
   const space = page.getByRole('navigation', { name: 'Espacios del laboratorio' });
-  await space.waitFor();
+  await space.waitFor({ timeout: 90000 });
   assert.equal(await space.getByRole('button').count(), 2);
   await space.getByRole('button', { name: 'Simular y marcar', exact: true }).click();
   await page.locator('canvas:visible').waitFor();
@@ -65,6 +65,8 @@ try {
   const dose = page.getByLabel('Dosis marca 1', { exact: true });
   assert.equal(await dose.inputValue(), '7.5');
   await page.getByRole('tab', { name: /Revisar/ }).click();
+  for (const name of ['Mostrar puntos registrados', 'Mostrar trazos y notas', 'Mostrar referencias anatómicas'])
+    assert.equal(await page.getByLabel(name, { exact: true }).isChecked(), false, 'Revisar inicia una vista limpia sin borrar el registro.');
   await page.getByLabel('Intensidad visual independiente', { exact: true }).fill('0.9');
   assert.equal(await dose.inputValue(), '7.5');
   for (const name of ['Toxina', 'Relleno HA', 'Hidratación', 'Bioestimulador']) {

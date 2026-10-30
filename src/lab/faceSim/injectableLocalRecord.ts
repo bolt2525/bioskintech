@@ -25,12 +25,14 @@ export function importLocalRecord(text: string, zones: string[]) {
   const restoredKinds: Record<string, ElemKind> = {};
   const restoredCenters: Record<string, Vec3> = {};
   const illustrativePlanes: Record<string, AnatomyPlane> = {};
+  const restoredIds = new Map<string, string>();
   const groups = { p: mapping?.injectionPoints, l: mapping?.freehandLines, s: mapping?.surfaceShapes };
   for (const id of Object.keys(result.meta)) {
     const match = /-([pls])(\d+)$/.exec(id);
     if (!match) continue;
     const group = groups[match[1] as keyof typeof groups];
     const original = Array.isArray(group) ? object(group[Number(match[2])]) : null;
+    if (typeof original?.id === 'string') restoredIds.set(original.id, id);
     const value = typeof original?.id === 'string' ? object(stored?.[original.id]) : null;
     const kind = typeof original?.id === 'string' ? storedKinds?.[original.id] : undefined;
     if (kinds.includes(kind as ElemKind)) restoredKinds[id] = kind as ElemKind;
@@ -55,13 +57,33 @@ export function importLocalRecord(text: string, zones: string[]) {
       || value.entry !== undefined && typeof value.entry !== 'boolean'
       || value.technique !== undefined && typeof value.technique !== 'string'
       || value.parent !== undefined && typeof value.parent !== 'string'
-      || value.tip !== undefined && !Number.isInteger(value.tip)) {
+      || value.tip !== undefined && (!Number.isInteger(value.tip) || Number(value.tip) < 0)
+      || value.graphicOnly !== undefined && typeof value.graphicOnly !== 'boolean'
+      || value.strokeColor !== undefined && (typeof value.strokeColor !== 'string' || !/^#[0-9a-f]{6}$/i.test(value.strokeColor))
+      || value.strokeWidth !== undefined && (typeof value.strokeWidth !== 'number' || !Number.isFinite(value.strokeWidth) || value.strokeWidth < 1 || value.strokeWidth > 10)
+      || value.annotationText !== undefined && (typeof value.annotationText !== 'string' || value.annotationText.length > 120)
+      || value.annotationKind !== undefined && !['ellipse', 'text', 'ruler'].includes(String(value.annotationKind))) {
       throw new Error('Los metadatos locales son inválidos; no se ha importado el registro.');
     }
     result.meta[id] = { mode: value.mode, dose: value.dose, zone: value.zone, product: value.product,
       ...(value.plane ? { plane: value.plane } : {}),
       ...(value.entry ? { entry: true } : {}), ...(value.technique ? { technique: value.technique } : {}),
+      ...(value.graphicOnly ? { graphicOnly: true } : {}),
+      ...(value.strokeColor ? { strokeColor: value.strokeColor } : {}),
+      ...(value.strokeWidth ? { strokeWidth: value.strokeWidth } : {}),
+      ...(value.annotationText ? { annotationText: value.annotationText } : {}),
+      ...(value.annotationKind ? { annotationKind: value.annotationKind } : {}),
       ...(value.parent ? { parent: value.parent, tip: value.tip ?? 0 } : {}) } as Meta;
+  }
+  for (const [id, item] of Object.entries(result.meta)) {
+    if (item.parent) {
+      const parent = restoredIds.get(item.parent);
+      if (!parent || !result.meta[parent]) throw new Error('Una punta no tiene su trazo asociado. No se ha importado el registro.');
+      result.meta[id] = { ...item, parent };
+    }
+    if (item.graphicOnly) {
+      result.meta[id] = { ...result.meta[id], graphicOnly: true, dose: 0, plane: undefined, entry: undefined };
+    }
   }
   return { ...result, kinds: restoredKinds, centers: restoredCenters, quickRecord, illustrativePlanes };
 }

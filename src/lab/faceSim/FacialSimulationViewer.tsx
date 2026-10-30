@@ -17,9 +17,11 @@ import { refineDisplaySurface } from './displaySurface';
 import { buildMaskBacking, INITIAL_REVEAL, revealPlane, revealStage, type MaskReveal, type ReferenceKind } from './maskAnatomy';
 import { NEUTRAL_SKIN_COSMETICS, SKIN_COSMETIC_CONTROLS, type SkinCosmeticParameters } from './skinAppearance';
 import { composeSkinCosmeticTexture } from './skinSignalTexture';
+import { applySkinRegionRelief, type SkinReviewRegion } from './skinRegionReview';
+import { editorPanel } from './MarkingPanels';
 import {
   buildCutPlane, buildSimulationLayers, buildSimulationReferenceSurface, createSimulationMesh, deformPositions, meshBounds,
-  NEUTRAL_SIMULATION, SIMULATION_CONTROLS, SIMULATION_GROUPS, SIMULATION_LAYERS,
+  NEUTRAL_SIMULATION, SIMULATION_CONTROLS, SIMULATION_GROUPS, SIMULATION_LAYERS, vertexNormals,
   type LayerId, type SimulationCut, type SimulationMesh, type SimulationParameters,
 } from './simulation';
 const SkinSignalPanel = lazy(() => import('./SkinSignalPanel'));
@@ -57,6 +59,7 @@ interface ViewerState {
   hairPatches?: readonly PhotoHairPatch[];
   photoPatches?: readonly PhotoSurfacePatch[];
   skinTexture?: HTMLCanvasElement;
+  skinRegions: readonly SkinReviewRegion[];
   references: readonly AnatomicalReference[];
   anatomy: AnatomyPlane;
   referenceLayers: ReferenceSettings;
@@ -66,16 +69,25 @@ interface ViewerState {
   marks: readonly string[];
 }
 interface ViewerRuntime { update: (state: ViewerState) => void; dispose: () => void }
+interface PreparedSimulation {
+  mesh: SimulationMesh | null;
+  sourceMesh: SimulationMesh | null;
+  refinement: ReturnType<typeof refineDisplaySurface> | null;
+  error: string | null;
+}
+const EMPTY_PREPARED: PreparedSimulation = { mesh: null, sourceMesh: null, refinement: null, error: null };
+const EMPTY_SKIN_REGIONS: readonly SkinReviewRegion[] = [];
 
 const INITIAL_CUT: SimulationCut = { scope: 'none', axis: 'x', position: 0.5, reverse: false };
-const buttonClass = 'rounded-md border border-slate-600 px-2 py-1 text-xs text-slate-100 hover:bg-slate-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan-300 aria-pressed:border-cyan-300 aria-pressed:bg-cyan-950';
-const selectClass = 'rounded border border-slate-600 bg-slate-900 p-1 text-xs text-slate-100 focus-visible:outline-cyan-300';
+const buttonClass = 'min-h-9 rounded-lg border border-white/15 bg-black/20 px-2.5 py-1.5 text-xs text-stone-200 hover:border-gold/50 hover:bg-gold/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold aria-pressed:border-gold aria-pressed:bg-gold/20 aria-pressed:text-gold';
+const selectClass = 'min-h-9 rounded-lg border border-white/20 bg-stone-950 p-1.5 text-xs text-stone-100 focus-visible:outline-gold';
 const canonicalRegions = buildFaceRegionMap(
   Array.from({ length: 468 }, (_, i) => ({ x: atlas.positions[i * 3], y: -atlas.positions[i * 3 + 1] })),
   atlas.triangles, 1, atlas.positions,
 );
 const regionCells = buildRegionCells(canonicalRegions, buildFaceTriangleRegions(canonicalRegions, atlas.positions));
-const anatomyCells = buildRegionCells(canonicalRegions, buildFaceTriangleRegions(canonicalRegions, atlas.positions), 3);
+let anatomyCells: ReturnType<typeof buildRegionCells> | undefined;
+const getAnatomyCells = () => anatomyCells ??= buildRegionCells(canonicalRegions, buildFaceTriangleRegions(canonicalRegions, atlas.positions), 3);
 const genericReferenceUVs = buildCanonicalReferenceUVs(atlas.positions);
 
 function geometryFrom(data: ReturnType<typeof buildSimulationLayers>[number], mesh: SimulationMesh) {
@@ -114,6 +126,7 @@ function mountFacialSimulation(
   onError: (message: string) => void,
   onHover: (zone: string | null) => void,
   onSelect: (zone: string | null) => void,
+  onReady: () => void,
 ): ViewerRuntime {
   const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
   renderer.setClearColor('#0f172a');
@@ -160,6 +173,13 @@ function mountFacialSimulation(
   let disposed = false, failed = false, frame = 0;
   let state: ViewerState | undefined, previousView: View | undefined;
   let lastParameters: SimulationParameters | undefined;
+  let lastSkinRegions: readonly SkinReviewRegion[] | undefined;
+  let morphologyPositions = mesh.positions;
+  let morphologyNormals: Float32Array | undefined;
+  let deformedPositions = mesh.positions;
+  let referenceParameters: SimulationParameters | undefined;
+  let regionState: ViewerState | undefined;
+  let announcedReady = false;
   let viewportWidth = 1, viewportHeight = 1;
   const after = new THREE.Group(), before = new THREE.Group();
   scene.add(after, before);
@@ -389,9 +409,11 @@ function mountFacialSimulation(
         drawView(0, half, before); drawView(half, viewportWidth - half, after);
       } else drawView(0, viewportWidth, state.comparison === 'before' ? before : after);
       renderer.setScissorTest(false);
+      if (!announcedReady) { announcedReady = true; canvas.dataset.ready = 'true'; onReady(); }
       if (busy) requestRender();
-    } catch {
+    } catch (cause) {
       failed = true;
+      console.error('[FacialSimulationViewer] Render', cause);
       onError('No se pudo dibujar la escena 3D. Comprueba WebGL y vuelve a intentar.');
     }
   };
@@ -507,8 +529,23 @@ function mountFacialSimulation(
     update(next) {
       if (disposed || failed) return;
       state = next;
+      const parametersChanged = next.parameters !== lastParameters;
+      if (parametersChanged) {
+        morphologyPositions = deformPositions(mesh.positions, mesh.anchors, next.parameters);
+        morphologyNormals = undefined;
+      }
+      const geometryChanged = parametersChanged || next.skinRegions !== lastSkinRegions;
+      if (geometryChanged) {
+        const hasRelief = mesh.uvs && next.skinRegions.some(region => region.verified && region.adjustments.relief !== 0);
+        if (hasRelief && mesh.uvs) {
+          morphologyNormals ??= vertexNormals(morphologyPositions, mesh.indices);
+          deformedPositions = applySkinRegionRelief(morphologyPositions, mesh.uvs, next.skinRegions, morphologyNormals);
+        } else deformedPositions = morphologyPositions;
+      }
       const referencesChanged = previousReferences !== next.references;
-      if (referencesChanged || next.parameters !== lastParameters) {
+      const needsReferences = next.anatomy !== 'skin' || Boolean(revealStage(next.reveal))
+        || Object.values(next.referenceLayers).some(layer => layer.visible && layer.opacity > 0);
+      if (needsReferences && (referencesChanged || next.parameters !== referenceParameters)) {
         for (const object of [...referenceGroup.children]) {
           if (object instanceof THREE.Mesh) { object.geometry.dispose(); object.material.dispose(); }
           referenceGroup.remove(object);
@@ -517,7 +554,8 @@ function mountFacialSimulation(
         const liveCanvases = new Set(next.references.map(reference => reference.canvas));
         for (const [canvas, cached] of referenceTextures) if (!liveCanvases.has(canvas)) { cached.dispose(); referenceTextures.delete(canvas); }
         if (next.references.length) {
-          const { positions, indices: observedIndices } = buildSimulationReferenceSurface(mesh, next.parameters);
+          const positions = mesh.source === 'personal' ? morphologyPositions : deformPositions(mesh.anchors, mesh.anchors, next.parameters);
+          const observedIndices = mesh.source === 'personal' ? mesh.indices.slice(0, mesh.observedIndexCount ?? mesh.indices.length) : Uint32Array.from(atlas.triangles);
           const sourceReference = mesh.source === 'personal' ? buildSimulationReferenceSurface(sourceMesh, next.parameters) : null;
           next.references.forEach(reference => {
             let map = referenceTextures.get(reference.canvas);
@@ -556,18 +594,26 @@ function mountFacialSimulation(
           });
         }
         previousReferences = next.references;
+        referenceParameters = next.parameters;
       }
       if (previousSignal !== next.skinTexture) {
-        signalTexture?.dispose(); signalTexture = undefined;
         if (next.skinTexture) {
-          signalTexture = new THREE.CanvasTexture(next.skinTexture);
-          signalTexture.flipY = false; signalTexture.colorSpace = THREE.SRGBColorSpace;
-        }
+          if (signalTexture) { signalTexture.image = next.skinTexture; signalTexture.needsUpdate = true; }
+          else {
+            signalTexture = new THREE.CanvasTexture(next.skinTexture);
+            signalTexture.flipY = false; signalTexture.colorSpace = THREE.SRGBColorSpace;
+          }
+        } else { signalTexture?.dispose(); signalTexture = undefined; }
         const material = afterMeshes.get('skin')?.material[0];
-        if (material) { material.map = signalTexture ?? texture ?? null; material.needsUpdate = true; }
+        if (material) {
+          const map = signalTexture ?? texture ?? null;
+          if (Boolean(material.map) !== Boolean(map)) material.needsUpdate = true;
+          material.map = map;
+        }
         previousSignal = next.skinTexture;
       }
-      if (previousPhotoPatches !== next.photoPatches) {
+      const photoPatchesChanged = previousPhotoPatches !== next.photoPatches;
+      if (photoPatchesChanged) {
         for (const group of [photoGroup, beforePhotoGroup]) {
           for (const object of [...group.children]) {
             if (object instanceof THREE.Mesh) { object.geometry.dispose(); object.material.dispose(); }
@@ -608,33 +654,32 @@ function mountFacialSimulation(
           }
         });
         previousPhotoPatches = next.photoPatches;
-        lastParameters = undefined;
       }
-      if (next.parameters !== lastParameters) {
-        const geometries = buildSimulationLayers(mesh, next.parameters);
-        for (const data of geometries) {
-          const object = afterMeshes.get(data.id)!;
-          const old = object.geometry;
-          object.geometry = geometryFrom(data, mesh);
-          old.dispose();
-        }
-        const deformed = deformPositions(mesh.positions, mesh.anchors, next.parameters);
+      if (geometryChanged) {
+        const geometry = afterMeshes.get('skin')!.geometry;
+        (geometry.getAttribute('position').array as Float32Array).set(deformedPositions);
+        geometry.getAttribute('position').needsUpdate = true;
+        geometry.computeVertexNormals(); geometry.computeBoundingSphere();
+      }
+      if (geometryChanged || photoPatchesChanged) {
         for (const object of photoGroup.children) if (object instanceof THREE.Mesh) {
-          object.geometry.setAttribute('position', new THREE.BufferAttribute(deformed, 3));
+          (object.geometry.getAttribute('position').array as Float32Array).set(deformedPositions);
+          object.geometry.getAttribute('position').needsUpdate = true;
           object.geometry.computeBoundingSphere();
         }
       }
-      if (afterBacking && (next.parameters !== lastParameters || referencesChanged)) {
+      if (afterBacking && (geometryChanged || referencesChanged && needsReferences)) {
         const thickness = Math.max(0.11, ...next.references.map(reference => reference.depth + 0.025));
         afterBacking.geometry.dispose();
-        afterBacking.geometry = backingGeometry(deformPositions(mesh.positions, mesh.anchors, next.parameters), thickness);
+        afterBacking.geometry = backingGeometry(deformedPositions, thickness);
       }
-      {
+      if (next.showMesh && (!regionState || regionState.parameters !== next.parameters || regionState.anatomy !== next.anatomy
+        || regionState.plane !== next.plane || regionState.references !== next.references || regionState.marks !== next.marks)) {
         const referenceObject = referenceGroup.children.find(object => object.userData.kind === next.anatomy);
         const retained: Uint32Array | undefined = referenceObject?.userData.semanticIndices;
         const triangles = retained ? new Set(Array.from({ length: retained.length / 3 }, (_, i) =>
           triangleKey(retained[i * 3], retained[i * 3 + 1], retained[i * 3 + 2]))) : null;
-        activeCells = next.anatomy === 'skin' ? regionCells : anatomyCells.filter(cell => {
+        activeCells = next.anatomy === 'skin' ? regionCells : getAnatomyCells().filter(cell => {
           const ids = atlas.triangles.slice(cell.triangle * 3, cell.triangle * 3 + 3);
           return triangles?.has(triangleKey(ids[0], ids[1], ids[2])) ?? false;
         });
@@ -662,11 +707,13 @@ function mountFacialSimulation(
         regionGeometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
         regionGeometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
         regionGeometry.computeBoundingSphere();
-        const highlighted = next.selection ?? (pointerInside && previousAnatomy === next.anatomy ? selectedZone : null);
-        selectZone(highlighted, true);
-        previousAnatomy = next.anatomy;
+        regionState = next;
       }
+      const highlighted = next.showMesh ? next.selection ?? (pointerInside && previousAnatomy === next.anatomy ? selectedZone : null) : null;
+      selectZone(highlighted, next.showMesh && regionState === next);
+      previousAnatomy = next.anatomy;
       lastParameters = next.parameters;
+      lastSkinRegions = next.skinRegions;
       regionOverlay.visible = next.showMesh && next.comparison !== 'before';
       highlight.visible = regionOverlay.visible;
       if (previousHair !== next.hair || previousPatches !== next.hairPatches) {
@@ -751,6 +798,9 @@ export function FacialSimulationViewer({ surface, photo, showMesh, plane, onMesh
     if (window.matchMedia?.('(min-width: 1024px)').matches) editor.current?.scrollIntoView?.({ block: 'start', behavior: 'smooth' });
   }, []);
   const [tool, setTool] = useState<InspectorTool>('morphology');
+  const [skinOpened, setSkinOpened] = useState(false);
+  const [referenceEditorOpened, setReferenceEditorOpened] = useState(false);
+  const [skinReviewVersion, setSkinReviewVersion] = useState(0);
   const [parameters, setParameters] = useState<SimulationParameters>({ ...NEUTRAL_SIMULATION });
   const [symmetryDirection, setSymmetryDirection] = useState<1 | -1>(1);
   const [localDisplay, setLocalDisplay] = useState(initialAnatomyDisplay);
@@ -772,13 +822,14 @@ export function FacialSimulationViewer({ surface, photo, showMesh, plane, onMesh
   const [localPlane, setLocalPlane] = useState<RegionPlane>('superficial');
   const [hoveredZone, setHoveredZone] = useState<string | null>(null);
   const [signal, setSignal] = useState<{ source: HTMLCanvasElement; canvas: HTMLCanvasElement }>();
+  const [skinReview, setSkinReview] = useState<{ source: HTMLCanvasElement; regions: readonly SkinReviewRegion[] }>();
   const [cosmetics, setCosmetics] = useState<SkinCosmeticParameters>({ ...NEUTRAL_SKIN_COSMETICS });
   const [cosmeticTexture, setCosmeticTexture] = useState<{ source: HTMLCanvasElement; canvas: HTMLCanvasElement }>();
   const [cosmeticError, setCosmeticError] = useState<string | null>(null);
   const [cosmeticPending, setCosmeticPending] = useState(false);
   const referenceUVs = surface?.uvs ?? genericReferenceUVs;
   const [customReference, setCustomReference] = useState<{ uvs: Float32Array; reference: AnatomicalReference }>();
-  const [defaultReferences, setDefaultReferences] = useState<{ uvs: Float32Array; references: AnatomicalReference[] }>();
+  const [defaultReferences, setDefaultReferences] = useState<{ uvs: Float32Array; attempt: number; references: AnatomicalReference[] }>();
   const [reveal, setReveal] = useState<MaskReveal>({ ...INITIAL_REVEAL });
   useEffect(() => {
     if (anatomyDisplay && anatomyDisplay !== lastEmittedDisplay.current) {
@@ -789,16 +840,19 @@ export function FacialSimulationViewer({ surface, photo, showMesh, plane, onMesh
   const [marks, setMarks] = useState<string[]>([]);
   const [referenceError, setReferenceError] = useState<string | null>(null);
   const [referenceAttempt, setReferenceAttempt] = useState(0);
+  const needsReferences = anatomy !== 'skin' || tool === 'layers' || tool === 'cut'
+    || Object.values(referenceLayers).some(layer => layer.visible && layer.opacity > 0);
   useEffect(() => {
-    setDefaultReferences(undefined); setReferenceError(null); setSelection(null);
+    if (!needsReferences || defaultReferences?.uvs === referenceUVs && defaultReferences.attempt === referenceAttempt) return;
+    setReferenceError(null); setSelection(null);
     let live = true;
     loadDefaultLayers().then(layers => {
-      if (live) setDefaultReferences({ uvs: referenceUVs, references: registerLayers(layers, referenceUVs) });
+      if (live) setDefaultReferences({ uvs: referenceUVs, attempt: referenceAttempt, references: registerLayers(layers, referenceUVs) });
     }).catch(cause => {
       if (live) setReferenceError(cause instanceof Error ? cause.message : 'No se pudieron cargar las referencias anatómicas.');
     });
     return () => { live = false; };
-  }, [referenceUVs, referenceAttempt]);
+  }, [referenceUVs, referenceAttempt, needsReferences, defaultReferences]);
   const references = useMemo(() => {
     // No entrega UV de una superficie anterior al renderer mientras se registra la nueva.
     const defaults = defaultReferences?.uvs === referenceUVs ? defaultReferences.references : [];
@@ -819,35 +873,51 @@ export function FacialSimulationViewer({ surface, photo, showMesh, plane, onMesh
   }, [display, changeDisplay, referenceUVs]);
   const onSignalTexture = useCallback((canvas: HTMLCanvasElement | undefined) => {
     setSignal(photo && canvas ? { source: photo, canvas } : undefined);
+    setCosmetics(current => Object.values(current).some(value => value !== 0) ? { ...NEUTRAL_SKIN_COSMETICS } : current);
+    setCosmeticTexture(undefined);
   }, [photo]);
+  const onSkinRegions = useCallback((regions: readonly SkinReviewRegion[]) => {
+    setSkinReview(photo ? { source: photo, regions } : undefined);
+  }, [photo]);
+  const skinRegions = skinReview?.source === photo ? skinReview?.regions ?? EMPTY_SKIN_REGIONS : EMPTY_SKIN_REGIONS;
   const signalTexture = signal?.source === photo ? signal?.canvas : undefined;
   const skinTexture = signalTexture ?? (cosmeticTexture?.source === photo ? cosmeticTexture?.canvas : undefined);
   const signalLandmarks = useMemo(() => surface
     ? Array.from({ length: 468 }, (_, i) => ({ x: surface.uvs[i * 2], y: surface.uvs[i * 2 + 1] })) : undefined, [surface]);
   useEffect(() => {
-    setCosmeticTexture(undefined); setCosmeticError(null);
+    setCosmeticError(null);
     if (!photo || !signalLandmarks || Object.values(cosmetics).every(value => value === 0)) {
+      setCosmeticTexture(undefined);
       setCosmeticPending(false);
       return;
     }
     setCosmeticPending(true);
-    // Agrupa el arrastre: no lee píxeles ni recompone mapas por cada evento del slider.
-    const timer = window.setTimeout(() => {
+    const frame = requestAnimationFrame(() => {
       try { setCosmeticTexture({ source: photo, canvas: composeSkinCosmeticTexture(photo, signalLandmarks, cosmetics) }); }
-      catch { setCosmeticError('No se pudo retocar la foto. Comprueba la imagen y las referencias faciales; el original se conserva.'); }
+      catch (cause) { console.error('[FacialSimulationViewer] Retoque', cause); setCosmeticError('No se pudo retocar la foto. Comprueba la imagen y las referencias faciales; el original se conserva.'); }
       finally { setCosmeticPending(false); }
-    }, 160);
-    return () => window.clearTimeout(timer);
+    });
+    return () => cancelAnimationFrame(frame);
   }, [photo, signalLandmarks, cosmetics]);
   const activePlane = plane ?? localPlane, meshVisible = showMesh ?? localMesh;
-  const prepared = useMemo(() => {
-    try {
-      const base = createSimulationMesh(surface), refinement = refineDisplaySurface(base.positions, base.indices);
-      const mesh: SimulationMesh = { ...base, positions: refinement.positions, indices: refinement.indices,
-        uvs: base.uvs && refinement.attribute(base.uvs, 2),
-        observedIndexCount: base.observedIndexCount === undefined ? undefined : base.observedIndexCount * refinement.indexMultiplier };
-      return { mesh, sourceMesh: base, refinement, error: null };
-    } catch (cause) { return { mesh: null, sourceMesh: null, refinement: null, error: cause instanceof Error ? cause.message : 'Superficie no válida.' }; }
+  const [preparedState, setPreparedState] = useState<{ source: typeof surface; value: PreparedSimulation }>();
+  const prepared = preparedState && preparedState.source === surface ? preparedState.value : EMPTY_PREPARED;
+  useEffect(() => {
+    setReady(false);
+    // Dos frames permiten pintar el indicador antes del trabajo de geometría.
+    let frame = requestAnimationFrame(() => { frame = requestAnimationFrame(() => {
+      try {
+        const base = createSimulationMesh(surface), refinement = refineDisplaySurface(base.positions, base.indices);
+        const mesh: SimulationMesh = { ...base, positions: refinement.positions, indices: refinement.indices,
+          uvs: base.uvs && refinement.attribute(base.uvs, 2),
+          observedIndexCount: base.observedIndexCount === undefined ? undefined : base.observedIndexCount * refinement.indexMultiplier };
+        setPreparedState({ source: surface, value: { mesh, sourceMesh: base, refinement, error: null } });
+      } catch (cause) {
+        console.error('[FacialSimulationViewer] Geometría', cause);
+        setPreparedState({ source: surface, value: { ...EMPTY_PREPARED, error: cause instanceof Error ? cause.message : 'Superficie no válida.' } });
+      }
+    }); });
+    return () => cancelAnimationFrame(frame);
   }, [surface]);
   const displayReferences = useMemo(() => prepared.mesh?.source === 'personal' && prepared.refinement
     ? references.map(reference => ({ ...reference, uvs: prepared.refinement!.attribute(reference.uvs, 2) }))
@@ -861,35 +931,41 @@ export function FacialSimulationViewer({ surface, photo, showMesh, plane, onMesh
     alpha: patch.alpha && prepared.refinement!.attribute(patch.alpha, 1),
   })), [prepared, photoPatches]);
   const state = useMemo<ViewerState>(() => ({ parameters, layers, cut, view, comparison, showMesh: meshVisible, plane: activePlane, hair,
-    hairPatches: displayHair ?? undefined, photoPatches: displayPhotos ?? undefined, skinTexture, references: displayReferences, anatomy,
+    hairPatches: displayHair ?? undefined, photoPatches: displayPhotos ?? undefined, skinTexture, skinRegions, references: displayReferences, anatomy,
     referenceLayers, overlay, reveal, selection, marks }),
-    [parameters, layers, cut, view, comparison, meshVisible, activePlane, hair, displayHair, displayPhotos, skinTexture, displayReferences, anatomy, referenceLayers, overlay, reveal, selection, marks]);
+    [parameters, layers, cut, view, comparison, meshVisible, activePlane, hair, displayHair, displayPhotos, skinTexture, skinRegions, displayReferences, anatomy, referenceLayers, overlay, reveal, selection, marks]);
 
   useEffect(() => {
     setError(null); setReady(false);
     if (!host.current || !prepared.mesh || !prepared.sourceMesh) return;
     try {
-      runtime.current = mountFacialSimulation(host.current, prepared.mesh, prepared.sourceMesh, photo, message => { setError(message); setReady(false); }, setHoveredZone, setSelection);
-      setReady(true);
-    } catch {
+      runtime.current = mountFacialSimulation(host.current, prepared.mesh, prepared.sourceMesh, photo,
+        message => { setError(message); setReady(false); }, setHoveredZone, setSelection, () => setReady(true));
+    } catch (cause) {
+      console.error('[FacialSimulationViewer] Inicio', cause);
       setError('No se pudo iniciar WebGL. Comprueba la aceleración gráfica del navegador.');
     }
     return () => { runtime.current?.dispose(); runtime.current = null; };
   }, [prepared, photo, attempt]);
 
   useEffect(() => {
-    try { runtime.current?.update(state); }
-    catch { setError('No se pudo actualizar la simulación 3D. Reinicia el visor.'); setReady(false); }
+    const frame = requestAnimationFrame(() => {
+      try { runtime.current?.update(state); }
+      catch (cause) { console.error('[FacialSimulationViewer] Actualización', cause); setError('No se pudo actualizar la simulación 3D. Reinicia el visor.'); setReady(false); }
+    });
+    return () => cancelAnimationFrame(frame);
   }, [state, prepared, photo, attempt]);
 
   const reset = () => {
     setParameters({ ...NEUTRAL_SIMULATION }); setSymmetryDirection(1); changeDisplay(initialAnatomyDisplay());
     setCosmetics({ ...NEUTRAL_SKIN_COSMETICS }); setCosmeticTexture(undefined); setSignal(undefined);
+    setSkinReview(undefined);
+    setSkinReviewVersion(value => value + 1);
     setCut({ ...INITIAL_CUT }); setView('front'); setComparison('after');
     setReveal({ ...INITIAL_REVEAL }); setSelection(null); setMarks([]);
     if (onPlaneChange) onPlaneChange('superficial'); else setLocalPlane('superficial');
     setHoveredZone(null);
-    setAttempt(value => value + 1);
+    if (error) setAttempt(value => value + 1);
   };
   const failure = prepared.error || error;
   const chooseAnatomy = (kind: AnatomyPlane) => {
@@ -902,10 +978,10 @@ export function FacialSimulationViewer({ surface, photo, showMesh, plane, onMesh
   const stage = revealStage(reveal);
 
   return (
-    <section ref={editor} aria-labelledby={`${id}-title`} data-face-editor className="flex min-w-0 scroll-mt-2 flex-col gap-3 rounded-xl border border-slate-700 bg-slate-900 p-3 text-slate-100 lg:sticky lg:top-2 lg:h-[calc(100dvh-5rem)] lg:min-h-[560px]">
+    <section ref={editor} aria-labelledby={`${id}-title`} data-face-editor className={`${editorPanel} flex min-w-0 scroll-mt-2 flex-col gap-3 p-3 text-stone-100 lg:sticky lg:top-2 lg:h-[calc(100dvh-5rem)] lg:min-h-[560px]`}>
       <header className="flex shrink-0 flex-wrap items-start justify-between gap-2">
         <div>
-          <h2 id={`${id}-title`} className="text-sm font-semibold">Simulación morfológica 3D</h2>
+          <h2 id={`${id}-title`} className="text-sm font-semibold text-gold">Simulación morfológica 3D</h2>
           <p className="text-xs text-slate-300">Exploración visual · intensidades relativas, sin unidades clínicas.</p>
         </div>
         <button type="button" className={buttonClass} onClick={reset}>Restablecer todo</button>
@@ -925,7 +1001,7 @@ export function FacialSimulationViewer({ surface, photo, showMesh, plane, onMesh
       <div className="grid min-h-0 flex-1 gap-3 lg:grid-cols-[minmax(0,1fr)_18rem]">
         <div className="flex min-h-0 min-w-0 flex-col gap-2">
           <div className="relative min-h-64 flex-1 overflow-hidden rounded-lg border border-slate-700 bg-slate-950">
-            <div ref={host} data-simulation-viewport className="h-[46dvh] min-h-64 w-full lg:h-full" />
+            <div ref={host} data-simulation-viewport data-ready={ready} aria-busy={!ready && !failure} className="h-[46dvh] min-h-64 w-full lg:h-full" />
             {comparison === 'split' && !failure ? (
               <div aria-hidden="true" className="pointer-events-none absolute inset-0 grid grid-cols-2 text-center text-xs">
                 <span className="border-r border-slate-400/50 pt-2">Antes · original</span><span className="pt-2">Después · capas</span>
@@ -936,23 +1012,27 @@ export function FacialSimulationViewer({ surface, photo, showMesh, plane, onMesh
                 <p>{failure}</p>
                 {!prepared.error ? <button type="button" className={buttonClass} onClick={() => setAttempt(value => value + 1)}>Reintentar visor</button> : null}
               </div>
-            ) : !ready ? <p role="status" className="absolute inset-x-0 top-6 text-center text-sm">Preparando visor 3D…</p> : null}
+            ) : !ready ? <div role="status" aria-live="polite" className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-stone-950/90 p-6 text-center text-sm">
+              <span aria-hidden="true" className="h-9 w-9 animate-spin rounded-full border-2 border-gold/20 border-t-gold motion-reduce:animate-none" />
+              <strong className="text-gold">{prepared.mesh ? 'Preparando primer render…' : 'Preparando geometría 3D…'}</strong>
+              <span className="text-xs text-stone-400">El indicador desaparece cuando el modelo se ha dibujado.</span>
+            </div> : null}
           </div>
-          <p role="status" className="min-h-5 truncate text-xs font-semibold text-sky-200">{hoveredZone ? `${selection ? 'Selección fija' : 'Zona de referencia'}: ${hoveredZone}` : meshVisible ? 'Cursor resalta · clic fija la zona ilustrativa' : prepared.mesh?.source === 'personal' ? 'Máscara facial aproximada' : 'Cabeza genérica de referencia'}</p>
+          <p role="status" className="min-h-5 truncate text-xs font-semibold text-gold">{hoveredZone ? `${selection ? 'Selección fija' : 'Zona de referencia'}: ${hoveredZone}` : meshVisible ? 'Cursor resalta · clic fija la zona ilustrativa' : prepared.mesh?.source === 'personal' ? 'Máscara facial aproximada' : 'Cabeza genérica de referencia'}</p>
           {referenceError ? <div role="alert" className="text-xs text-amber-200">
             <p>{referenceError}</p><button type="button" className={buttonClass} onClick={() => setReferenceAttempt(value => value + 1)}>Reintentar referencias</button>
-          </div> : !references.length || anatomy !== 'skin' && !references.some(reference => reference.kind === anatomy)
+          </div> : needsReferences && (!references.length || anatomy !== 'skin' && !references.some(reference => reference.kind === anatomy))
             ? <p role="status" className="text-xs text-slate-300">Preparando referencias ilustrativas sobre {surface ? 'la superficie facial' : 'el modelo genérico'}…</p> : null}
           <p id={`${id}-help`} className="text-[11px] text-slate-400">Arrastra o usa las flechas para girar · rueda, pinza o +/− para zoom. «Antes» conserva el original.</p>
           <details className="shrink-0 text-xs text-slate-400"><summary className="cursor-pointer rounded focus-visible:outline focus-visible:outline-cyan-300">Límites · no es un escaneo ni una predicción clínica</summary>
             <p className="max-h-24 overflow-y-auto py-2">La máscara conserva una profundidad aproximada. El reverso es un cierre mate, no una cabeza reconstruida. Músculos, arterias y huesos son ilustraciones genéricas: sus zonas están autoradas sobre las imágenes, no detectadas en el paciente. Corte y separación son visuales, no espesores anatómicos ni planos de inyección. No predice tratamientos ni diagnostica lesiones.</p>
           </details>
         </div>
-        <aside aria-label="Inspector de simulación" className="flex min-h-0 min-w-0 flex-col rounded-lg border border-slate-700 bg-slate-950/40">
+        <aside aria-label="Inspector de simulación" className="flex min-h-0 min-w-0 flex-col rounded-xl border border-white/10 bg-black/30">
           <nav aria-label="Herramientas de simulación" className="grid shrink-0 grid-cols-2 gap-1 border-b border-slate-700 p-2">
             {([['morphology', 'Morfología'], ['skin', 'Piel'], ['layers', 'Capas'], ['cut', 'Corte']] as const).map(([key, label]) =>
               <button type="button" key={key} aria-pressed={tool === key} aria-controls={`${id}-tool-${key}`}
-                className={`${buttonClass} min-h-10`} onClick={() => { setTool(key); inspector.current?.scrollTo({ top: 0 }); }}>{label}</button>)}
+                className={`${buttonClass} min-h-10`} onClick={() => { setTool(key); if (key === 'skin') setSkinOpened(true); inspector.current?.scrollTo({ top: 0 }); }}>{label}</button>)}
           </nav>
           <div ref={inspector} data-simulation-inspector className="max-h-[48dvh] min-h-0 space-y-3 overflow-y-auto overscroll-contain p-3 lg:max-h-none lg:flex-1" aria-describedby={`${id}-help`}>
           <div id={`${id}-tool-morphology`} hidden={tool !== 'morphology'} className="space-y-3">
@@ -966,7 +1046,7 @@ export function FacialSimulationViewer({ surface, photo, showMesh, plane, onMesh
                   <input id={`${id}-${control.key}`} type="range" min="-1" max="1" step="0.01" value={parameters[control.key]}
                     aria-valuetext={`${Math.round(parameters[control.key] * 100)} por ciento de intensidad visual`}
                     onChange={event => setParameters(current => ({ ...current, [control.key]: Number(event.target.value) }))}
-                    className="mt-1 block w-full accent-cyan-400 focus-visible:outline-cyan-300" />
+                    className="mt-1 block w-full accent-gold focus-visible:outline-gold" />
                 </label>
               ))}
               {group === 'Nariz' ? <div className="space-y-2 border-t border-slate-700 pt-2">
@@ -985,7 +1065,7 @@ export function FacialSimulationViewer({ surface, photo, showMesh, plane, onMesh
                 <label className="block text-xs">Intensidad de simetría nasal · {Math.round(Math.abs(parameters.noseSymmetry) * 100)} %
                   <input type="range" min="0" max="1" step="0.01" value={Math.abs(parameters.noseSymmetry)}
                     onChange={event => setParameters(current => ({ ...current, noseSymmetry: Number(event.target.value) * symmetryDirection }))}
-                    className="block w-full accent-cyan-400 focus-visible:outline-cyan-300" />
+                    className="block w-full accent-gold focus-visible:outline-gold" />
                 </label>
                 <div className="flex flex-wrap gap-1">
                   <button type="button" className={buttonClass} onClick={() => setParameters(current => ({ ...current, noseSymmetry: symmetryDirection }))}>Replicar mitad (100 %)</button>
@@ -1000,7 +1080,12 @@ export function FacialSimulationViewer({ surface, photo, showMesh, plane, onMesh
           ))}
           </div>
           <div id={`${id}-tool-skin`} hidden={tool !== 'skin'} className="space-y-3">
-              <fieldset disabled={!photo || !surface} aria-describedby={`${id}-cosmetic-help`} className="space-y-3 rounded-lg border border-slate-700 p-2 disabled:opacity-50">
+              {skinOpened && photo && surface ? <Suspense fallback={<p role="status" className="text-xs text-gold">Preparando revisión por zonas…</p>}>
+                <SkinSignalPanel key={skinReviewVersion} canvas={photo} landmarks={signalLandmarks} onTexture={onSignalTexture} onRegionsChange={onSkinRegions} />
+              </Suspense> : !photo || !surface ? <p className="text-xs text-amber-200">La revisión por zonas necesita una foto con referencias faciales válidas.</p> : null}
+              <details className="rounded-lg border border-white/15 p-2 text-sm">
+                <summary className="cursor-pointer text-gold">Retoque global de la piel</summary>
+              <fieldset disabled={!photo || !surface || !!signalTexture} aria-describedby={`${id}-cosmetic-help`} className="space-y-3 rounded-lg border border-slate-700 p-2 disabled:opacity-50">
                 <legend className="px-1 text-xs font-semibold">Retoque cosmético visual · piel</legend>
                 <p id={`${id}-cosmetic-help`} className="text-[11px] text-slate-300">
                   Retoque local de la cara, no del cabello ni del cuello. Intensidad visual, no eficacia clínica; los candidatos RGB se revisan aparte y no identifican lesiones ni eliminan pliegues 3D.
@@ -1012,22 +1097,17 @@ export function FacialSimulationViewer({ surface, photo, showMesh, plane, onMesh
                     <input id={`${id}-cosmetic-${control.key}`} type="range" min={control.min} max="1" step="0.01" value={cosmetics[control.key]}
                       aria-valuetext={`${Math.round(cosmetics[control.key] * 100)} de intensidad visual, no eficacia clínica`}
                       onChange={event => setCosmetics(current => ({ ...current, [control.key]: Number(event.target.value) }))}
-                      className="mt-1 block w-full accent-cyan-400 focus-visible:outline-cyan-300" />
+                      className="mt-1 block w-full accent-gold focus-visible:outline-gold" />
                   </label>
                 ))}
                 <button type="button" className={buttonClass} onClick={() => setCosmetics({ ...NEUTRAL_SKIN_COSMETICS })}>Restablecer piel</button>
                 <p role="status" className="text-[11px] text-slate-300">
-                  {signalTexture ? 'El resaltado RGB tiene prioridad; vuelve a «Original» en los filtros para ver el retoque.'
+                  {signalTexture ? 'La revisión por zonas o el análisis RGB tiene prioridad. Restablece ese resultado antes de usar el retoque global.'
                     : cosmeticPending ? 'Preparando retoque local…' : '«Antes» conserva la foto original. Retoque local hasta 768 px; no recupera detalle ausente.'}
                 </p>
                 {cosmeticError ? <p role="alert" className="text-xs text-amber-200">{cosmeticError}</p> : null}
               </fieldset>
-              {photo && surface && <details className="rounded-lg border border-slate-600 p-2 text-sm">
-                <summary className="cursor-pointer">Señales visuales de piel · RGB</summary>
-                <Suspense fallback={<p role="status">Preparando filtros…</p>}>
-                  <SkinSignalPanel canvas={photo} landmarks={signalLandmarks} onTexture={onSignalTexture} />
-                </Suspense>
-              </details>}
+              </details>
           </div>
           <div id={`${id}-tool-layers`} hidden={tool !== 'layers'} className="space-y-3">
             <AnatomyLayerControls value={display} showMesh={meshVisible}
@@ -1068,11 +1148,13 @@ export function FacialSimulationViewer({ surface, photo, showMesh, plane, onMesh
               </li>)}</ul>
               <p className="text-[11px] text-slate-400">Cursor resalta; clic fija. Estos resaltados no son marcas de inyección y permanecen solo en este visor. Las posiciones vasculares reales varían.</p>
             </fieldset>
-            {surface && <details className="rounded-lg border border-slate-600 p-2 text-sm">
+            {surface && <details className="rounded-lg border border-slate-600 p-2 text-sm" onToggle={event => {
+              if (event.currentTarget.open) setReferenceEditorOpened(true);
+            }}>
               <summary className="cursor-pointer">Reemplazar capa · imagen propia</summary>
-              <Suspense fallback={<p role="status">Preparando alineación…</p>}>
+              {referenceEditorOpened && <Suspense fallback={<p role="status">Preparando alineación…</p>}>
                 <AnatomicalReferencePanel surfaceUVs={surface.uvs} onChange={onReference} />
-              </Suspense>
+              </Suspense>}
             </details>}
           </div>
           <div id={`${id}-tool-cut`} hidden={tool !== 'cut'}>

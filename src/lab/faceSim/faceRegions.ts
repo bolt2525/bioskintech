@@ -65,6 +65,8 @@ export const FACE_REGION_BOUNDARIES = {
   nose: [168, 193, 122, 196, 3, 51, 45, 220, 115, 48, 64, 98, 97, 2, 326, 327, 294, 278, 344, 440, 275, 281, 248, 419, 351, 417],
   leftEye: [247, 30, 29, 27, 28, 56, 190, 243, 112, 26, 22, 23, 24, 110, 25, 130],
   rightEye: [467, 260, 259, 257, 258, 286, 414, 463, 341, 256, 252, 253, 254, 339, 255, 359],
+  leftUnderEye: [130, 25, 110, 24, 23, 22, 26, 112, 232, 121, 120, 119, 118, 117, 31, 226],
+  rightUnderEye: [359, 255, 339, 254, 253, 252, 256, 341, 452, 350, 349, 348, 347, 346, 261, 446],
 } as const;
 
 /** Una etiqueta por cara, compartida por color y hover en foto/atlas/superficie. */
@@ -100,7 +102,9 @@ export function buildFaceTriangleRegions(map: FaceRegionMap, positions: readonly
   const nose = enclosed(FACE_REGION_BOUNDARIES.nose, [6, 122, 168]);
   const leftEye = enclosed(FACE_REGION_BOUNDARIES.leftEye, [33, 246, 247]);
   const rightEye = enclosed(FACE_REGION_BOUNDARIES.rightEye, [263, 467, 466]);
-  const protectedZones = new Set(['Labio superior', 'Labio inferior', 'Comisuras', 'Dorso nasal', 'Contorno ocular (revisar)']);
+  const leftUnderEye = enclosed(FACE_REGION_BOUNDARIES.leftUnderEye, [121, 232, 120]);
+  const rightUnderEye = enclosed(FACE_REGION_BOUNDARIES.rightUnderEye, [350, 452, 349]);
+  const protectedZones = new Set(['Labio superior', 'Labio inferior', 'Comisuras', 'Dorso nasal', 'Contorno ocular (revisar)', 'Ojeras']);
   const surroundingSeeds = FACE_REGION_SEEDS.filter(entry => !protectedZones.has(entry.zone));
   return faces.map((face, i) => {
     if ((upper.has(i) || lower.has(i)) && face.some(id => [61, 78, 291, 308].includes(id))) return 'Comisuras';
@@ -108,6 +112,7 @@ export function buildFaceTriangleRegions(map: FaceRegionMap, positions: readonly
     if (lower.has(i)) return 'Labio inferior';
     if (nose.has(i)) return 'Dorso nasal';
     if (leftEye.has(i) || rightEye.has(i)) return 'Contorno ocular (revisar)';
+    if (leftUnderEye.has(i) || rightUnderEye.has(i)) return 'Ojeras';
     const surrounding = face.filter(id => !protectedZones.has(map.labels[id]));
     if (surrounding.length) return faceTriangleZone(surrounding, map.labels);
     // Los vértices del borde pueden pertenecer todos al labio/nariz, pero no la cara exterior.

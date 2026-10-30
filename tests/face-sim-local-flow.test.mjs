@@ -226,6 +226,7 @@ test('foto: Capturas no marca; punto, arrastre, trazo, cancelación y undo usan 
   photo().props.onPointerDown(event(205)); ui.render(); photo().props.onPointerUp(); ui.render();
   assert.equal(Object.keys(ui.get('bindings')).length, 1);
   const id = Object.keys(ui.get('bindings'))[0], before = ui.get('markers')[0].position;
+  ui.button('Seleccionar sin dibujar').props.onClick(); ui.render();
   photo().props.onPointerDown(event(205)); ui.render();
   photo().props.onPointerMove(event(50)); ui.render(); photo().props.onPointerUp(); ui.render();
   assert.notDeepEqual(ui.get('markers')[0].position, before);

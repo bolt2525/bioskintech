@@ -100,33 +100,52 @@ function find(tree, predicate) {
 const text = tree => Array.isArray(tree) ? tree.map(text).join('')
   : tree && typeof tree === 'object' ? text(tree.props?.children) : String(tree ?? '');
 
-function panel(canvas = image(), points) {
-  const states = [], refs = [], effects = [], timers = new Map(), calls = [], analyzedSizes = [];
-  let stateCursor = 0, refCursor = 0, effectCursor = 0, dirty = false, timerId = 0, analyses = 0;
+function panel(canvas = image(), points, { advanced = true } = {}) {
+  const fibers = new Map(), timers = new Map(), calls = [], analyzedSizes = [];
+  let activeFiber, dirty = false, timerId = 0, analyses = 0;
   let props = { canvas, landmarks: points, onTexture: value => calls.push(value) };
   let tree;
   globalThis.document = { createElement: tag => { assert.equal(tag, 'canvas'); return new MemoryCanvas(); } };
   const hooks = {
     ...React,
     useState(initial) {
-      const i = stateCursor++;
-      if (!(i in states)) states[i] = typeof initial === 'function' ? initial() : initial;
-      return [states[i], next => {
-        const value = typeof next === 'function' ? next(states[i]) : next;
-        if (!Object.is(value, states[i])) { states[i] = value; dirty = true; }
+      const fiber = activeFiber, i = fiber.stateCursor++;
+      if (!(i in fiber.states)) fiber.states[i] = typeof initial === 'function' ? initial() : initial;
+      return [fiber.states[i], next => {
+        const value = typeof next === 'function' ? next(fiber.states[i]) : next;
+        if (!Object.is(value, fiber.states[i])) { fiber.states[i] = value; dirty = true; }
       }];
     },
     useRef(initial) {
-      const i = refCursor++;
-      if (!(i in refs)) refs[i] = { current: initial };
-      return refs[i];
+      const fiber = activeFiber, i = fiber.refCursor++;
+      if (!(i in fiber.refs)) fiber.refs[i] = { current: initial };
+      return fiber.refs[i];
     },
     useEffect(fn, deps) {
-      const i = effectCursor++, previous = effects[i];
+      const fiber = activeFiber, i = fiber.effectCursor++, previous = fiber.effects[i];
       if (!previous || deps.some((dep, j) => !Object.is(dep, previous.deps[j]))) {
-        effects[i] = { deps, fn, cleanup: previous?.cleanup, pending: true };
+        fiber.effects[i] = { deps, fn, cleanup: previous?.cleanup, pending: true };
       }
     },
+  };
+  const renderComponent = (component, componentProps) => {
+    let fiber = fibers.get(component);
+    if (!fiber) {
+      fiber = { states: [], refs: [], effects: [] };
+      fibers.set(component, fiber);
+    }
+    fiber.stateCursor = 0; fiber.refCursor = 0; fiber.effectCursor = 0;
+    activeFiber = fiber;
+    const result = component(componentProps);
+    activeFiber = undefined;
+    return result;
+  };
+  const resolveTree = node => {
+    if (!node || typeof node !== 'object') return node;
+    if (Array.isArray(node)) return node.map(resolveTree);
+    if (typeof node.type === 'function') return resolveTree(renderComponent(node.type, node.props));
+    if (node.props?.children) return { ...node, props: { ...node.props, children: resolveTree(node.props.children) } };
+    return node;
   };
   const exports = {};
   vm.runInNewContext(code, {
@@ -135,6 +154,7 @@ function panel(canvas = image(), points) {
     clearTimeout: id => timers.delete(id),
     require: name => {
       if (name === 'react') return hooks;
+      if (name === './SkinRegionEditor') return { default: () => null };
       if (name === './skinAppearance') return appearance;
       if (name === './skinSignalTexture') return {
         ...texture,
@@ -143,7 +163,7 @@ function panel(canvas = image(), points) {
           return texture.analyzeSkinSignalCanvas(...args);
         },
       };
-      if (name.endsWith('/Tooltip')) return { Tooltip: ({ children }) => children };
+      if (name.endsWith('/Tooltip')) return { Tooltip: 'tooltip' };
       return require(name);
     },
   });
@@ -151,16 +171,16 @@ function panel(canvas = image(), points) {
     let turns = 0;
     do {
       assert.ok(++turns < 25, 'sin bucle de efectos');
-      dirty = false; stateCursor = 0; refCursor = 0; effectCursor = 0;
-      tree = exports.default(props);
+      dirty = false;
+      tree = resolveTree(renderComponent(exports.default, props));
       for (const node of find(tree, n => n.type === 'canvas')) node.ref.current ??= new MemoryCanvas();
-      for (const effect of effects) if (effect.pending) {
+      for (const fiber of fibers.values()) for (const effect of fiber.effects) if (effect.pending) {
         effect.pending = false; effect.cleanup?.(); effect.cleanup = effect.fn();
       }
     } while (dirty);
     return tree;
   };
-  return {
+  const app = {
     calls, render, timers, analyzedSizes,
     get analyses() { return analyses; },
     update(next) { props = { ...props, ...next }; return render(); },
@@ -169,8 +189,14 @@ function panel(canvas = image(), points) {
     resolution(value) { this.control('skin-signal-resolution').props.onChange({ target: { value: String(value) } }); return render(); },
     confirm() { find(render(), n => n.type === 'input' && n.props.type === 'checkbox')[0].props.onChange({ target: { checked: true } }); return render(); },
     flush() { for (const [id, fn] of [...timers]) { timers.delete(id); fn(); } return render(); },
-    unmount() { effects.forEach(effect => effect.cleanup?.()); },
+    unmount() { for (const fiber of fibers.values()) for (const effect of fiber.effects) effect.cleanup?.(); },
   };
+  if (advanced) {
+    const button = find(render(), node => node.type === 'button' && text(node).includes('Análisis RGB avanzado'))[0];
+    button.props.onClick();
+    render();
+  }
+  return app;
 }
 
 test.afterEach(() => { delete globalThis.document; });

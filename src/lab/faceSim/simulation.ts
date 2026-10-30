@@ -377,6 +377,15 @@ export function deformPositions(
   const result = Float32Array.from(original);
   const nasal = params.noseSymmetry ? nasalSymmetryDeltas(anchors, params.noseSymmetry) : null;
   const symmetry = nasal?.deltas, count = original.length / 3;
+  const radius = h * 0.075;
+  // Fuera de este soporte todos los vecinos tienen máscara y delta nasales cero.
+  const nasalSupport = { left: Infinity, right: -Infinity, bottom: Infinity, top: -Infinity, back: Infinity, front: -Infinity };
+  if (nasal) for (let i = 0; i < 468; i++) if (nasal.masks[i] > 0) {
+    const p = point(anchors, i);
+    nasalSupport.left = Math.min(nasalSupport.left, p.x - radius); nasalSupport.right = Math.max(nasalSupport.right, p.x + radius);
+    nasalSupport.bottom = Math.min(nasalSupport.bottom, p.y - radius); nasalSupport.top = Math.max(nasalSupport.top, p.y + radius);
+    nasalSupport.back = Math.min(nasalSupport.back, p.z - radius); nasalSupport.front = Math.max(nasalSupport.front, p.z + radius);
+  }
   const vertexMask = new Float32Array(nasal ? count : 0), vertexSide = new Float32Array(vertexMask.length);
   const dense = new Uint8Array(vertexMask.length);
   for (let i = 0; i < original.length / 3; i++) {
@@ -395,10 +404,11 @@ export function deformPositions(
       if (i < 468 && p.x === anchors[i * 3] && p.y === anchors[i * 3 + 1] && p.z === anchors[i * 3 + 2]) {
         for (let axis = 0; axis < 3; axis++) result[i * 3 + axis] += symmetry[i * 3 + axis];
         vertexMask[i] = nasal!.masks[i]; vertexSide[i] = nasal!.sides[i];
-      } else {
+      } else if (p.x >= nasalSupport.left && p.x <= nasalSupport.right && p.y >= nasalSupport.bottom
+        && p.y <= nasalSupport.top && p.z >= nasalSupport.back && p.z <= nasalSupport.front) {
         // Extensión continua a superficies densas. Los vecinos con delta cero fijan el borde.
         let weight = 0, mask = 0, side = 0;
-        const delta = [0, 0, 0], radius = h * 0.075;
+        const delta = [0, 0, 0];
         for (let j = 0; j < 468; j++) {
           const q = point(anchors, j), distance = Math.hypot(p.x - q.x, p.y - q.y, p.z - q.z);
           if (distance >= radius) continue;

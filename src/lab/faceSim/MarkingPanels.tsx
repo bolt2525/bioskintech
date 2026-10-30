@@ -10,6 +10,8 @@ const MODES = Object.keys(SIM_MODES) as SimMode[];
 const glow = (color: string): CSSProperties => ({ boxShadow: `0 0 0 1px ${color}aa, 0 0 18px -6px ${color}` });
 const SIDE: Record<LedgerRow['side'], [string, string]> = { derecho: ['D', 'Derecho del paciente'], izquierdo: ['I', 'Izquierdo del paciente'], central: ['C', 'Línea media'] };
 const THIRDS: [LedgerThird, string][] = [['superior', 'Superior'], ['medio', 'Medio'], ['inferior', 'Inferior'], ['extendida', 'Extendida']];
+interface LedgerPatternGroup { label: string; rows: LedgerRow[] }
+interface LedgerVialGroup { mode: SimMode; product: string; loose: LedgerRow[]; patterns: Map<string, LedgerPatternGroup> }
 /** Superficies del editor: carbón cálido + acento dorado BIOSKIN (mismo lenguaje que Fichas clínicas). */
 export const editorPanel = 'rounded-2xl border border-gold/15 bg-stone-950 text-stone-100 shadow-[0_18px_40px_-28px_rgba(0,0,0,0.9)]';
 export const hudChip = 'inline-flex min-h-8 items-center gap-1.5 whitespace-nowrap rounded-full border border-white/10 bg-stone-900/85 px-3 text-xs font-semibold text-stone-100 backdrop-blur';
@@ -192,32 +194,37 @@ export interface DoseTarget { id: string; label: string }
  * Volumen tras marcar. Con varias puntas (patrón, bilateral) permite la misma dosis para todas
  * o una dosis individual por punta; el total se calcula en vivo.
  */
-export function VolumeDialog({ open, mode, count, place, initialDose, targets, technique, onSave, onDiscard }: {
+export function VolumeDialog({ open, mode, count, place, initialDose, targets, technique, allowWithoutPoints = false, initialWithPoints = true, onSave, onDiscard }: {
   open: boolean; mode: SimMode; count: number; place: string; initialDose: number;
-  targets?: DoseTarget[]; technique?: string;
-  onSave: (dose: number, plane: string, perTarget?: Record<string, number>) => void; onDiscard: () => void;
+  targets?: DoseTarget[]; technique?: string; allowWithoutPoints?: boolean; initialWithPoints?: boolean;
+  onSave: (dose: number, plane: string, perTarget?: Record<string, number>, withPoints?: boolean) => void; onDiscard: () => void;
 }) {
   const ref = useRef<HTMLDialogElement>(null), titleId = useId();
   const [dose, setDose] = useState(String(initialDose || ''));
   const [plane, setPlane] = useState('');
   const [individual, setIndividual] = useState(false);
   const [each, setEach] = useState<Record<string, string>>({});
+  const [withPoints, setWithPoints] = useState(initialWithPoints);
   useEffect(() => {
     const dialog = ref.current; if (!dialog) return;
-    if (open && !dialog.open) { setDose(initialDose ? String(initialDose) : ''); setPlane(''); setIndividual(false); setEach({}); dialog.showModal(); }
+    if (open && !dialog.open) { setDose(initialDose ? String(initialDose) : ''); setPlane(''); setIndividual(false); setEach({}); setWithPoints(initialWithPoints); dialog.showModal(); }
     if (!open && dialog.open) dialog.close();
-  }, [open, initialDose]);
+  }, [open, initialDose, initialWithPoints]);
+  const recording = !allowWithoutPoints || withPoints;
   const { unit, color, label } = SIM_MODES[mode], Icon = MODE_ICONS[mode];
   const value = Number(dose), validShared = dose !== '' && Number.isFinite(value) && value >= 0;
   const list = targets ?? [], perTarget = list.length > 1 && individual;
   const parsed = Object.fromEntries(list.map(t => [t.id, Number(each[t.id] ?? dose)]));
   const validEach = list.every(t => { const raw = each[t.id] ?? dose, v = Number(raw); return raw !== '' && Number.isFinite(v) && v >= 0; });
-  const valid = perTarget ? validEach : validShared;
+  const valid = !recording || (perTarget ? validEach : validShared);
   const total = perTarget ? Object.values(parsed).reduce((s, v) => s + (Number.isFinite(v) ? v : 0), 0) : (validShared ? value : 0) * count;
   return (
     <dialog ref={ref} aria-labelledby={titleId} onCancel={e => { e.preventDefault(); onDiscard(); }}
       className="w-[min(94vw,440px)] rounded-2xl border border-gold/20 bg-stone-950 p-0 text-stone-100 shadow-2xl backdrop:bg-black/70 backdrop:backdrop-blur-sm">
-      <form method="dialog" className="max-h-[85dvh] space-y-4 overflow-y-auto p-4" onSubmit={e => { e.preventDefault(); if (valid) onSave(value, plane, perTarget ? parsed : undefined); }}>
+      <form method="dialog" className="max-h-[85dvh] space-y-4 overflow-y-auto overscroll-contain p-4" onSubmit={e => {
+        e.preventDefault();
+        if (valid) onSave(recording ? value : 0, recording ? plane : '', recording && perTarget ? parsed : undefined, recording);
+      }}>
         <header className="flex items-center gap-3">
           <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl" style={{ background: `${color}2e`, color, ...glow(color) }}><Icon className="h-5 w-5" aria-hidden="true" /></span>
           <div className="min-w-0">
@@ -225,8 +232,15 @@ export function VolumeDialog({ open, mode, count, place, initialDose, targets, t
             <p className="break-words text-xs text-stone-400">{technique ? `${technique} · ` : ''}{place}{count > 1 ? ` · ${count} ${technique ? 'puntas' : 'puntos'}` : ''}</p>
           </div>
         </header>
-        {technique && <p className="rounded-xl border border-white/5 bg-black/30 p-2 text-[11px] leading-snug text-stone-400">
+        {allowWithoutPoints && <label className="flex min-h-10 cursor-pointer items-center gap-2 text-sm font-semibold">
+          <input type="checkbox" checked={withPoints} onChange={e => setWithPoints(e.target.checked)} className="h-4 w-4 accent-gold" />
+          Crear puntos de registro
+        </label>}
+        {!recording && <p role="status" className="text-xs text-stone-300">Se guardará solo el gráfico, sin dosis ni plano.</p>}
+        {recording && technique && <p className="rounded-xl border border-white/5 bg-black/30 p-2 text-[11px] leading-snug text-stone-400">
           La entrada del trazo es la entrada de aguja y define la zona; la dosis se deposita en cada punta.</p>}
+        <fieldset disabled={!recording} className="min-w-0 space-y-4 disabled:opacity-40">
+          <legend className="sr-only">Dosis y plano de los puntos de registro</legend>
         {list.length > 1 && <div role="radiogroup" aria-label="Reparto de dosis" className="grid grid-cols-2 gap-1 rounded-xl bg-black/40 p-1">
           {([[false, 'Igual en todas'], [true, 'Individual']] as const).map(([v, text]) => <button key={text} type="button" role="radio" aria-checked={individual === v}
             onClick={() => setIndividual(v)} className="admin-focus-ring min-h-9 rounded-lg text-xs font-bold text-stone-300 aria-checked:bg-gold aria-checked:text-stone-950">{text}</button>)}
@@ -250,7 +264,8 @@ export function VolumeDialog({ open, mode, count, place, initialDose, targets, t
             {INJECTION_PLANES[mode].map(p => <option key={p}>{p}</option>)}
           </select>
         </label>
-        {count > 1 && <p role="status" className="flex items-center justify-between rounded-xl border border-white/5 bg-black/30 px-3 py-2 text-xs text-stone-300">
+        </fieldset>
+        {recording && count > 1 && <p role="status" className="flex items-center justify-between rounded-xl border border-white/5 bg-black/30 px-3 py-2 text-xs text-stone-300">
           Total de esta marca <b className="text-base tabular-nums" style={{ color }}>{unitLabel(mode, total)}</b></p>}
         <div className="flex gap-2">
           <button type="button" onClick={onDiscard} className="admin-focus-ring min-h-11 flex-1 rounded-xl border border-white/10 text-sm font-semibold text-stone-300">Descartar</button>
@@ -349,21 +364,38 @@ export function PatternSetupDialog({ open, kind, config, color, onKind, onConfir
   );
 }
 
-export function VolumeHud({ totals }: { totals: VolumeTotal[] }) {
+export function VolumeHud({ totals, activeMode, activeProduct, onSelect }: {
+  totals: VolumeTotal[]; activeMode?: SimMode; activeProduct?: string; onSelect?: (mode: SimMode, product: string) => void;
+}) {
   if (!totals.length) return null;
   return <ul aria-label="Volumen acumulado" className="flex flex-wrap gap-1.5">
-    {totals.map(t => <li key={t.key} className={hudChip} style={{ borderColor: `${SIM_MODES[t.mode].color}80` }}
-      title={`${t.points} punto(s)${t.pending ? ` · ${t.pending} sin volumen` : ''}`}>
-      <span aria-hidden="true" className="h-2 w-2 rounded-full" style={{ background: SIM_MODES[t.mode].color }} />
-      {t.product || SIM_MODES[t.mode].label}
-      <b className="tabular-nums" style={{ color: SIM_MODES[t.mode].color }}>{formatVolume(t.total)} {SIM_MODES[t.mode].unit}</b>
-      <span className="text-stone-400">· {t.points} pt{t.pending ? ` · ${t.pending}!` : ''}</span>
-    </li>)}
+    {totals.map(t => {
+      const active = activeMode === t.mode && (activeProduct?.trim() ?? '') === t.product;
+      const content = <>
+        <span aria-hidden="true" className="h-2 w-2 shrink-0 rounded-full" style={{ background: SIM_MODES[t.mode].color }} />
+        <span className="min-w-0 break-words">{t.product || SIM_MODES[t.mode].label}</span>
+        <b className="tabular-nums" style={{ color: SIM_MODES[t.mode].color }}>{formatVolume(t.total)} {SIM_MODES[t.mode].unit}</b>
+        <span className="text-stone-300">· {t.points} pt{t.pending ? ` · ${t.pending}!` : ''}</span>
+        {active && <span className="font-black text-gold">Activo</span>}
+      </>;
+      const title = `${SIM_MODES[t.mode].label} · ${t.points} punto(s)${t.pending ? ` · ${t.pending} sin volumen` : ''}${onSelect ? ' · Usar solo para nuevas marcas' : ''}`;
+      return <li key={t.key} className="min-w-0 max-w-full">
+        {onSelect ? <button type="button" aria-pressed={active} onClick={() => onSelect(t.mode, t.product)} title={title}
+          className={`${hudChip} admin-focus-ring max-w-full !whitespace-normal text-left hover:bg-stone-800 aria-pressed:bg-gold/15`}
+          style={{ borderColor: `${SIM_MODES[t.mode].color}80`, ...(active ? glow(SIM_MODES[t.mode].color) : {}) }}>{content}</button>
+          : <span className={`${hudChip} max-w-full !whitespace-normal`} title={title} style={{ borderColor: `${SIM_MODES[t.mode].color}80` }}>{content}</span>}
+      </li>;
+    })}
   </ul>;
 }
 
+export type CoveragePreviewSettings = PreviewSettings & {
+  coverage?: Partial<Record<SimMode, number>>;
+  showCoverage?: boolean;
+};
+
 /** Variador propio por inyectable: actúa como filtro visual independiente de la dosis. */
-export function EffectMixer({ value, onChange }: { value: PreviewSettings; onChange: (next: PreviewSettings) => void }) {
+export function EffectMixer({ value, onChange }: { value: CoveragePreviewSettings; onChange: (next: CoveragePreviewSettings) => void }) {
   return (
     <div role="group" aria-label="Preview cosmético ilustrativo" className="space-y-2">
       {MODES.map(mode => {
@@ -382,8 +414,21 @@ export function EffectMixer({ value, onChange }: { value: PreviewSettings; onCha
               className="flex-1 disabled:opacity-30" style={{ accentColor: color }} />
             <span className="w-11 text-right text-xs tabular-nums text-stone-300">{Math.round(level * 100)}%</span>
           </div>
+          <label className="mt-2 block text-[11px] font-semibold text-stone-300">
+            Cobertura visual
+            <span className="mt-1 flex items-center gap-2">
+              <input type="range" aria-label={`Cobertura visual ${label}`} min={0.5} max={2} step={0.05} value={value.coverage?.[mode] ?? 1} disabled={!on}
+                onChange={e => onChange({ ...value, coverage: { ...value.coverage, [mode]: Number(e.target.value) } })}
+                className="min-w-0 flex-1 disabled:opacity-30" style={{ accentColor: color }} />
+              <span className="w-11 text-right tabular-nums">{Math.round((value.coverage?.[mode] ?? 1) * 100)}%</span>
+            </span>
+          </label>
         </div>;
       })}
+      <label className="flex min-h-9 cursor-pointer items-center gap-2 text-xs text-stone-300">
+        <input type="checkbox" checked={value.showCoverage ?? false} onChange={e => onChange({ ...value, showCoverage: e.target.checked })} className="h-4 w-4 accent-gold" />
+        Mostrar cobertura visual
+      </label>
       <label className="flex items-center gap-2 pt-1 text-xs text-stone-400"><SlidersHorizontal className="h-3.5 w-3.5 text-gold" aria-hidden="true" />Global
         <input aria-label="Intensidad visual independiente" type="range" min={0} max={1} step={0.05} value={value.intensity}
           onChange={e => onChange({ ...value, intensity: Number(e.target.value) })} className="flex-1 accent-gold" />
@@ -394,11 +439,16 @@ export function EffectMixer({ value, onChange }: { value: PreviewSettings; onCha
 }
 
 /** Edición inmediata de la marca seleccionada (clic en el visor o en el listado). */
-export function SelectionInspector({ row, onDose, onDelete, onMirror, mirrorDisabled, onTransform, children }: {
+export function SelectionInspector({ row, onDose, onDelete, onMirror, mirrorDisabled, onTransform, tipDose, onStyle, strokeColor, strokeWidth, onText, children }: {
   row: LedgerRow; onDose: (id: string, dose: number) => void; onDelete: (id: string) => void;
   onMirror: () => void; mirrorDisabled?: boolean; onTransform?: (change: { scale?: number; degrees?: number }) => void; children?: ReactNode;
+  tipDose?: number | null; onStyle?: (style: { color?: string; thickness?: number }) => void;
+  strokeColor?: string; strokeWidth?: number; onText?: (text: string) => void;
 }) {
   const { color, label } = SIM_MODES[row.mode], Icon = MODE_ICONS[row.mode], [, sideLong] = SIDE[row.side];
+  const appliedDose = row.entry ? tipDose ?? null : row.dose;
+  const graphicColor = strokeColor ?? row.strokeColor ?? color;
+  const graphicWidth = strokeWidth ?? row.strokeWidth ?? 1;
   return (
     <section aria-label="Marca seleccionada" className="space-y-2 rounded-xl border bg-stone-900/80 p-3" style={{ borderColor: `${color}88` }}>
       <header className="flex items-start gap-2">
@@ -406,12 +456,29 @@ export function SelectionInspector({ row, onDose, onDelete, onMirror, mirrorDisa
         <div className="min-w-0 flex-1">
           <p className="break-words text-sm font-bold leading-tight">{row.zone}</p>
           <p className="break-words text-[11px] text-stone-400"><Icon className="mr-1 inline h-3 w-3" style={{ color }} aria-hidden="true" />{row.label} · {row.product || label} · {sideLong}</p>
-          {row.entry && <p className="text-[11px] text-stone-500">Entrada de aguja · la dosis rápida se aplica a sus {row.tips} puntas.</p>}
+          {!row.graphicOnly && row.entry && <p className="text-[11px] text-stone-400">Entrada de aguja · la dosis rápida se aplica a sus {row.tips} puntas.</p>}
         </div>
         <button type="button" aria-label={`Eliminar marca ${row.index} seleccionada`} title="Eliminar" onClick={() => onDelete(row.id)}
           className="admin-focus-ring grid h-9 w-9 shrink-0 place-items-center rounded-lg text-stone-400 hover:bg-red-500/15 hover:text-red-300"><Trash2 className="h-4 w-4" aria-hidden="true" /></button>
       </header>
-      <QuickVolumes mode={row.mode} value={row.dose} onPick={v => onDose(row.id, v)} />
+      {row.graphicOnly ? <p className="text-xs text-stone-300">Solo gráfico · sin dosis ni plano</p> : <>
+        <p role="status" className="text-xs text-stone-300">{appliedDose === null ? 'Dosis distintas o sin puntas de registro' : `Dosis aplicada${row.entry ? ' por punta' : ''}: ${unitLabel(row.mode, appliedDose)}`}</p>
+        <QuickVolumes mode={row.mode} value={appliedDose} onPick={v => onDose(row.id, v)} />
+      </>}
+      {onText && row.annotationKind === 'text' && <label className="block text-xs font-semibold text-stone-300">Texto de la anotación
+        <input type="text" value={row.annotationText ?? ''} onChange={e => onText(e.target.value)} className={`${field} mt-1`} />
+      </label>}
+      {onStyle && <div role="group" aria-label="Estilo independiente de la marca" className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-3">
+        <label className="text-xs font-semibold text-stone-300">Color
+          <input type="color" aria-label="Color de la marca" value={graphicColor} onChange={e => onStyle({ color: e.target.value })}
+            className="admin-focus-ring ml-2 h-9 w-10 cursor-pointer rounded border border-white/10 bg-stone-950 align-middle" />
+        </label>
+        <label className="text-xs font-semibold text-stone-300">Grosor
+          <input type="number" aria-label="Grosor de la marca" min={0.1} step={0.1} value={graphicWidth}
+            onChange={e => { const width = Number(e.target.value); if (e.target.value !== '' && Number.isFinite(width) && width > 0) onStyle({ thickness: width }); }}
+            className={`${field} mt-1`} />
+        </label>
+      </div>}
       <div className="flex flex-wrap gap-1">
         <IconToggle label="Espejar selección" icon={FlipHorizontal2} disabled={mirrorDisabled} onClick={onMirror}>Espejo</IconToggle>
         {onTransform && row.kind !== 'point' && <>
@@ -427,6 +494,19 @@ export function SelectionInspector({ row, onDose, onDelete, onMirror, mirrorDisa
   );
 }
 
+function LedgerPatternList({ label, count, entry, children }: { label: string; count: number; entry: ReactNode; children: ReactNode }) {
+  const [expanded, setExpanded] = useState(false);
+  const listId = useId();
+  return <div className="rounded-xl border border-white/10 bg-black/20 p-1.5">
+    <ul role="presentation" className="space-y-1.5">{entry}</ul>
+    <button type="button" aria-expanded={expanded} aria-controls={listId} onClick={() => setExpanded(current => !current)}
+      className="admin-focus-ring min-h-9 w-full break-words rounded-lg px-1 py-2 text-left text-xs font-semibold text-stone-300 hover:bg-stone-800">
+      <span aria-hidden="true">{expanded ? '▾' : '▸'} </span>{label} · {count} puntas en el filtro
+    </button>
+    <ul id={listId} role="presentation" hidden={!expanded} className="space-y-1.5">{children}</ul>
+  </div>;
+}
+
 export function PointLedger({ rows, selectedId, onSelect, onHover, onDose, onDelete, onPlane, header, children }: {
   rows: LedgerRow[]; selectedId: string | null;
   onSelect: (row: LedgerRow) => void; onHover: (row: LedgerRow | null) => void;
@@ -438,11 +518,28 @@ export function PointLedger({ rows, selectedId, onSelect, onHover, onDose, onDel
   const [bulkPlane, setBulkPlane] = useState('');
   const visible = useMemo(() => filterRows(rows, filter), [rows, filter]);
   const zones = useMemo(() => [...new Set(rows.map(r => r.zone))].sort((a, b) => a.localeCompare(b, 'es')), [rows]);
-  const live = new Set(rows.map(r => r.id)), picked = visible.filter(r => checked.has(r.id) && live.has(r.id));
+  const picked = rows.filter(r => checked.has(r.id));
+  const visiblePicked = visible.filter(r => checked.has(r.id));
   // Una entrada en lote arrastra sus puntas; la entrada no lleva dosis ni plano propio.
-  const targets = (picked.length ? picked : visible).flatMap(r => r.entry ? rows.filter(t => t.parent === r.id) : [r])
-    .filter((r, i, all) => all.findIndex(x => x.id === r.id) === i);
+  const targets = picked.flatMap(r => r.entry ? rows.filter(t => t.parent === r.id) : [r])
+    .filter((r, i, all) => !r.graphicOnly && !r.entry && all.findIndex(x => x.id === r.id) === i);
   const planes = [...new Set(targets.flatMap(r => INJECTION_PLANES[r.mode]))];
+  const groups = useMemo(() => {
+    const vials = new Map<string, LedgerVialGroup>();
+    const byId = new Map(rows.map(r => [r.id, r]));
+    for (const row of visible) {
+      const key = JSON.stringify([row.mode, row.product]);
+      const vial: LedgerVialGroup = vials.get(key) ?? { mode: row.mode, product: row.product, loose: [], patterns: new Map() };
+      const patternId = row.parent ?? (row.entry || row.kind === 'pattern' ? row.id : undefined);
+      if (patternId) {
+        const pattern: LedgerPatternGroup = vial.patterns.get(patternId) ?? { label: byId.get(patternId)?.label ?? 'Patrón', rows: [] };
+        pattern.rows.push(row);
+        vial.patterns.set(patternId, pattern);
+      } else vial.loose.push(row);
+      vials.set(key, vial);
+    }
+    return [...vials];
+  }, [rows, visible]);
   const set = <K extends keyof LedgerFilter>(key: K, v: LedgerFilter[K]) => setFilter(f => ({ ...f, [key]: v }));
   const compact = 'admin-focus-ring min-h-9 w-full rounded-lg border border-white/10 bg-stone-900 px-2 text-xs text-stone-100';
   return (
@@ -469,25 +566,34 @@ export function PointLedger({ rows, selectedId, onSelect, onHover, onDose, onDel
           <option value="all">Todo volumen</option><option value="with">Con volumen</option><option value="without">Sin volumen</option>
         </select>
       </div>
-      {rows.length > 0 && <div className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-1.5 rounded-xl border border-white/5 bg-black/30 p-1.5">
+      {rows.length > 0 && <div className="grid grid-cols-2 items-center gap-1.5 rounded-xl border border-white/5 bg-black/30 p-1.5">
         <label className="flex min-h-9 items-center gap-1.5 text-[11px] font-semibold text-stone-300">
-          <input type="checkbox" aria-label="Seleccionar todos los puntos visibles" checked={visible.length > 0 && picked.length === visible.length}
-            onChange={e => setChecked(e.target.checked ? new Set(visible.map(r => r.id)) : new Set())} className="h-4 w-4 accent-gold" />
-          {picked.length ? `${picked.length} sel.` : 'Lote'}
+          <input type="checkbox" aria-label="Seleccionar todos los puntos visibles" checked={visible.length > 0 && visiblePicked.length === visible.length}
+            onChange={e => {
+              const select = e.target.checked;
+              setChecked(current => { const next = new Set(current); visible.forEach(r => { if (select) next.add(r.id); else next.delete(r.id); }); return next; });
+            }} className="h-4 w-4 accent-gold" />
+          Visibles
         </label>
-        <select aria-label="Plano para el lote" value={bulkPlane} onChange={e => setBulkPlane(e.target.value)} className={`${compact} min-w-0`}>
+        <button type="button" onClick={() => setChecked(new Set(rows.map(r => r.id)))} className={`${compact} hover:bg-stone-800`}>Todo el registro</button>
+        <button type="button" onClick={() => setChecked(new Set())} disabled={!picked.length} className={`${compact} disabled:opacity-40 hover:bg-stone-800`}>Deseleccionar todo</button>
+        <span role="status" className="text-right text-[11px] text-stone-300">{picked.length} seleccionadas</span>
+        <select aria-label="Plano para el lote" disabled={!targets.length} value={bulkPlane} onChange={e => setBulkPlane(e.target.value)} className={`${compact} col-span-2 min-w-0 disabled:opacity-40`}>
           <option value="">Sin plano</option>{planes.map(p => <option key={p}>{p}</option>)}
         </select>
-        <button type="button" disabled={!targets.length} onClick={() => onPlane(targets.map(r => r.id), bulkPlane)}
+        <button type="button" disabled={!targets.length} onClick={() => { if (targets.length) onPlane(targets.map(r => r.id), bulkPlane); }}
           className="admin-focus-ring col-span-2 min-h-9 rounded-lg bg-gold px-2.5 text-[11px] font-black text-stone-950 disabled:opacity-40">Aplicar plano a {targets.length} punto(s)</button>
+        {!picked.length && <p className="col-span-2 text-[11px] text-stone-300">Selecciona marcas para aplicar un plano.</p>}
       </div>}
       {!rows.length && <p className="rounded-xl border border-dashed border-white/15 p-5 text-center text-sm text-stone-400">Elige una herramienta y marca sobre el rostro.</p>}
-      <ul aria-label="Elementos marcados" className="min-h-[8rem] flex-1 space-y-1.5 overflow-y-auto overscroll-contain pr-1">
-        {visible.map(r => {
+      {rows.length > 0 && !visible.length && <p role="status" className="text-xs text-stone-300">No hay marcas con estos filtros.</p>}
+      <div role="list" aria-label="Elementos marcados" className="min-h-[8rem] flex-1 space-y-3 overflow-y-auto overscroll-contain pr-1">
+        {groups.map(([key, vial]) => {
+          const renderRow = (r: LedgerRow) => {
           const { color, unit, label } = SIM_MODES[r.mode], [sideShort, sideLong] = SIDE[r.side], active = selectedId === r.id;
-          const tipTotal = r.entry ? rows.filter(t => t.parent === r.id).reduce((sum, t) => sum + t.dose, 0) : 0;
-          const detail = [r.product || label, r.plane, r.extended ? 'solo 3D' : ''].filter(Boolean).join(' · ');
-          return <li key={r.id} onPointerEnter={() => onHover(r)} onPointerLeave={() => onHover(null)}
+          const tipTotal = r.entry ? rows.filter(t => t.parent === r.id && !t.graphicOnly).reduce((sum, t) => sum + t.dose, 0) : 0;
+          const detail = [r.product || label, r.extended ? 'solo 3D' : ''].filter(Boolean).join(' · ');
+          return <li role="listitem" key={r.id} onPointerEnter={() => onHover(r)} onPointerLeave={() => onHover(null)}
             className={`rounded-xl border bg-stone-900/70 p-1.5 transition ${r.parent ? 'ml-4' : ''} ${active ? 'border-gold/70' : 'border-white/5'}`}
             style={active ? glow(color) : { borderLeft: `3px solid ${color}` }}>
             <div className="flex items-start gap-1.5">
@@ -502,11 +608,12 @@ export function PointLedger({ rows, selectedId, onSelect, onHover, onDose, onDel
                     {r.parent ? r.label : <>{r.zone} <span title={sideLong} className="font-black text-stone-400">· {sideShort}</span></>}
                   </span>
                   <span className="block break-words text-[11px] leading-snug text-stone-400">
-                    {r.entry ? `Entrada · ${r.label} · ${r.tips} puntas` : r.parent ? r.zone : `${r.label} · ${detail}`}
+                    {r.graphicOnly ? `Gráfico · ${r.annotationText || r.label}` : r.entry ? `Entrada · ${r.label} · ${r.tips} puntas` : r.parent ? r.zone : `${r.label} · ${detail}`}
                   </span>
+                  {!r.graphicOnly && !r.entry && <span className="block break-words text-[11px] leading-snug text-stone-300">Plano: {r.plane || 'Sin plano'}</span>}
                 </span>
               </button>
-              {r.parent && <label className="flex shrink-0 items-center gap-1 self-center text-[11px] text-stone-400">
+              {r.parent && !r.graphicOnly && <label className="flex shrink-0 items-center gap-1 self-center text-[11px] text-stone-400">
                 <span className="sr-only">Dosis</span>
                 <input type="number" min={0} step="any" inputMode="decimal" value={r.dose} aria-label={`Dosis marca ${r.index}`}
                   onChange={e => onDose(r.id, Number(e.target.value))} className="admin-focus-ring min-h-8 w-14 rounded-md border border-white/10 bg-stone-950 px-1 text-right text-sm font-bold tabular-nums text-white" />
@@ -515,7 +622,7 @@ export function PointLedger({ rows, selectedId, onSelect, onHover, onDose, onDel
               <button type="button" aria-label={`Eliminar marca ${r.index}`} title={r.entry ? 'Eliminar trazo y sus puntas' : 'Eliminar'} onClick={() => onDelete(r.id)}
                 className="admin-focus-ring grid h-9 w-8 shrink-0 place-items-center rounded-lg text-stone-400 hover:bg-red-500/15 hover:text-red-300"><Trash2 className="h-4 w-4" aria-hidden="true" /></button>
             </div>
-            {!r.parent && <div className="mt-1 flex items-center justify-end gap-1.5 pl-6 text-[11px] text-stone-400">
+            {!r.parent && !r.graphicOnly && <div className="mt-1 flex items-center justify-end gap-1.5 pl-6 text-[11px] text-stone-400">
               {r.entry
                 ? <span className="tabular-nums">Total <b style={{ color }}>{formatVolume(tipTotal)} {unit}</b></span>
                 : <label className="flex items-center gap-1">Dosis
@@ -525,8 +632,20 @@ export function PointLedger({ rows, selectedId, onSelect, onHover, onDose, onDel
                 </label>}
             </div>}
           </li>;
+          };
+          return <section key={key} className="space-y-1.5">
+            <h3 className="break-words text-xs font-bold text-stone-200">{vial.product || 'Sin vial'} <span className="font-normal text-stone-400">· {SIM_MODES[vial.mode].label}</span></h3>
+            {[...vial.patterns].map(([id, pattern]) => <LedgerPatternList key={id} label={pattern.label}
+              count={pattern.rows.filter(r => r.id !== id).length} entry={pattern.rows.filter(r => r.id === id).map(renderRow)}>
+              {pattern.rows.filter(r => r.id !== id).map(renderRow)}
+            </LedgerPatternList>)}
+            {vial.loose.length > 0 && <>
+              <h4 className="text-[11px] font-semibold text-stone-400">Puntos sueltos y gráficos</h4>
+              <ul role="presentation" className="space-y-1.5">{vial.loose.map(renderRow)}</ul>
+            </>}
+          </section>;
         })}
-      </ul>
+      </div>
       {children}
     </section>
   );

@@ -1,5 +1,11 @@
 # Progreso de BioSkinTech App
 
+- ✅ 2026-10-30 Piel: revisión manual por zonas.
+- ✅ 2026-10-30 Lab3D: build y 58 pruebas.
+- ✅ 2026-10-30 Morfología: carga y buffers reutilizables.
+- ✅ 2026-10-30 Lab3D: registro y dibujo separados.
+- ✅ 2026-10-30 Lab3D: edición contextual y cobertura.
+
 - ✅ 2026-10-29 Marcaciones: visor comparativo recuperado.
 - QA comparativa: 42 pruebas, build y lint aprobados; Chromium desktop/móvil verifica transferencia genérico/máscara, registro único, deshacer y apilado. Sin migración clínica.
 

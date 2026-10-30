@@ -57,6 +57,8 @@ function editor() {
       if (name === './simulation') return simulation;
       if (name === './displaySurface') return displaySurface;
       if (name === './skinAppearance') return skin;
+      if (name === './MarkingPanels') return { editorPanel: 'editor-panel' };
+      if (name === './skinRegionReview') return {};
       if (name === './maskAnatomy') return reveal;
       if (name === './anatomicalZones') return {};
       if (name === './anatomyDisplay') return displayAPI;

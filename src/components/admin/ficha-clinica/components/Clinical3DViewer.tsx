@@ -127,10 +127,10 @@ function isSurfacePositionVisible(position: THREE.Vector3, camera: THREE.Camera,
   if (!surface) return false;
   const projected = position.clone().project(camera);
   if (projected.z < -1 || projected.z > 1 || Math.abs(projected.x) > 1 || Math.abs(projected.y) > 1) return false;
-  const origin = camera.getWorldPosition(new THREE.Vector3());
-  const raycaster = new THREE.Raycaster(origin, position.clone().sub(origin).normalize());
+  const raycaster = new THREE.Raycaster();
+  raycaster.setFromCamera(new THREE.Vector2(projected.x, projected.y), camera);
   const hit = raycaster.intersectObject(surface, true)[0];
-  return !hit || origin.distanceTo(position) <= hit.distance + 0.01;
+  return !hit || raycaster.ray.origin.distanceTo(position) <= hit.distance + 0.01;
 }
 
 function applyAnnotationDepth(group: THREE.Object3D | null, occlude: boolean, defaults: WeakMap<THREE.Material, { depthTest: boolean; depthWrite: boolean }>) {
@@ -305,12 +305,12 @@ const closestPointOnFreehandLine = (
 
 export interface SurfaceShape {
   id: string;
-  shapeType: 'circle' | 'rectangle';
+  shapeType: 'circle' | 'rectangle' | 'ellipse';
   center: { x: number; y: number; z: number };
   normal: { x: number; y: number; z: number };
   /** Para círculos: radio en unidades del modelo */
   radius?: number;
-  /** Para rectángulos: ancho y alto en unidades del modelo */
+  /** Para rectángulos y elipses: ancho y alto completos en unidades del modelo */
   width?: number;
   height?: number;
   /** Tangente para orientar rectángulos en el plano de la superficie */
@@ -319,7 +319,175 @@ export interface SurfaceShape {
   opacity: number;
   thickness: number;
   label?: string;
+  /** Contorno completo proyectado; nunca contiene puentes sobre muestras inválidas. */
+  outline?: { x: number; y: number; z: number }[];
 }
+
+type SurfaceShapeUpdate = Partial<Pick<SurfaceShape, 'center' | 'normal' | 'tangent' | 'radius' | 'width' | 'height' | 'outline'>>;
+export interface AnnotationLabel {
+  id: string;
+  position: { x: number; y: number; z: number };
+  text: string;
+  color?: string;
+}
+
+interface AnnotationInteractionProps {
+  /** Opt-in Lab: interacción de anclas, sliders inmediatos y proyección conservadora. */
+  labInteraction?: boolean;
+  /** Ajuste magnético en píxeles al marcar; independiente de la edición y los sliders. */
+  annotationSnap?: boolean;
+  cancellationToken?: number;
+  onAnnotationSnap?: (target: { x: number; y: number; z: number } | null) => void;
+  annotationLabels?: readonly AnnotationLabel[];
+}
+
+const EMPTY_ANNOTATION_LABELS: readonly AnnotationLabel[] = [];
+
+/** No interceptar Escape de formularios, selectores o diálogos de la aplicación. */
+function shouldCancelAnnotation(event: KeyboardEvent, doc: Document) {
+  const editing = (target: EventTarget | null) => target instanceof Element
+    && !!target.closest('input,textarea,select,[contenteditable]:not([contenteditable="false"]),[role="textbox"],[role="dialog"],[aria-modal="true"]');
+  return event.key === 'Escape' && !event.defaultPrevented && !event.isComposing
+    && !editing(event.target) && !editing(doc.activeElement)
+    && !Array.from(doc.querySelectorAll('dialog[open],[role="dialog"],[aria-modal="true"]'))
+      .some(element => element.getClientRects().length > 0);
+}
+
+/** Distancia constante en CSS px; vértices (incluidos extremos) antes que segmentos. */
+function screenAnnotationSnap(
+  cursor: GridScreenPoint, camera: THREE.Camera, width: number, height: number,
+  points: readonly { x: number; y: number; z: number }[],
+  segments: readonly (readonly { x: number; y: number; z: number }[])[],
+  accepts: (point: THREE.Vector3) => boolean, radius = 12,
+): { point: THREE.Vector3; isVertex: boolean } | null {
+  const project = (point: THREE.Vector3) => {
+    const ndc = point.clone().project(camera);
+    return { x: (ndc.x + 1) * width / 2, y: (1 - ndc.y) * height / 2 };
+  };
+  let best: { point: THREE.Vector3; isVertex: boolean } | null = null;
+  let distance = radius;
+  const consider = (point: THREE.Vector3, isVertex: boolean) => {
+    const screen = project(point);
+    const d = Math.hypot(screen.x - cursor.x, screen.y - cursor.y);
+    if (d <= distance && accepts(point)) { best = { point, isVertex }; distance = d; }
+  };
+  for (const point of points) consider(new THREE.Vector3(point.x, point.y, point.z), true);
+  if (best) return best;
+  for (const segment of segments) for (let i = 1; i < segment.length; i++) {
+    const a = new THREE.Vector3(segment[i - 1].x, segment[i - 1].y, segment[i - 1].z);
+    const b = new THREE.Vector3(segment[i].x, segment[i].y, segment[i].z);
+    const sa = project(a), sb = project(b);
+    const dx = sb.x - sa.x, dy = sb.y - sa.y, lengthSq = dx * dx + dy * dy;
+    if (lengthSq < 1e-8) continue;
+    const t = THREE.MathUtils.clamp(((cursor.x - sa.x) * dx + (cursor.y - sa.y) * dy) / lengthSq, 0, 1);
+    // Interpolación perspectiva correcta (en ortográfica w es constante).
+    const wa = new THREE.Vector4(a.x, a.y, a.z, 1).applyMatrix4(camera.matrixWorldInverse).applyMatrix4(camera.projectionMatrix).w;
+    const wb = new THREE.Vector4(b.x, b.y, b.z, 1).applyMatrix4(camera.matrixWorldInverse).applyMatrix4(camera.projectionMatrix).w;
+    if (wa <= 0 || wb <= 0) continue;
+    const worldT = (t / wb) / ((1 - t) / wa + t / wb);
+    consider(a.lerp(b, worldT), false);
+  }
+  return best;
+}
+
+/** Raycast local único: nunca buscar otra cara desde atrás ni devolver el punto plano. */
+function projectNearbySurface(
+  point: THREE.Vector3, normal: THREE.Vector3, surface: THREE.Object3D | null,
+  camera: THREE.Camera | null, constraint?: SurfaceInteractionConstraint, reach = 0.3,
+) {
+  if (!surface) return null;
+  const ray = new THREE.Raycaster(point.clone().addScaledVector(normal, reach), normal.clone().negate(), 0, reach * 2);
+  const hit = ray.intersectObject(surface, true).find(candidate => {
+    const n = candidate.face?.normal.clone().transformDirection(candidate.object.matrixWorld);
+    return n && n.dot(normal) > 0.15 && candidate.object.name !== 'MASK_NEUTRAL_BACKING'
+      && !candidate.object.name.startsWith('ESTIMATED_HEAD_SURFACE')
+      && !candidate.object.name.startsWith('PHOTO_HAIR_SURFACE')
+      && (!constraint || constraint.accepts(candidate.point))
+      && (!camera || isSurfacePositionVisible(candidate.point, camera, surface));
+  });
+  return hit?.point.clone() ?? null;
+}
+
+function annotationSurfaceHit(point: THREE.Vector3, camera: THREE.Camera, surface: THREE.Object3D | null, constraint?: SurfaceInteractionConstraint) {
+  if (!surface) return null;
+  const ndc = point.clone().project(camera);
+  if (ndc.z < -1 || ndc.z > 1 || Math.abs(ndc.x) > 1 || Math.abs(ndc.y) > 1) return null;
+  const ray = new THREE.Raycaster();
+  ray.setFromCamera(new THREE.Vector2(ndc.x, ndc.y), camera);
+  const hit = ray.intersectObject(surface, true)[0];
+  if (!hit || hit.point.distanceTo(point) > 0.3) return null;
+  const normal = hit.face?.normal.clone().transformDirection(hit.object.matrixWorld);
+  if (!normal || normal.dot(ray.ray.direction) >= -1e-5 || hit.object.name === 'MASK_NEUTRAL_BACKING'
+    || hit.object.name.startsWith('ESTIMATED_HEAD_SURFACE') || hit.object.name.startsWith('PHOTO_HAIR_SURFACE')
+    || (constraint && !constraint.accepts(hit.point))) return null;
+  const materials = (hit.object as THREE.Mesh).material;
+  const material = Array.isArray(materials) ? materials[hit.face?.materialIndex ?? 0] : materials;
+  if (material?.clippingPlanes?.some(plane => plane.distanceToPoint(hit.point) < 0)) return null;
+  let object: THREE.Object3D | null = hit.object;
+  while (object) { if (!object.visible) return null; object = object.parent; }
+  return hit;
+}
+
+/** Muestras en el plano original; separar huecos y saltos, nunca interpolar esquinas ya proyectadas. */
+function projectedShapeSegments(
+  shape: SurfaceShape, surface: THREE.Object3D | null, camera: THREE.Camera | null,
+  constraint?: SurfaceInteractionConstraint,
+) {
+  const center = new THREE.Vector3(shape.center.x, shape.center.y, shape.center.z);
+  const normal = new THREE.Vector3(shape.normal.x, shape.normal.y, shape.normal.z).normalize();
+  let tangent = shape.tangent
+    ? new THREE.Vector3(shape.tangent.x, shape.tangent.y, shape.tangent.z)
+    : new THREE.Vector3().crossVectors(normal, new THREE.Vector3(0, 1, 0));
+  tangent.addScaledVector(normal, -tangent.dot(normal));
+  if (tangent.lengthSq() < 1e-8) tangent = new THREE.Vector3().crossVectors(normal, new THREE.Vector3(1, 0, 0));
+  tangent.normalize();
+  const bitangent = new THREE.Vector3().crossVectors(normal, tangent).normalize();
+  const hw = shape.shapeType === 'circle' ? shape.radius ?? 0.3 : (shape.width ?? 0.4) / 2;
+  const hh = shape.shapeType === 'circle' ? hw : (shape.height ?? 0.25) / 2;
+  const paths: THREE.Vector3[][] = [];
+  if (shape.shapeType === 'rectangle') {
+    const corners = [[-hw, -hh], [hw, -hh], [hw, hh], [-hw, hh]];
+    for (let side = 0; side < 4; side++) {
+      const a = corners[side], b = corners[(side + 1) % 4];
+      paths.push(Array.from({ length: 25 }, (_, i) => center.clone()
+        .addScaledVector(tangent, a[0] + (b[0] - a[0]) * i / 24)
+        .addScaledVector(bitangent, a[1] + (b[1] - a[1]) * i / 24)));
+    }
+  } else paths.push(Array.from({ length: 97 }, (_, i) => center.clone()
+    .addScaledVector(tangent, Math.cos(i * Math.PI / 48) * hw)
+    .addScaledVector(bitangent, Math.sin(i * Math.PI / 48) * hh)));
+  const segments: THREE.Vector3[][] = [];
+  for (const path of paths) {
+    let run: THREE.Vector3[] = [];
+    for (let i = 0; i < path.length; i++) {
+      const projected = projectNearbySurface(path[i], normal, surface, camera, constraint);
+      if (!projected || (run.length && projected.distanceTo(run[run.length - 1]) > path[i].distanceTo(path[i - 1]) * 3 + 0.06)) {
+        if (run.length > 1) segments.push(run);
+        run = [];
+      }
+      if (projected) run.push(projected);
+    }
+    if (run.length > 1) segments.push(run);
+  }
+  return segments;
+}
+
+function buildProjectedShape(shape: SurfaceShape, surface: THREE.Object3D | null, camera: THREE.Camera | null, constraint?: SurfaceInteractionConstraint) {
+  const group = new THREE.Group();
+  for (const segment of projectedShapeSegments(shape, surface, camera, constraint)) {
+    group.add(buildSurfaceTube(segment, new THREE.Color(shape.color), shape.opacity, shape.thickness * 0.003, false, true));
+  }
+  return group;
+}
+
+function projectedShapeOutline(shape: SurfaceShape, surface: THREE.Object3D | null, camera: THREE.Camera | null, constraint?: SurfaceInteractionConstraint) {
+  const segments = projectedShapeSegments(shape, surface, camera, constraint);
+  const rectangle = shape.shapeType === 'rectangle';
+  if (segments.length !== (rectangle ? 4 : 1) || segments.some(segment => segment.length !== (rectangle ? 25 : 97))) return null;
+  return segments.flatMap((segment, index) => index ? segment.slice(1) : segment).map(({ x, y, z }) => ({ x, y, z }));
+}
+
+const isCoverageLine = (id: string) => id.startsWith('coverage:');
 
 type GridScreenPoint = { x: number; y: number };
 
@@ -364,6 +532,7 @@ export type DrawingTool =
   | 'straight-line'    // drag A→B: línea recta sobre superficie
   | 'shape-arrow'      // drag A→B: flecha con cabeza en B
   | 'shape-circle'     // clic+arrastrar para definir radio
+  | 'shape-ellipse'    // arrastrar semiejes independientes en el plano tangente
   | 'shape-rect'       // clic+arrastrar para definir tamaño
   | 'ha-fan'           // Abanico: clic centro + drag longitud
   | 'ha-grid'          // Malla: tres clics para inicio, ancho y largo
@@ -407,7 +576,8 @@ const buildSurfaceTube = (
   color: THREE.Color,
   opacity = 1.0,
   radius = 0.003,
-  dashed = false
+  dashed = false,
+  linear = false,
 ): THREE.Group => {
   const grp = new THREE.Group();
   grp.renderOrder = 999;
@@ -447,7 +617,9 @@ const buildSurfaceTube = (
       }
     }
   } else {
-    const curve = new THREE.CatmullRomCurve3(pts, false, 'catmullrom', 0.5);
+    const path = new THREE.CurvePath<THREE.Vector3>();
+    if (linear) for (let i = 1; i < pts.length; i++) path.add(new THREE.LineCurve3(pts[i - 1], pts[i]));
+    const curve = linear ? path : new THREE.CatmullRomCurve3(pts, false, 'catmullrom', 0.5);
     const segments = Math.max(pts.length * 2, 60);
     // Tubo visual
     const tubeGeo = new THREE.TubeGeometry(curve, segments, radius, 6, false);
@@ -521,7 +693,7 @@ export const getFacialZone = (point: THREE.Vector3, registeredZones: Zone[] = []
 // PROPS DEL COMPONENTE
 // ==========================================
 
-interface Clinical3DViewerProps {
+interface Clinical3DViewerProps extends AnnotationInteractionProps {
   /** Marcadores a renderizar */
   markers: Marker3D[];
   /** Zonas registradas */
@@ -581,7 +753,7 @@ interface Clinical3DViewerProps {
   /** Callback cuando el usuario mueve un endpoint de una línea freehand (resize/move) */
   onFreehandLineUpdated?: (id: string, points: { x: number; y: number; z: number }[], segments?: { x: number; y: number; z: number }[][]) => void;
   /** Callback cuando el usuario mueve o redimensiona una forma en superficie */
-  onSurfaceShapeUpdated?: (id: string, update: { center?: { x: number; y: number; z: number }; normal?: { x: number; y: number; z: number }; tangent?: { x: number; y: number; z: number }; radius?: number; width?: number; height?: number }) => void;
+  onSurfaceShapeUpdated?: (id: string, update: { center?: { x: number; y: number; z: number }; normal?: { x: number; y: number; z: number }; tangent?: { x: number; y: number; z: number }; radius?: number; width?: number; height?: number; outline?: SurfaceShape['outline'] }) => void;
   onGridStepChange?: (step: number, message?: string) => void;
   /** Callback cuando el cursor snap a un punto en una línea (imán); null = sin snap */
   onSnapPointChange?: (pt: { x: number; y: number; z: number } | null) => void;
@@ -612,7 +784,7 @@ interface Clinical3DViewerProps {
 // MOTOR 3D (Three.js vanilla)
 // ==========================================
 
-const ThreeEngine: React.FC<{
+const ThreeEngine: React.FC<AnnotationInteractionProps & {
   modelSource: { type: 'url' | 'buffer'; data: string | ArrayBuffer };
   markers: Marker3D[];
   zones: Zone[];
@@ -646,7 +818,7 @@ const ThreeEngine: React.FC<{
   onShapeComplete?: (shape: SurfaceShape) => void;
   onElementSelected?: (id: string | null, type: string | null) => void;
   onFreehandLineUpdated?: (id: string, points: { x: number; y: number; z: number }[], segments?: { x: number; y: number; z: number }[][]) => void;
-  onSurfaceShapeUpdated?: (id: string, update: { center?: { x: number; y: number; z: number }; normal?: { x: number; y: number; z: number }; tangent?: { x: number; y: number; z: number }; radius?: number; width?: number; height?: number }) => void;
+  onSurfaceShapeUpdated?: (id: string, update: { center?: { x: number; y: number; z: number }; normal?: { x: number; y: number; z: number }; tangent?: { x: number; y: number; z: number }; radius?: number; width?: number; height?: number; outline?: SurfaceShape['outline'] }) => void;
   onGridStepChange?: (step: number, message?: string) => void;
   /** Callback cuando el cursor snap a un punto en una línea (imán); null = sin snap */
   onSnapPointChange?: (pt: { x: number; y: number; z: number } | null) => void;
@@ -682,6 +854,8 @@ const ThreeEngine: React.FC<{
   onBackgroundClick,
   onEstimatedSurfaceInteraction,
   surfaceConstraint,
+  labInteraction = false, annotationSnap = false, cancellationToken, onAnnotationSnap,
+  annotationLabels = EMPTY_ANNOTATION_LABELS,
   anatomicalOverlay,
   clipping = null,
   showMarkerLabels = true,
@@ -714,6 +888,8 @@ const ThreeEngine: React.FC<{
   const handlesGroupRef = useRef<THREE.Group | null>(null);
   // Indicador visual del snap point (imán)
   const snapIndicatorRef = useRef<THREE.Mesh | null>(null);
+  const annotationLabelsGroupRef = useRef<THREE.Group | null>(null);
+  const cancelInteractionRef = useRef<(() => void) | null>(null);
   const annotationDepthDefaults = useRef(new WeakMap<THREE.Material, { depthTest: boolean; depthWrite: boolean }>());
   const annotationDepthApplied = useRef(false);
   // Increments each time the model finishes loading so the markers effect re-runs
@@ -791,6 +967,12 @@ const ThreeEngine: React.FC<{
       const target = Math.min(1, Math.max(0, reference.opacity));
       if (visual.opacity < 0.05 && target > 0.05) entering.push(visual);
       visual.target = target;
+      // Sliders: respuesta inmediata, sin reiniciar un fade desde dt=0 en cada input.
+      if (labInteraction) {
+        visual.opacity = target;
+        visual.material.opacity = target;
+        visual.mesh.visible = target > 0.004;
+      }
     }
     for (const [canvas, visual] of visuals) if (!seen.has(canvas)) visual.target = 0;
     const outgoing = [...visuals.values()].filter(visual => visual.opacity > 0.05 && visual.target <= 0.05)
@@ -815,6 +997,7 @@ const ThreeEngine: React.FC<{
     const fade = skinFade.current;
     if (skinVisible !== undefined) fade.managed = true;
     fade.target = skinVisible === undefined ? 1 : skinVisible ? Math.min(1, Math.max(0, skinOpacity ?? 1)) : 0;
+    if (labInteraction) fade.current = fade.target;
     const applySkin = () => {
       if (!fade.managed) return;
       faceMeshRef.current?.traverse(object => {
@@ -865,7 +1048,7 @@ const ThreeEngine: React.FC<{
     applySkin();
     frame = requestAnimationFrame(step);
     return () => cancelAnimationFrame(frame);
-  }, [referenceLayers, skinVisible, skinOpacity, referenceOverlay, modelVersion]);
+  }, [referenceLayers, skinVisible, skinOpacity, referenceOverlay, modelVersion, labInteraction]);
   useEffect(() => () => {
     const group = referenceGroupRef.current;
     group?.parent?.remove(group);
@@ -875,28 +1058,35 @@ const ThreeEngine: React.FC<{
   // Plano persistente: mover el slider solo cambia normal/constante; los shaders se recompilan
   // únicamente cuando cambia el conjunto de materiales recortados.
   const clipPlane = useRef(new THREE.Plane());
+  const clipMaterials = useRef(new Set<THREE.Material>());
   const clipScope = clipping?.scope, clipAxis = clipping?.axis, clipPosition = clipping?.position, clipReverse = clipping?.reverse;
   useEffect(() => {
     const scene = sceneRef.current, model = faceMeshRef.current;
-    if (!scene || !model || !clipScope) return;
+    if (!scene || !model) return;
     const planes = [clipPlane.current];
-    const touched: THREE.Material[] = [];
+    const touched = new Set<THREE.Material>();
     const clip = (object: THREE.Object3D) => object.traverse(child => {
       if (!(child instanceof THREE.Mesh)) return;
       for (const material of Array.isArray(child.material) ? child.material : [child.material]) {
-        material.clippingPlanes = planes; material.clipShadows = true; material.needsUpdate = true; touched.push(material);
+        if (!material.clippingPlanes?.includes(clipPlane.current)) {
+          material.clippingPlanes = planes; material.clipShadows = true; material.needsUpdate = true;
+        }
+        touched.add(material);
       }
     });
-    clip(model);
+    if (clipScope) clip(model);
     // ponytail: el corte es visual; el raycast sigue tocando la malla recortada → filtrar intersecciones si se requiere.
     if (clipScope === 'all' && referenceGroupRef.current) clip(referenceGroupRef.current);
-    return () => touched.forEach(material => { material.clippingPlanes = null; material.needsUpdate = true; });
+    clipMaterials.current.forEach(material => {
+      if (!touched.has(material)) { material.clippingPlanes = null; material.needsUpdate = true; }
+    });
+    clipMaterials.current = touched;
   }, [clipScope, referenceLayers, modelVersion]);
   useEffect(() => {
     const model = faceMeshRef.current;
     if (!model || !clipAxis || clipPosition === undefined) return;
-    const bounds = new THREE.Box3().setFromObject(model);
-    const sign = clipReverse ? -1 : 1, margin = (bounds.max.y - bounds.min.y) * 0.04;
+    const bounds = photoBoundsRef.current ?? new THREE.Box3().setFromObject(model);
+    const sign = clipReverse ? -1 : 1, margin = (bounds.max[clipAxis] - bounds.min[clipAxis]) * 0.04;
     const value = bounds.min[clipAxis] - margin + Math.min(1, Math.max(0, clipPosition)) * (bounds.max[clipAxis] - bounds.min[clipAxis] + margin * 2);
     const normal = new THREE.Vector3(); normal[clipAxis] = sign;
     clipPlane.current.set(normal, -value * sign);
@@ -974,6 +1164,48 @@ const ThreeEngine: React.FC<{
   }, [anatomicalOverlay, modelVersion]);
   // Track two-point step inside engine for cursor feedback
   const twoPointStepRef = useRef<0 | 1>(0);
+  useEffect(() => { cancelInteractionRef.current?.(); }, [cancellationToken]);
+  useEffect(() => {
+    const scene = sceneRef.current;
+    if (!scene) return;
+    const group = new THREE.Group();
+    annotationLabelsGroupRef.current = group;
+    scene.add(group);
+    for (const label of annotationLabels) {
+      if (!label.text.trim()) continue;
+      const canvas = document.createElement('canvas');
+      const context = canvas.getContext('2d');
+      if (!context) continue;
+      const text = label.text.slice(0, 300);
+      context.font = '500 28px sans-serif';
+      canvas.width = Math.min(4096, Math.ceil(context.measureText(text).width) + 32);
+      canvas.height = 52;
+      context.fillStyle = 'rgba(15,23,42,0.94)';
+      context.fillRect(0, 0, canvas.width, canvas.height);
+      context.font = '500 28px sans-serif';
+      context.textBaseline = 'middle';
+      context.fillStyle = label.color ?? '#ffffff';
+      context.fillText(text, 16, 26, canvas.width - 32);
+      const texture = new THREE.CanvasTexture(canvas);
+      texture.colorSpace = THREE.SRGBColorSpace;
+      const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: texture, depthTest: occludeAnnotations, depthWrite: false }));
+      sprite.position.set(label.position.x, label.position.y, label.position.z);
+      sprite.center.set(0, 0);
+      sprite.userData.annotationLabelId = label.id;
+      sprite.userData.aspect = canvas.width / canvas.height;
+      sprite.renderOrder = 1004;
+      group.add(sprite);
+    }
+    return () => {
+      scene.remove(group);
+      group.children.forEach(child => {
+        const sprite = child as THREE.Sprite;
+        sprite.material.map?.dispose();
+        sprite.material.dispose();
+      });
+      if (annotationLabelsGroupRef.current === group) annotationLabelsGroupRef.current = null;
+    };
+  }, [annotationLabels, occludeAnnotations, modelVersion]);
 
   const callbacks = useRef({
     onMeshClick, onMarkerRadiusChange, onLoaded, onError, zones, readOnly, lineDrawingMode, onLinePointAnchored,
@@ -981,7 +1213,7 @@ const ThreeEngine: React.FC<{
     activeTool, selectedElementId, pendingBrushColor, pendingBrushThickness,
     onFreehandLineComplete, onShapeComplete, onElementSelected, onFreehandLineUpdated, onSurfaceShapeUpdated, onGridStepChange, onSnapPointChange,
     haShapeConfig, freehandLines, surfaceShapes, incompletePointIds, highlightedPointIds, onEditablePointHovered, onBackgroundClick, onEstimatedSurfaceInteraction,
-    onModelMetrics, occludeAnnotations, surfaceConstraint,
+    onModelMetrics, occludeAnnotations, surfaceConstraint, labInteraction, annotationSnap, editablePoints, showEditablePoints, referenceLines, annotationLabels, onAnnotationSnap,
   });
   useEffect(() => {
     callbacks.current = {
@@ -990,7 +1222,7 @@ const ThreeEngine: React.FC<{
       activeTool, selectedElementId, pendingBrushColor, pendingBrushThickness,
       onFreehandLineComplete, onShapeComplete, onElementSelected, onFreehandLineUpdated, onSurfaceShapeUpdated, onGridStepChange, onSnapPointChange,
       haShapeConfig, freehandLines, surfaceShapes, incompletePointIds, highlightedPointIds, onEditablePointHovered, onBackgroundClick, onEstimatedSurfaceInteraction,
-      onModelMetrics, occludeAnnotations, surfaceConstraint,
+      onModelMetrics, occludeAnnotations, surfaceConstraint, labInteraction, annotationSnap, editablePoints, showEditablePoints, referenceLines, annotationLabels, onAnnotationSnap,
     };
   });
 
@@ -1036,7 +1268,7 @@ const ThreeEngine: React.FC<{
     scene.add(handlesGroup);
 
     // Indicador visual del snap point (estrella/punto pulsante para imán)
-    const snapGeo = new THREE.SphereGeometry(0.025, 10, 10);
+    const snapGeo = annotationSnap ? new THREE.RingGeometry(0.018, 0.025, 32) : new THREE.SphereGeometry(0.025, 10, 10);
     const snapMat = new THREE.MeshBasicMaterial({ color: 0xffffff, depthTest: false, transparent: true, opacity: 0 });
     const snapMesh = new THREE.Mesh(snapGeo, snapMat);
     snapMesh.renderOrder = 1005;
@@ -1113,6 +1345,8 @@ const ThreeEngine: React.FC<{
     // ── Estado drag de puntos editables ────────────────────────────────────
     let draggedEditableId: string | null = null;
     let draggedEditableGroup: THREE.Group | null = null;
+    let draggedEditableOriginal: THREE.Vector3 | null = null;
+    let draggedEditableSurface: THREE.Vector3 | null = null;
     let dragMoved = false;
 
     // ── Handle drag (resize/move de líneas/formas seleccionadas) ──────────────────
@@ -1155,6 +1389,7 @@ const ThreeEngine: React.FC<{
         snapPtIsVertex = false;
         if (snapIndicatorRef.current) (snapIndicatorRef.current.material as THREE.MeshBasicMaterial).opacity = 0;
         callbacks.current.onSnapPointChange?.(null);
+        callbacks.current.onAnnotationSnap?.(null);
       }
     };
 
@@ -1171,14 +1406,54 @@ const ThreeEngine: React.FC<{
       const grp = brushPreviewGroupRef.current;
       if (!grp) return;
       while (grp.children.length > 0) {
-        const child = grp.children[0] as any;
+        const child = grp.children[0];
         grp.remove(child);
-        if (child.geometry) child.geometry.dispose();
-        if (child.material) {
-          if (Array.isArray(child.material)) child.material.forEach((m: any) => m.dispose());
-          else child.material.dispose();
-        }
+        disposeObject3D(child);
       }
+    };
+
+    const cancelInteraction = () => {
+      brushActive = false;
+      brushPoints = [];
+      polyPoints = [];
+      polyLastClickTime = 0;
+      shapeAnchor = null;
+      shapeCurrentRadius = shapeCurrentW = shapeCurrentH = 0;
+      if (draggedEditableGroup && draggedEditableOriginal) draggedEditableGroup.position.copy(draggedEditableOriginal);
+      if (draggedEditableOriginal) annotationLabelsGroupRef.current?.children.forEach(label => {
+        if (label.userData.annotationLabelId === draggedEditableId) label.position.copy(draggedEditableOriginal!);
+      });
+      if (resizingZonalGroup) resizingZonalGroup.scale.setScalar(1);
+      draggedEditableId = null;
+      draggedEditableGroup = null;
+      draggedEditableOriginal = null;
+      draggedEditableSurface = null;
+      dragMoved = false;
+      resizingZonalId = null;
+      resizingZonalGroup = null;
+      resizingZonalPointerId = null;
+      handleDragRole = null;
+      handleDragLineId = null;
+      handleBodyStartSurface = null;
+      handleBodyOriginalPoints = null;
+      handleBodyOriginalSegments = null;
+      handleBodyShapeStartSurface = null;
+      handleBodyOriginalShapeCenter = null;
+      handleBodyOriginalShapeData = null;
+      // Handles son previews imperativos: restaurar su posición sin emitir actualizaciones.
+      handlesGroupRef.current?.children.forEach(handle => {
+        const original = handle.userData.cancelPosition as THREE.Vector3 | undefined;
+        if (original) handle.position.copy(original);
+      });
+      twoPointStepRef.current = 0;
+      resetGridDrawing();
+      clearSnap();
+      isDragging = true; // consumir el click posterior al pointerup cancelado
+      if (controlsRef.current) controlsRef.current.enabled = true;
+    };
+    cancelInteractionRef.current = cancelInteraction;
+    const onEscape = (event: KeyboardEvent) => {
+      if (shouldCancelAnnotation(event, document)) cancelInteraction();
     };
 
     let drawingTool = callbacks.current.activeTool;
@@ -1198,7 +1473,14 @@ const ThreeEngine: React.FC<{
     };
 
     // ── Proyectar punto 3D sobre la superficie real del modelo ─────────────
+    let surfaceProjectionFailed = false;
     const projectToSurface = (pt: THREE.Vector3): THREE.Vector3 => {
+      if (callbacks.current.labInteraction && cameraRef.current) {
+        const hit = annotationSurfaceHit(pt, cameraRef.current, faceMeshRef.current, callbacks.current.surfaceConstraint);
+        if (!hit) surfaceProjectionFailed = true;
+        // El llamador descarta toda la transacción si falla una muestra.
+        return hit?.point.clone() ?? pt;
+      }
       if (!faceMeshRef.current) return pt;
       const rc = new THREE.Raycaster();
       const candidates: THREE.Vector3[] = [];
@@ -1236,9 +1518,19 @@ const ThreeEngine: React.FC<{
     const surfaceLine = (from: THREE.Vector3, to: THREE.Vector3, steps = 14): THREE.Vector3[] => {
       const pts: THREE.Vector3[] = [];
       for (let s = 0; s <= steps; s++) {
+        if (callbacks.current.labInteraction && cameraRef.current) {
+          const sample = from.clone().lerp(to, s / steps);
+          const hit = annotationSurfaceHit(sample, cameraRef.current, faceMeshRef.current, callbacks.current.surfaceConstraint);
+          if (!hit || (pts.length && hit.point.distanceTo(pts[pts.length - 1]) > from.distanceTo(to) / steps * 3 + 0.06)) {
+            surfaceProjectionFailed = true;
+            return []; // No coser un hueco con la siguiente muestra válida.
+          }
+          pts.push(hit.point.clone());
+          continue;
+        }
         pts.push(projectToSurface(from.clone().lerp(to, s / steps)));
       }
-      return bridgeZ(pts, 0.20);
+      return callbacks.current.labInteraction ? pts : bridgeZ(pts, 0.20);
     };
 
     const screenSurfaceLine = (from: GridScreenPoint, to: GridScreenPoint, steps = 12): THREE.Vector3[] => {
@@ -1256,9 +1548,48 @@ const ThreeEngine: React.FC<{
         raycaster.setFromCamera(ndc, cameraRef.current);
         const hits = raycaster.intersectObject(faceMeshRef.current, true);
         if (hits.length === 0) return [];
+        if (callbacks.current.labInteraction && !annotationSurfaceHit(hits[0].point, cameraRef.current, faceMeshRef.current, callbacks.current.surfaceConstraint)) return [];
+        if (callbacks.current.labInteraction && pts.length && hits[0].point.distanceTo(pts[pts.length - 1]) > 0.3) return [];
         pts.push(hits[0].point.clone());
       }
       return pts;
+    };
+
+    const updateAnnotationSnap = (clientX: number, clientY: number) => {
+      if (!callbacks.current.annotationSnap || callbacks.current.pointMode !== 'add' || !cameraRef.current) return clearSnap();
+      const rect = renderer.domElement.getBoundingClientRect();
+      const segments = (callbacks.current.freehandLines ?? []).filter(line => !isCoverageLine(line.id)).flatMap(line => line.segments ?? [line.points]);
+      for (const line of callbacks.current.referenceLines ?? []) {
+        const group = linesGroupRef.current?.children.find(child => child.userData.lineId === line.id);
+        const samples = group?.userData.surfacePoints as { x: number; y: number; z: number }[] | undefined;
+        if (samples) segments.push(samples);
+      }
+      const vertices = [
+        ...callbacks.current.editablePoints,
+        ...segments.flatMap(segment => segment.length ? [segment[0], segment[segment.length - 1]] : []),
+      ];
+      const result = screenAnnotationSnap(
+        { x: clientX - rect.left, y: clientY - rect.top }, cameraRef.current, rect.width, rect.height, vertices, segments,
+        point => !!annotationSurfaceHit(point, cameraRef.current!, faceMeshRef.current, callbacks.current.surfaceConstraint)
+          && isSurfacePositionVisible(point, cameraRef.current!, faceMeshRef.current)
+          && (!callbacks.current.surfaceConstraint || callbacks.current.surfaceConstraint.accepts(point)),
+      );
+      if (!result) return clearSnap();
+      const changed = !currentSnapPt || currentSnapPt.distanceToSquared(result.point) > 1e-10;
+      currentSnapPt = result.point;
+      snapPtIsVertex = result.isVertex;
+      if (snapIndicatorRef.current) {
+        snapIndicatorRef.current.position.copy(result.point);
+        const units = worldUnitsPerPixel(cameraRef.current, result.point, rect.height);
+        snapIndicatorRef.current.scale.setScalar(units * 6 / 0.025);
+        const material = snapIndicatorRef.current.material as THREE.MeshBasicMaterial;
+        material.color.setHex(result.isVertex ? 0xffff00 : 0x00ffff);
+        material.opacity = 0.95;
+      }
+      if (changed) {
+        callbacks.current.onAnnotationSnap?.({ x: result.point.x, y: result.point.y, z: result.point.z });
+        callbacks.current.onSnapPointChange?.({ x: result.point.x, y: result.point.y, z: result.point.z });
+      }
     };
 
     // ── Hover highlight — variables de estado puro (no React) ─────────────
@@ -1368,6 +1699,8 @@ const ThreeEngine: React.FC<{
 
     const onPointerDown = (e: MouseEvent) => {
       syncDrawingTool();
+      if (callbacks.current.readOnly || e.button !== 0) return;
+      isDragging = false;
       startPos = { x: e.clientX, y: e.clientY };
       if (rejectSurfaceEvent(e)) return;
       const tool = callbacks.current.activeTool;
@@ -1383,8 +1716,46 @@ const ThreeEngine: React.FC<{
         }
       }
 
+      // Lab: puntas editables antes de hitboxes de resize o trazos. Fichas mantienen el orden histórico.
+      if (tool === 'none' && callbacks.current.pointMode !== 'add' && cameraRef.current) {
+        const rect = renderer.domElement.getBoundingClientRect();
+        mouse.set(((e.clientX - rect.left) / rect.width) * 2 - 1, -((e.clientY - rect.top) / rect.height) * 2 + 1);
+        raycaster.setFromCamera(mouse, cameraRef.current);
+        const labelHit = visibleSurfaceHits(raycaster, annotationLabelsGroupRef.current?.children ?? [], faceMeshRef.current, true)[0];
+        const labelId = labelHit?.object.userData.annotationLabelId as string | undefined;
+        const candidate = callbacks.current.labInteraction && callbacks.current.showEditablePoints
+          ? screenAnnotationSnap({ x: e.clientX - rect.left, y: e.clientY - rect.top }, cameraRef.current, rect.width, rect.height,
+            callbacks.current.editablePoints, [], point => isSurfacePositionVisible(point, cameraRef.current!, faceMeshRef.current)
+              && (!callbacks.current.surfaceConstraint || callbacks.current.surfaceConstraint.accepts(point)))
+          : null;
+        const pointId = candidate
+          ? callbacks.current.editablePoints.find(point => candidate.point.distanceToSquared(new THREE.Vector3(point.x, point.y, point.z)) < 1e-10)?.id
+          : labelId;
+        const pointGroup = editablePointsGroupRef.current?.children.find(child => child.userData.editableId === pointId);
+        if (pointGroup) {
+          if (callbacks.current.pointMode === 'delete') callbacks.current.onEditablePointDeleted?.(pointId!);
+          else {
+            draggedEditableId = pointId!;
+            draggedEditableGroup = pointGroup as THREE.Group;
+            draggedEditableOriginal = pointGroup.position.clone();
+            draggedEditableSurface = null;
+            dragMoved = false;
+            controls.enabled = false;
+          }
+          isDragging = true;
+          return;
+        }
+        if (labelId) {
+          callbacks.current.onEditablePointClicked?.(labelId);
+          isDragging = true;
+          return;
+        }
+      }
+      handlesGroupRef.current?.children.forEach(handle => { handle.userData.cancelPosition = handle.position.clone(); });
       // ── Prioridad 0: handle drag (resize/move de línea seleccionada) ───────
-      if (handlesGroupRef.current && handlesGroupRef.current.children.length > 0 && cameraRef.current) {
+      const canEditHandles = !callbacks.current.labInteraction
+        || (tool === 'none' && callbacks.current.pointMode === 'none' && !callbacks.current.lineDrawingMode);
+      if (canEditHandles && handlesGroupRef.current && handlesGroupRef.current.children.length > 0 && cameraRef.current) {
         const rect = renderer.domElement.getBoundingClientRect();
         mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
         mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
@@ -1442,7 +1813,7 @@ const ThreeEngine: React.FC<{
       }
 
       // ── Modo shape (circle / rectangle) ───────────────────────────────────
-      if (tool === 'shape-circle' || tool === 'shape-rect') {
+      if (tool === 'shape-circle' || tool === 'shape-rect' || tool === 'shape-ellipse') {
         if (!faceMeshRef.current || !cameraRef.current) return;
         const rect = renderer.domElement.getBoundingClientRect();
         mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
@@ -1532,6 +1903,8 @@ const ThreeEngine: React.FC<{
             // Iniciar drag
             draggedEditableId = obj.userData.editableId;
             draggedEditableGroup = obj as THREE.Group;
+            draggedEditableOriginal = draggedEditableGroup.position.clone();
+            draggedEditableSurface = null;
             if (controlsRef.current) controlsRef.current.enabled = false;
             isDragging = false;
             dragMoved = false;
@@ -1546,6 +1919,8 @@ const ThreeEngine: React.FC<{
     };
 
     const onPointerMove = (e: MouseEvent) => {
+      syncDrawingTool();
+      if (callbacks.current.annotationSnap) updateAnnotationSnap(e.clientX, e.clientY);
       if ((e.buttons & 1) === 1 && rejectSurfaceEvent(e)) return;
       if (resizingZonalGroup && resizingZonalId) {
         if ((e as PointerEvent).pointerId !== resizingZonalPointerId) return;
@@ -1603,6 +1978,35 @@ const ThreeEngine: React.FC<{
         const hits = raycaster.intersectObject(faceMeshRef.current, true);
         if (hits.length > 0) {
           const surfPt = hits[0].point;
+          const originalShape = handleBodyOriginalShapeData;
+          if (originalShape && (callbacks.current.labInteraction || originalShape.shapeType === 'ellipse')
+            && (handleDragRole === 'shape-body' || handleDragRole === 'shape-scale')) {
+            const previewShape = { ...originalShape, opacity: 0.8 };
+            const handle = handlesGroupRef.current?.children.find(child => child.userData.handleRole === handleDragRole);
+            if (handleDragRole === 'shape-body') {
+              previewShape.center = surfPt.clone();
+              if (hits[0].face) previewShape.normal = hits[0].face.normal.clone().transformDirection(hits[0].object.matrixWorld).normalize();
+              handle?.position.copy(surfPt);
+            } else {
+              const center = new THREE.Vector3(originalShape.center.x, originalShape.center.y, originalShape.center.z);
+              const normal = new THREE.Vector3(originalShape.normal.x, originalShape.normal.y, originalShape.normal.z).normalize();
+              const planePoint = raycaster.ray.intersectPlane(new THREE.Plane().setFromNormalAndCoplanarPoint(normal, center), new THREE.Vector3());
+              if (!planePoint) return;
+              handle?.position.copy(planePoint);
+              const tangent = originalShape.tangent
+                ? new THREE.Vector3(originalShape.tangent.x, originalShape.tangent.y, originalShape.tangent.z).normalize()
+                : new THREE.Vector3().crossVectors(normal, new THREE.Vector3(0, 1, 0)).normalize();
+              const bitangent = new THREE.Vector3().crossVectors(normal, tangent).normalize();
+              const delta = planePoint.sub(center);
+              previewShape.radius = delta.length();
+              previewShape.width = Math.max(0.02, Math.abs(delta.dot(tangent)) * 2);
+              previewShape.height = Math.max(0.02, Math.abs(delta.dot(bitangent)) * 2);
+            }
+            clearBrushPreview();
+            brushPreviewGroupRef.current?.add(buildProjectedShape(previewShape, faceMeshRef.current, cameraRef.current, callbacks.current.surfaceConstraint));
+            isDragging = true;
+            return;
+          }
           if (handleDragRole === 'start' || handleDragRole === 'end') {
             if (handleBodyOriginalSegments && handleBodyOriginalPoints) {
               // Forma compuesta: escalar+rotar desde ancla opuesta (no trasladar)
@@ -1912,6 +2316,26 @@ const ThreeEngine: React.FC<{
       // ── Modo shape: preview de círculo o rectángulo ────────────────────────
       if (shapeAnchor && faceMeshRef.current && cameraRef.current) {
         const rect = renderer.domElement.getBoundingClientRect();
+        if (callbacks.current.labInteraction || callbacks.current.activeTool === 'shape-ellipse') {
+          mouse.set(((e.clientX - rect.left) / rect.width) * 2 - 1, -((e.clientY - rect.top) / rect.height) * 2 + 1);
+          raycaster.setFromCamera(mouse, cameraRef.current);
+          const plane = new THREE.Plane().setFromNormalAndCoplanarPoint(shapeAnchor.normal, shapeAnchor.point);
+          const cursor = raycaster.ray.intersectPlane(plane, new THREE.Vector3());
+          if (!cursor) return;
+          const bitangent = new THREE.Vector3().crossVectors(shapeAnchor.normal, shapeAnchor.tangent).normalize();
+          const delta = cursor.sub(shapeAnchor.point);
+          shapeCurrentRadius = delta.length();
+          shapeCurrentW = Math.abs(delta.dot(shapeAnchor.tangent)) * 2;
+          shapeCurrentH = Math.abs(delta.dot(bitangent)) * 2;
+          clearBrushPreview();
+          brushPreviewGroupRef.current?.add(buildProjectedShape({
+            id: 'preview', shapeType: callbacks.current.activeTool === 'shape-circle' ? 'circle' : callbacks.current.activeTool === 'shape-ellipse' ? 'ellipse' : 'rectangle',
+            center: shapeAnchor.point, normal: shapeAnchor.normal, tangent: shapeAnchor.tangent,
+            radius: shapeCurrentRadius, width: shapeCurrentW, height: shapeCurrentH,
+            color: callbacks.current.pendingBrushColor, thickness: callbacks.current.pendingBrushThickness, opacity: 0.7,
+          }, faceMeshRef.current, cameraRef.current, callbacks.current.surfaceConstraint));
+          return;
+        }
         const unitsPerPx = worldUnitsPerPixel(cameraRef.current, shapeAnchor.point, rect.height);
         const rawDist = Math.sqrt(
           (e.clientX - startPos.x) ** 2 + (e.clientY - startPos.y) ** 2
@@ -1989,6 +2413,7 @@ const ThreeEngine: React.FC<{
         const hits = raycaster.intersectObjects(meshObjs, false);
         if (hits.length > 0) {
           const hit = hits[0];
+          draggedEditableSurface = hit.point.clone();
           if (hit.face) {
             const nf = hit.face.normal.clone().transformDirection(hit.object.matrixWorld).normalize();
             draggedEditableGroup.position.copy(hit.point).addScaledVector(nf, 0.03);
@@ -1996,6 +2421,8 @@ const ThreeEngine: React.FC<{
             draggedEditableGroup.position.copy(hit.point);
           }
           dragMoved = true;
+          const label = annotationLabelsGroupRef.current?.children.find(child => child.userData.annotationLabelId === draggedEditableId);
+          label?.position.copy(draggedEditableGroup.position);
         }
         return;
       }
@@ -2004,8 +2431,26 @@ const ThreeEngine: React.FC<{
       }
     };
 
+    const completeFreehand = (line: FreehandLine) => {
+      if (callbacks.current.labInteraction && (surfaceProjectionFailed || line.points.length < 2 || line.segments?.some(segment => segment.length < 2))) return;
+      callbacks.current.onFreehandLineComplete?.(line);
+    };
+    const updateFreehand = (id: string, points: FreehandLine['points'], segments?: FreehandLine['segments']) => {
+      if (callbacks.current.labInteraction && (surfaceProjectionFailed || points.length < 2 || segments?.some(segment => segment.length < 2))) return;
+      callbacks.current.onFreehandLineUpdated?.(id, points, segments);
+    };
+    const updateSurfaceShape = (id: string, update: SurfaceShapeUpdate) => {
+      const original = callbacks.current.surfaceShapes.find(shape => shape.id === id);
+      if (original && (callbacks.current.labInteraction || original.shapeType === 'ellipse')) {
+        const outline = projectedShapeOutline({ ...original, ...update }, faceMeshRef.current, cameraRef.current, callbacks.current.surfaceConstraint);
+        if (!outline) return;
+        update.outline = outline;
+      }
+      callbacks.current.onSurfaceShapeUpdated?.(id, update);
+    };
     const onPointerUp = (e: MouseEvent) => {
       syncDrawingTool();
+      surfaceProjectionFailed = false;
       if (resizingZonalGroup && resizingZonalId) {
         if ((e as PointerEvent).pointerId !== resizingZonalPointerId) return;
         const markerId = resizingZonalId;
@@ -2034,11 +2479,15 @@ const ThreeEngine: React.FC<{
           const bodyHandle = handlesGroupRef.current?.children.find((h: any) => h.userData.handleRole === 'shape-body');
           if (bodyHandle) {
             const projCenter = projectToSurface(bodyHandle.position.clone());
-            const update: Record<string, any> = { center: { x: projCenter.x, y: projCenter.y, z: projCenter.z } };
+            const update: SurfaceShapeUpdate = { center: { x: projCenter.x, y: projCenter.y, z: projCenter.z } };
             // Re-estimar normal/tangent en el nuevo centro para que la forma se pegue correctamente
             if (faceMeshRef.current) {
               const rc2 = new THREE.Raycaster();
               rc2.set(new THREE.Vector3(projCenter.x, projCenter.y, 12), new THREE.Vector3(0, 0, -1));
+              if ((callbacks.current.labInteraction || handleBodyOriginalShapeData?.shapeType === 'ellipse') && cameraRef.current) {
+                const ndc = projCenter.clone().project(cameraRef.current);
+                rc2.setFromCamera(new THREE.Vector2(ndc.x, ndc.y), cameraRef.current);
+              }
               const fHits2 = rc2.intersectObject(faceMeshRef.current, true);
               if (fHits2.length > 0 && fHits2[0].face) {
                 const n2 = fHits2[0].face.normal.clone().transformDirection(fHits2[0].object.matrixWorld).normalize();
@@ -2049,7 +2498,7 @@ const ThreeEngine: React.FC<{
                 update.tangent = { x: t2.x, y: t2.y, z: t2.z };
               }
             }
-            callbacks.current.onSurfaceShapeUpdated?.(lineId, update);
+            updateSurfaceShape(lineId, update);
           }
           handleBodyShapeStartSurface = null;
           handleBodyOriginalShapeCenter = null;
@@ -2065,7 +2514,7 @@ const ThreeEngine: React.FC<{
             const center = new THREE.Vector3(origShape.center.x, origShape.center.y, origShape.center.z);
             const newDist = scaleHandle.position.distanceTo(center);
             if (origShape.shapeType === 'circle') {
-              callbacks.current.onSurfaceShapeUpdated?.(lineId, { radius: Math.max(0.01, newDist) });
+              updateSurfaceShape(lineId, { radius: Math.max(0.01, newDist) });
             } else {
               const sNorm = new THREE.Vector3(origShape.normal.x, origShape.normal.y, origShape.normal.z).normalize();
               const sTan = origShape.tangent
@@ -2073,7 +2522,7 @@ const ThreeEngine: React.FC<{
                 : new THREE.Vector3().crossVectors(sNorm, new THREE.Vector3(0, 1, 0)).normalize();
               const sBi = new THREE.Vector3().crossVectors(sNorm, sTan).normalize();
               const sv = scaleHandle.position.clone().sub(center);
-              callbacks.current.onSurfaceShapeUpdated?.(lineId, {
+              updateSurfaceShape(lineId, {
                 width: Math.max(0.02, Math.abs(sv.dot(sTan)) * 2),
                 height: Math.max(0.02, Math.abs(sv.dot(sBi)) * 2),
               });
@@ -2119,7 +2568,7 @@ const ThreeEngine: React.FC<{
                   const movedB = projectToSurface(transformPt(seg[seg.length - 1]));
                   return surfaceLine(movedA, movedB, Math.max(seg.length, 8)).map(p => ({ x: p.x, y: p.y, z: p.z }));
                 });
-                callbacks.current.onFreehandLineUpdated?.(lineId, newPoints, newSegs);
+                updateFreehand(lineId, newPoints, newSegs);
               }
             }
             handleBodyStartSurface = null;
@@ -2139,7 +2588,7 @@ const ThreeEngine: React.FC<{
               const newPts = isStart
                 ? surfaceLine(newPos.clone(), otherPt)
                 : surfaceLine(otherPt, newPos.clone());
-              callbacks.current.onFreehandLineUpdated?.(lineId, newPts.map(p => ({ x: p.x, y: p.y, z: p.z })));
+              updateFreehand(lineId, newPts.map(p => ({ x: p.x, y: p.y, z: p.z })));
             }
           }
         } else if (role === 'body' && handleBodyOriginalPoints && handleBodyStartSurface) {
@@ -2162,7 +2611,7 @@ const ThreeEngine: React.FC<{
                 const movedB = projectToSurface(new THREE.Vector3(seg[seg.length-1].x + offset.x, seg[seg.length-1].y + offset.y, seg[seg.length-1].z + offset.z));
                 return surfaceLine(movedA, movedB, Math.max(seg.length, 8)).map(p => ({ x: p.x, y: p.y, z: p.z }));
               });
-              callbacks.current.onFreehandLineUpdated?.(lineId, newPoints, newSegments);
+              updateFreehand(lineId, newPoints, newSegments);
             }
           } else {
             // Línea simple: re-proyectar entre handles extremos desplazados
@@ -2170,7 +2619,7 @@ const ThreeEngine: React.FC<{
             const endHandle = handlesGroupRef.current?.children.find((h: any) => h.userData.handleRole === 'end');
             if (startHandle && endHandle) {
               const newPts = surfaceLine(startHandle.position.clone(), endHandle.position.clone());
-              callbacks.current.onFreehandLineUpdated?.(lineId, newPts.map(p => ({ x: p.x, y: p.y, z: p.z })));
+              updateFreehand(lineId, newPts.map(p => ({ x: p.x, y: p.y, z: p.z })));
             }
           }
           handleBodyStartSurface = null;
@@ -2194,7 +2643,7 @@ const ThreeEngine: React.FC<{
         // Línea recta (straight-line): proyectada a superficie
         if (tool === 'straight-line' && ptA && ptB) {
           const pts = surfaceLine(ptA, ptB);
-          callbacks.current.onFreehandLineComplete?.({
+          completeFreehand({
             id: `fh-${Date.now()}`,
             points: pts.map(p => ({ x: p.x, y: p.y, z: p.z })),
             color: col,
@@ -2227,7 +2676,7 @@ const ThreeEngine: React.FC<{
           if (perp.lengthSq() < 0.01) perp = new THREE.Vector3().crossVectors(dir, new THREE.Vector3(0, 0, 1)).normalize();
           const tL = ptB.clone().addScaledVector(dir, -arrowLen).addScaledVector(perp, arrowLen * 0.5);
           const tR = ptB.clone().addScaledVector(dir, -arrowLen).addScaledVector(perp, -arrowLen * 0.5);
-          callbacks.current.onFreehandLineComplete?.({
+          completeFreehand({
             id: `fh-${Date.now()}-arrow`,
             points: [ptA, ptB].map(p => ({ x: p.x, y: p.y, z: p.z })),
             segments: [
@@ -2254,7 +2703,7 @@ const ThreeEngine: React.FC<{
               const endPt = ptA.clone().addScaledVector(fanDir, len);
               fanSegs.push(surfaceLine(ptA, endPt).map(p => ({ x: p.x, y: p.y, z: p.z })));
             }
-            callbacks.current.onFreehandLineComplete?.({
+            completeFreehand({
               id: `fh-${Date.now()}-fan`,
               points: [ptA, ptB].map(p => ({ x: p.x, y: p.y, z: p.z })),
               segments: fanSegs,
@@ -2281,7 +2730,7 @@ const ThreeEngine: React.FC<{
             const base = ptA.clone().addScaledVector(dirNorm, (j / N) * lenDir);
             gridSegs.push(surfaceLine(base.clone().addScaledVector(perp, -lenPerp/2), base.clone().addScaledVector(perp, lenPerp/2), 12).map(p => ({x:p.x,y:p.y,z:p.z})));
           }
-          callbacks.current.onFreehandLineComplete?.({
+          completeFreehand({
             id: `fh-${Date.now()}-grid`,
             points: [ptA, ptB].map(p => ({ x: p.x, y: p.y, z: p.z })),
             segments: gridSegs,
@@ -2306,7 +2755,7 @@ const ThreeEngine: React.FC<{
               const tip = base.clone().addScaledVector(perp, sign * branchLen);
               fernSegs.push(surfaceLine(base, tip, 8).map(p => ({ x: p.x, y: p.y, z: p.z })));
             }
-            callbacks.current.onFreehandLineComplete?.({
+            completeFreehand({
               id: `fh-${Date.now()}-fern`,
               points: [ptA, ptB].map(p => ({ x: p.x, y: p.y, z: p.z })),
               segments: fernSegs,
@@ -2316,7 +2765,7 @@ const ThreeEngine: React.FC<{
         }
         // Freehand brush normal
         else if (tool === 'freehand-brush' && brushPoints.length >= 2) {
-          callbacks.current.onFreehandLineComplete?.({
+          completeFreehand({
             id: `fh-${Date.now()}`,
             points: brushPoints.map(p => ({ x: p.x, y: p.y, z: p.z })),
             color: col,
@@ -2344,7 +2793,7 @@ const ThreeEngine: React.FC<{
           const th = callbacks.current.pendingBrushThickness || 1.0;
           const shape: SurfaceShape = {
             id,
-            shapeType: tool === 'shape-circle' ? 'circle' : 'rectangle',
+            shapeType: tool === 'shape-circle' ? 'circle' : tool === 'shape-ellipse' ? 'ellipse' : 'rectangle',
             center: { x: anchor.point.x, y: anchor.point.y, z: anchor.point.z },
             normal: { x: anchor.normal.x, y: anchor.normal.y, z: anchor.normal.z },
             tangent: { x: anchor.tangent.x, y: anchor.tangent.y, z: anchor.tangent.z },
@@ -2355,6 +2804,12 @@ const ThreeEngine: React.FC<{
             opacity: 0.85,
             thickness: th,
           };
+          if (callbacks.current.labInteraction || shape.shapeType === 'ellipse') {
+            if (shape.shapeType !== 'circle' && (shapeCurrentW < 0.02 || shapeCurrentH < 0.02)) { isDragging = true; return; }
+            const outline = projectedShapeOutline(shape, faceMeshRef.current, cameraRef.current, callbacks.current.surfaceConstraint);
+            if (!outline) { isDragging = true; return; }
+            shape.outline = outline;
+          }
           callbacks.current.onShapeComplete?.(shape);
         }
         isDragging = true;
@@ -2369,7 +2824,16 @@ const ThreeEngine: React.FC<{
         if (controlsRef.current) controlsRef.current.enabled = true;
         isDragging = true; // Prevenir que onClick dispare el flujo de marcación
         if (dragMoved) {
-          const pos = relGroup.position;
+          const pos = callbacks.current.labInteraction && draggedEditableSurface
+            ? draggedEditableSurface.clone() : relGroup.position.clone();
+          // Preview imperativo solamente: el padre confirma el movimiento mediante editablePoints.
+          // Si lo rechaza (sin cambiar props), ni la esfera ni el sprite deben quedar desplazados.
+          if (callbacks.current.labInteraction && draggedEditableOriginal) {
+            relGroup.position.copy(draggedEditableOriginal);
+            annotationLabelsGroupRef.current?.children.forEach(label => {
+              if (label.userData.annotationLabelId === relId) label.position.copy(draggedEditableOriginal!);
+            });
+          }
           callbacks.current.onEditablePointMoved?.(relId, { x: pos.x, y: pos.y, z: pos.z });
         } else {
           // Clic simple sobre punto → anillo de selección + notificar al padre
@@ -2381,6 +2845,8 @@ const ThreeEngine: React.FC<{
           callbacks.current.onEditablePointClicked?.(relId);
         }
         dragMoved = false;
+        draggedEditableOriginal = null;
+        draggedEditableSurface = null;
       }
     };
 
@@ -2402,7 +2868,7 @@ const ThreeEngine: React.FC<{
       const tool = callbacks.current.activeTool;
 
       // ── Modo brush/shape/straight/ha (excepto ha-grid que usa click): ignorar onClick ──
-      if (tool === 'freehand-brush' || tool === 'shape-circle' || tool === 'shape-rect'
+      if (tool === 'freehand-brush' || tool === 'shape-circle' || tool === 'shape-rect' || tool === 'shape-ellipse'
         || tool === 'straight-line' || tool === 'shape-arrow' || tool === 'ha-fan' || tool === 'ha-fern') return;
 
       // ── ha-grid: flujo de tres clics ──────────────────────────────────────
@@ -2466,7 +2932,7 @@ const ThreeEngine: React.FC<{
       if ((tool === 'none' || tool === 'freehand-poly') && callbacks.current.pointMode !== 'add') {
         // Raycast contra freehand group
         const fhMeshes: THREE.Object3D[] = [];
-        freehandGroupRef.current?.children.forEach(g => g.traverse(c => { if ((c as THREE.Mesh).isMesh) fhMeshes.push(c); }));
+        freehandGroupRef.current?.children.filter(g => !g.userData.coverage).forEach(g => g.traverse(c => { if ((c as THREE.Mesh).isMesh) fhMeshes.push(c); }));
         if (fhMeshes.length > 0) {
           const fhHits = visibleSurfaceHits(raycaster, fhMeshes, faceMeshRef.current, callbacks.current.occludeAnnotations);
           if (fhHits.length > 0) {
@@ -2569,6 +3035,7 @@ const ThreeEngine: React.FC<{
 
       // ── Modo añadir punto libre (con snap/imán si hay punto activo) ──────
       if (callbacks.current.pointMode === 'add') {
+        if (callbacks.current.annotationSnap) updateAnnotationSnap(event.clientX, event.clientY);
         if (editablePointsGroupRef.current && callbacks.current.onEditablePointClicked && !callbacks.current.readOnly) {
           const hits = visibleSurfaceHits(raycaster, [editablePointsGroupRef.current], faceMeshRef.current, callbacks.current.occludeAnnotations, true);
           if (hits.length > 0 && hits[0].distance <= intersect.distance + 0.03) {
@@ -2584,7 +3051,7 @@ const ThreeEngine: React.FC<{
         const snapVisible = currentSnapPt && (!callbacks.current.occludeAnnotations || isSurfacePositionVisible(currentSnapPt, cameraRef.current, faceMeshRef.current));
         const usePt = snapVisible && currentSnapPt ? currentSnapPt.clone() : point;
         const nAdd = intersect.face ? intersect.face.normal.clone().applyMatrix3(new THREE.Matrix3().getNormalMatrix(intersect.object.matrixWorld)).normalize() : new THREE.Vector3(0, 1, 0);
-        const ptAdd = usePt.clone().addScaledVector(nAdd, 0.03);
+        const ptAdd = callbacks.current.annotationSnap && snapVisible ? usePt.clone() : usePt.clone().addScaledVector(nAdd, 0.03);
         callbacks.current.onMeshClick({
           position: { x: ptAdd.x, y: ptAdd.y, z: ptAdd.z },
           rotation: [0, 0, 0],
@@ -2621,8 +3088,10 @@ const ThreeEngine: React.FC<{
 
     renderer.domElement.addEventListener('pointerdown', onPointerDown);
     renderer.domElement.addEventListener('pointermove', onPointerMove);
-    renderer.domElement.addEventListener('pointerup', onPointerUp);
-    renderer.domElement.addEventListener('pointercancel', onPointerUp);
+    window.addEventListener('pointerup', onPointerUp);
+    renderer.domElement.addEventListener('pointercancel', cancelInteraction);
+    window.addEventListener('keydown', onEscape);
+    window.addEventListener('blur', cancelInteraction);
     renderer.domElement.addEventListener('click', onClick);
 
     // Hover mouse tracking (sin pointerEvents pesados — solo posición)
@@ -2654,6 +3123,14 @@ const ThreeEngine: React.FC<{
     const animate = () => {
       animationFrameId = requestAnimationFrame(animate);
       syncDrawingTool();
+      if (callbacks.current.annotationSnap && cameraRef.current && snapIndicatorRef.current) snapIndicatorRef.current.quaternion.copy(cameraRef.current.quaternion);
+      if (cameraRef.current && rendererRef.current) {
+        const height = rendererRef.current.domElement.getBoundingClientRect().height;
+        if (height > 0) annotationLabelsGroupRef.current?.children.forEach(label => {
+          const units = worldUnitsPerPixel(cameraRef.current!, label.position, height);
+          label.scale.set(units * 26 * label.userData.aspect, units * 26, 1);
+        });
+      }
       if (controlsRef.current) controlsRef.current.update();
       if (gridStep > 0 && callbacks.current.activeTool !== 'ha-grid') resetGridDrawing();
       if (rendererRef.current && sceneRef.current && cameraRef.current) {
@@ -2676,6 +3153,7 @@ const ThreeEngine: React.FC<{
           const meshToLineGrp = new Map<THREE.Object3D, THREE.Object3D>();
           const addGroup = (ref: typeof freehandGroupRef) => {
             ref.current?.children.forEach(lineGrp => {
+              if (lineGrp.userData.coverage) return;
               lineGrp.traverse(c => {
                 if ((c as THREE.Mesh).isMesh) {
                   hoverMeshes.push(c);
@@ -2705,7 +3183,7 @@ const ThreeEngine: React.FC<{
             if (prevHoveredId) restoreHoverById(prevHoveredId);
             if (newHoveredGroup) applyHover(newHoveredGroup);
             prevHoveredId = newHoveredId;
-            if (!newHoveredId) clearSnap();
+            if (!newHoveredId && !callbacks.current.annotationSnap) clearSnap();
             // Cambiar cursor
             if (renderer.domElement) {
               renderer.domElement.style.cursor = newHoveredId ? 'pointer' : 'crosshair';
@@ -2764,7 +3242,11 @@ const ThreeEngine: React.FC<{
 
           // ── Snap / imán: SOLO cuando el usuario está en modo "añadir punto" ──
           // Si no hay herramienta activa → el hover es para EDICIÓN, no snap
-          const canSnap = callbacks.current.pointMode === 'add';
+          const canSnap = !callbacks.current.labInteraction && !callbacks.current.annotationSnap && callbacks.current.pointMode === 'add';
+          if (callbacks.current.annotationSnap && Math.abs(hoverMouse.x) <= 1 && Math.abs(hoverMouse.y) <= 1) {
+            const rect = renderer.domElement.getBoundingClientRect();
+            updateAnnotationSnap(rect.left + (hoverMouse.x + 1) * rect.width / 2, rect.top + (1 - hoverMouse.y) * rect.height / 2);
+          } else if (callbacks.current.annotationSnap) clearSnap();
           if (canSnap && prevHoveredId && cameraRef.current) {
             // Proyectar hoverMouse al punto 3D en la malla
             const snapRc = new THREE.Raycaster();
@@ -2800,7 +3282,7 @@ const ThreeEngine: React.FC<{
                 clearSnap();
               }
             }
-          } else if (!canSnap) {
+          } else if (!canSnap && !callbacks.current.annotationSnap) {
             clearSnap();
           }
         }
@@ -2808,7 +3290,7 @@ const ThreeEngine: React.FC<{
         if (callbacks.current.occludeAnnotations || annotationDepthApplied.current) {
           for (const group of [markersGroupRef.current, editablePointsGroupRef.current, linesGroupRef.current,
             boundariesGroupRef.current, freehandGroupRef.current, shapesGroupRef.current, handlesGroupRef.current,
-            brushPreviewGroupRef.current, snapIndicatorRef.current]) {
+            brushPreviewGroupRef.current, snapIndicatorRef.current, annotationLabelsGroupRef.current]) {
             applyAnnotationDepth(group, callbacks.current.occludeAnnotations, annotationDepthDefaults.current);
           }
           annotationDepthApplied.current = callbacks.current.occludeAnnotations;
@@ -2869,13 +3351,16 @@ const ThreeEngine: React.FC<{
 
     return () => {
       window.removeEventListener('resize', onResize);
+      window.removeEventListener('pointerup', onPointerUp);
+      window.removeEventListener('keydown', onEscape);
+      window.removeEventListener('blur', cancelInteraction);
+      cancelInteractionRef.current = null;
       ro.disconnect();
       if (rendererRef.current && rendererRef.current.domElement) {
         const dom = rendererRef.current.domElement;
         dom.removeEventListener('pointerdown', onPointerDown);
         dom.removeEventListener('pointermove', onPointerMove);
-        dom.removeEventListener('pointerup', onPointerUp);
-        dom.removeEventListener('pointercancel', onPointerUp);
+        dom.removeEventListener('pointercancel', cancelInteraction);
         dom.removeEventListener('click', onClick);
         dom.removeEventListener('mousemove', onHoverMouseMove);
         dom.removeEventListener('mouseleave', onHoverMouseLeave);
@@ -3322,6 +3807,11 @@ const ThreeEngine: React.FC<{
       ptGroup.userData.lineIds = pt.lineIds ?? [];
       ptGroup.userData.epType = pt.type;
       ptGroup.userData.pointName = pt.name ?? 'Punto libre';
+      // El sprite es el ancla gráfica; no duplicar con esfera ni etiqueta clínica.
+      if (annotationLabels.some(label => label.id === pt.id)) {
+        group.add(ptGroup);
+        return;
+      }
 
       const isIntersection = pt.type === 'intersection';
       const isIncomplete = incompletePointIds.includes(pt.id);
@@ -3372,7 +3862,7 @@ const ThreeEngine: React.FC<{
 
       group.add(ptGroup);
     });
-  }, [editablePoints, incompletePointIds, modelVersion]);
+  }, [editablePoints, incompletePointIds, annotationLabels, modelVersion]);
 
   // 4c. Visibilidad de puntos editables
   useEffect(() => {
@@ -3424,11 +3914,13 @@ const ThreeEngine: React.FC<{
     freehandLines.forEach(line => {
       const col = new THREE.Color(line.color);
       const r = (line.thickness || 1.0) * 0.003;
-      const isSelected = selectedElementId === line.id;
+      const coverage = isCoverageLine(line.id);
+      const isSelected = !coverage && selectedElementId === line.id;
 
       if (line.segments && line.segments.length > 0) {
         // Forma compuesta: un grupo maestro con sub-grupos por segmento
         const masterGrp = new THREE.Group();
+        masterGrp.userData.coverage = coverage;
         masterGrp.userData.freehandId = line.id;
         line.segments.forEach(segPts => {
           if (segPts.length < 2) return;
@@ -3451,6 +3943,7 @@ const ThreeEngine: React.FC<{
         if (line.points.length < 2) return;
         const pts = line.points.map(p => new THREE.Vector3(p.x, p.y, p.z));
         const lineGrp = buildSurfaceTube(pts, col, 1.0, r, false);
+        lineGrp.userData.coverage = coverage;
         lineGrp.userData.freehandId = line.id;
         lineGrp.traverse(c => { if ((c as THREE.Mesh).isMesh) c.userData.freehandId = line.id; });
         if (isSelected) {
@@ -3485,6 +3978,19 @@ const ThreeEngine: React.FC<{
     }
     const rc = new THREE.Raycaster();
     surfaceShapes.forEach(shape => {
+      if (labInteraction || shape.shapeType === 'ellipse') {
+        const shapeGroup = shape.outline?.length
+          ? buildSurfaceTube(shape.outline.map(point => new THREE.Vector3(point.x, point.y, point.z)),
+            new THREE.Color(shape.color), shape.opacity, shape.thickness * 0.003, false, true)
+          : buildProjectedShape(shape, faceMesh, null, surfaceConstraint);
+        shapeGroup.userData.shapeId = shape.id;
+        shapeGroup.traverse(child => { child.userData.shapeId = shape.id; });
+        if (selectedElementId === shape.id) shapeGroup.traverse(child => {
+          if (child instanceof THREE.Mesh && !child.userData.isHitbox) (child.material as THREE.MeshBasicMaterial).color.addScalar(0.25);
+        });
+        grp.add(shapeGroup);
+        return;
+      }
       const center = new THREE.Vector3(shape.center.x, shape.center.y, shape.center.z);
       const normal = new THREE.Vector3(shape.normal.x, shape.normal.y, shape.normal.z).normalize();
       const tangent = shape.tangent
@@ -3575,7 +4081,7 @@ const ThreeEngine: React.FC<{
         grp.add(rectGrp);
       }
     });
-  }, [surfaceShapes, selectedElementId, modelVersion]);
+  }, [surfaceShapes, selectedElementId, modelVersion, labInteraction, surfaceConstraint]);
 
   // 4g. Handles de edición para el elemento seleccionado (línea freehand o shape)
   useEffect(() => {
@@ -3589,6 +4095,7 @@ const ThreeEngine: React.FC<{
       c.material?.dispose();
     }
     if (!selectedElementId) return;
+    if (isCoverageLine(selectedElementId)) return;
 
     const makeHandle = (color: number, role: string, pt: { x: number; y: number; z: number }, lineId: string) => {
       const grp2 = new THREE.Group();
@@ -3718,6 +4225,7 @@ const ThreeEngine: React.FC<{
       if (pts.length < 2) return;
       const lineGrp = buildSurfaceTube(pts, color, 1.0, baseRadius, isDashed);
       lineGrp.userData.lineId = line.id;
+      lineGrp.userData.surfacePoints = pts;
       lineGrp.traverse(c => { if ((c as THREE.Mesh).isMesh) c.userData.lineId = line.id; });
       group.add(lineGrp);
     });
@@ -3889,6 +4397,8 @@ export default function Clinical3DViewer({
   onBackgroundClick,
   onEstimatedSurfaceInteraction,
   surfaceConstraint,
+  labInteraction = false, annotationSnap = false, cancellationToken, onAnnotationSnap,
+  annotationLabels = EMPTY_ANNOTATION_LABELS,
   anatomicalOverlay,
   clipping = null,
   pointMarkerScale = 1.0,
@@ -3995,6 +4505,11 @@ export default function Clinical3DViewer({
             onBackgroundClick={onBackgroundClick}
             onEstimatedSurfaceInteraction={onEstimatedSurfaceInteraction}
             surfaceConstraint={surfaceConstraint}
+            annotationSnap={annotationSnap}
+            labInteraction={labInteraction}
+            cancellationToken={cancellationToken}
+            onAnnotationSnap={onAnnotationSnap}
+            annotationLabels={annotationLabels}
             anatomicalOverlay={anatomicalOverlay}
             clipping={clipping}
             pointMarkerScale={pointMarkerScale}
