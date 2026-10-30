@@ -164,6 +164,11 @@ function mountFacialSimulation(
   const after = new THREE.Group(), before = new THREE.Group();
   scene.add(after, before);
   const referenceGroup = new THREE.Group(); after.add(referenceGroup);
+  // Morph de capas: misma topología por capa (superficie hundida por profundidad); se interpolan vértices y opacidad.
+  type LayerMotion = { shown?: number; morph?: { from: Float32Array; to: Float32Array; start: number }; displaced?: boolean };
+  const layerMotion = new Map<ReferenceKind, LayerMotion>();
+  let skinShown: number | undefined, animating = false, lastStep = 0;
+  const reduceMotion = typeof window !== 'undefined' && !!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
   const photoGroup = new THREE.Group(), beforePhotoGroup = new THREE.Group();
   after.add(photoGroup); before.add(beforePhotoGroup);
   const photoTextures: THREE.Texture[] = [];
@@ -272,7 +277,7 @@ function mountFacialSimulation(
     material.depthWrite = !transparent;
   };
   /** Referencias opacas/translúcidas reales o superposición explícita; el corte solo retira el plano saliente. */
-  const applyAnatomy = (current: ViewerState) => {
+  const applyAnatomy = (current: ViewerState, time: number) => {
     const stage = revealStage(current.reveal);
     const freeCut = buildCutPlane(bounds, current.cut);
     const freePlane = freeCut ? new THREE.Plane(new THREE.Vector3(freeCut.normal.x, freeCut.normal.y, freeCut.normal.z), freeCut.constant) : null;
@@ -292,40 +297,99 @@ function mountFacialSimulation(
     const clips = (kind: AnatomyPlane) => stage
       ? kind === stage.from || kind === 'vessels' && stage.from === 'muscle' ? slice ? [slice] : [] : []
       : freePlane && (current.cut.scope === 'all' || kind === 'skin') ? [freePlane] : [];
-    for (const object of referenceGroup.children) if (object instanceof THREE.Mesh) {
+    // El desvelado por profundidad responde al slider sin retardo; fuera de él, cambiar de capa es un morph.
+    const instant = reduceMotion || Boolean(stage);
+    const k = instant ? 1 : 1 - Math.exp(-(animating ? Math.max(0, time - lastStep) : 16) / 90);
+    lastStep = time;
+    let busy = false;
+    type ReferenceMesh = THREE.Mesh<THREE.BufferGeometry, THREE.MeshBasicMaterial>;
+    const entries = referenceGroup.children.filter((object): object is ReferenceMesh => object instanceof THREE.Mesh).map(object => {
       const kind = object.userData.kind as ReferenceKind;
-      object.material.opacity = current.referenceLayers[kind].opacity * (current.references.find(item => item.kind === kind)?.opacity ?? 1);
-      object.visible = visible(kind) && object.material.opacity > 0;
+      const motion = layerMotion.get(kind) ?? {};
+      layerMotion.set(kind, motion);
+      const target = visible(kind) ? current.referenceLayers[kind].opacity * (current.references.find(item => item.kind === kind)?.opacity ?? 1) : 0;
+      return { object, kind, motion, target, before: motion.shown ?? target };
+    });
+    const attribute = (object: ReferenceMesh) => object.geometry.getAttribute('position') as THREE.BufferAttribute;
+    const place = (object: ReferenceMesh, values: Float32Array) => { (attribute(object).array as Float32Array).set(values); attribute(object).needsUpdate = true; };
+    const snapshot = (object: ReferenceMesh) => Float32Array.from(attribute(object).array as Float32Array);
+    if (instant) {
+      for (const { object, motion } of entries) if (motion.morph || motion.displaced) {
+        place(object, object.userData.target); motion.morph = undefined; motion.displaced = false;
+      }
+    } else {
+      const entering = entries.filter(entry => entry.before < 0.05 && entry.target > 0.05);
+      const outgoing = entries.filter(entry => entry.before > 0.05 && entry.target <= 0.05).sort((a, b) => b.before - a.before);
+      const sameSize = (a: ReferenceMesh, b: ReferenceMesh) => attribute(a).array.length === attribute(b).array.length;
+      for (const entry of entries) {
+        const { object, motion } = entry;
+        if (entering.includes(entry)) {
+          // Nace de la capa saliente o, si venía la piel, de la superficie cutánea y se hunde hasta su plano.
+          const donor = outgoing.find(other => sameSize(other.object, object));
+          motion.morph = { from: donor ? snapshot(donor.object) : object.userData.surface, to: object.userData.target, start: time };
+        } else if (entry.target > 0.05 && (motion.displaced || motion.morph && motion.morph.to !== object.userData.target)) {
+          motion.morph = { from: snapshot(object), to: object.userData.target, start: time };
+        }
+      }
+      for (const { object, motion } of outgoing) {
+        // La saliente acompaña a la entrante o, al volver a piel, asciende hasta la superficie.
+        const into = entering.find(other => sameSize(other.object, object))?.object.userData.target as Float32Array | undefined;
+        const restart = into ? motion.morph?.to !== into : !motion.displaced && (!motion.morph || motion.morph.to === object.userData.target);
+        if (restart) motion.morph = { from: snapshot(object), to: into ?? object.userData.surface, start: time };
+      }
+    }
+    for (const { object, kind, motion, target, before } of entries) {
+      let shown = before + (target - before) * k;
+      if (Math.abs(target - shown) < 0.004) shown = target; else busy = true;
+      motion.shown = shown;
+      object.material.opacity = shown;
+      object.visible = shown > 0.004;
+      if (motion.morph) {
+        const t = Math.min(1, Math.max(0, time - motion.morph.start) / 520);
+        const eased = t < 0.5 ? 4 * t ** 3 : 1 - (-2 * t + 2) ** 3 / 2;
+        const array = attribute(object).array as Float32Array, { from, to } = motion.morph;
+        for (let i = 0; i < array.length; i++) array[i] = from[i] + (to[i] - from[i]) * eased;
+        attribute(object).needsUpdate = true;
+        if (t >= 1) { motion.displaced = to !== object.userData.target; motion.morph = undefined; } else busy = true;
+      }
+      if (!motion.morph && motion.displaced && !object.visible) { place(object, object.userData.target); motion.displaced = false; }
       object.material.depthTest = stage ? true : !current.overlay;
       object.renderOrder = !stage && current.overlay ? 7 : kind === 'bone' ? 1 : kind === 'muscle' ? 2 : 3;
       object.material.clippingPlanes = clips(kind);
     }
-    const skinOpacity = current.layers.skin.opacity;
+    const skinTarget = visible('skin') ? current.layers.skin.opacity : 0;
+    let skinOpacity = (skinShown ?? skinTarget) + (skinTarget - (skinShown ?? skinTarget)) * k;
+    if (Math.abs(skinTarget - skinOpacity) < 0.004) skinOpacity = skinTarget; else busy = true;
+    skinShown = skinOpacity;
     const skin = afterMeshes.get('skin');
     if (skin) {
-      skin.visible = visible('skin') && skinOpacity > 0;
+      skin.visible = skinOpacity > 0.004;
       for (const material of skin.material) { setOpacity(material, skinOpacity); material.clippingPlanes = clips('skin'); }
     }
-    photoGroup.visible = visible('skin') && skinOpacity > 0;
+    photoGroup.visible = skinOpacity > 0.004;
     for (const object of photoGroup.children) if (object instanceof THREE.Mesh) {
       setOpacity(object.material, skinOpacity, object.userData.blended); object.material.clippingPlanes = clips('skin');
     }
     regionMaterial.clippingPlanes = highlightMaterial.clippingPlanes = clips(current.anatomy);
     regionMaterial.depthTest = highlightMaterial.depthTest = current.anatomy !== 'skin' && !current.overlay;
-    regionOverlay.visible = current.showMesh && visible(current.anatomy) && current.comparison !== 'before';
+    regionOverlay.visible = current.showMesh && visible(current.anatomy) && current.comparison !== 'before'
+      && !(current.anatomy !== 'skin' && layerMotion.get(current.anatomy)?.morph);
     highlight.visible = regionOverlay.visible;
+    animating = busy;
+    return busy;
   };
-  const render = () => {
+  const render = (time = performance.now()) => {
     frame = 0;
     if (disposed || failed || !state) return;
     try {
-      applyAnatomy(state);
+      const busy = applyAnatomy(state, time);
       renderer.setScissorTest(true);
       if (state.comparison === 'split') {
         const half = Math.floor(viewportWidth / 2);
         drawView(0, half, before); drawView(half, viewportWidth - half, after);
       } else drawView(0, viewportWidth, state.comparison === 'before' ? before : after);
       renderer.setScissorTest(false);
+      if (busy) requestRender();
     } catch {
       failed = true;
       onError('No se pudo dibujar la escena 3D. Comprueba WebGL y vuelve a intentar.');
@@ -484,7 +548,10 @@ function mountFacialSimulation(
             object.name = 'ALIGNED_ANATOMICAL_REFERENCE'; object.renderOrder = 3;
             const semanticIndices = sourceReference ? buildReferenceGeometry(sourceReference.positions, sourceReference.indices,
               { ...reference, uvs: reference.uvs.slice(0, sourceReference.positions.length / 3 * 2) }).indices : data.indices;
-            object.userData = { kind: reference.kind, semanticIndices };
+            object.userData = { kind: reference.kind, semanticIndices, surface: positions, target: data.positions.slice() };
+            const motion = layerMotion.get(reference.kind);
+            // Geometría nueva (slider de morfología): el morph en curso ya no aplica a estos vértices.
+            if (motion) { motion.morph = undefined; motion.displaced = false; }
             referenceGroup.add(object);
           });
         }
@@ -575,7 +642,7 @@ function mountFacialSimulation(
         const reference = next.references.find(item => item.kind === next.anatomy);
         const referenceMesh = referenceGroup.children.find(object => object.userData.kind === next.anatomy);
         const plane = referenceMesh instanceof THREE.Mesh
-          ? referenceMesh.geometry.getAttribute('position').array
+          ? referenceMesh.userData.target as Float32Array
           : regionPlanePositions(deformed, atlas.triangles, next.plane);
         cellLabels = activeCells.map(cell => {
           if (next.anatomy === 'skin') return cell.label;

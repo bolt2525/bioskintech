@@ -547,3 +547,4 @@ Las entradas siguientes conservan la evidencia previa al despliegue y la evoluci
 - ✅ Oct 30 Capas cacheadas, morph y corte por pelado de profundidad.
 - ✅ Oct 30 Patrones: modal de ajuste, entrada de aguja y dosis por punta.
 - ✅ Oct 30 Listado y corte sin textos cortados; puntas compactas.
+- ✅ Oct 30 Morph geométrico real entre capas en ambos visores.

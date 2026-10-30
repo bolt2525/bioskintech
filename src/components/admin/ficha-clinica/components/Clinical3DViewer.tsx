@@ -211,7 +211,9 @@ interface ReferenceVisual {
   indices: Uint32Array;
   opacity: number;
   target: number;
-  morph: { from: Float32Array; start: number } | null;
+  morph: { from: Float32Array; to: Float32Array; start: number } | null;
+  /** Geometría prestada a otra capa durante el morph; se restituye al quedar invisible. */
+  displaced: boolean;
 }
 
 const disposeObject3D = (object: THREE.Object3D) => {
@@ -735,10 +737,19 @@ const ThreeEngine: React.FC<{
     const visuals = referenceVisuals.current;
     const reduce = typeof window !== 'undefined' && !!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
     const now = performance.now();
-    // Morph: la capa entrante parte de la saliente (misma topología) o, si venía la piel, ligeramente por fuera.
-    const donor = (length: number) => [...visuals.values()]
-      .filter(visual => visual.opacity > 0.05 && visual.position.array.length === length)
-      .sort((a, b) => b.opacity - a.opacity)[0]?.position.array as Float32Array | undefined;
+    // Morph cruzado: entrante y saliente comparten topología y viajan juntas entre profundidades;
+    // sin capa previa (venía la piel) la entrante nace ligeramente por fuera y se hunde.
+    const current = (visual: ReferenceVisual) => (visual.position.array as Float32Array).slice();
+    const lift = (source: Float32Array) => {
+      let cx = 0, cy = 0, cz = 0; const n = source.length / 3;
+      for (let i = 0; i < source.length; i += 3) { cx += source[i] / n; cy += source[i + 1] / n; cz += source[i + 2] / n; }
+      const lifted = source.slice();
+      for (let i = 0; i < lifted.length; i += 3) {
+        lifted[i] = cx + (source[i] - cx) * 1.035; lifted[i + 1] = cy + (source[i + 1] - cy) * 1.035; lifted[i + 2] = cz + (source[i + 2] - cz) * 1.035;
+      }
+      return lifted;
+    };
+    const entering: ReferenceVisual[] = [];
     const seen = new Set<HTMLCanvasElement>();
     for (const reference of referenceLayers ?? []) {
       seen.add(reference.canvas);
@@ -760,7 +771,7 @@ const ThreeEngine: React.FC<{
         const mesh = new THREE.Mesh(geometry, material);
         mesh.name = 'ANATOMICAL_REFERENCE_VISUAL_ONLY'; mesh.visible = false; mesh.frustumCulled = false;
         group.add(mesh);
-        visual = { mesh, material, position, source: reference.positions, uvs: reference.uvs, indices: reference.indices, opacity: 0, target: 0, morph: null };
+        visual = { mesh, material, position, source: reference.positions, uvs: reference.uvs, indices: reference.indices, opacity: 0, target: 0, morph: null, displaced: false };
         visuals.set(reference.canvas, visual);
       }
       const geometry = visual.mesh.geometry;
@@ -771,29 +782,36 @@ const ThreeEngine: React.FC<{
           visual.position = new THREE.BufferAttribute(Float32Array.from(reference.positions), 3);
           visual.position.setUsage(THREE.DynamicDrawUsage);
           geometry.setAttribute('position', visual.position);
-          visual.morph = null;
-        } else if (!visual.morph) { (visual.position.array as Float32Array).set(reference.positions); visual.position.needsUpdate = true; }
+          visual.morph = null; visual.displaced = false;
+        } else if (!visual.morph) { (visual.position.array as Float32Array).set(reference.positions); visual.position.needsUpdate = true; visual.displaced = false; }
         visual.source = reference.positions;
       }
       visual.material.depthTest = !referenceOverlay;
       visual.mesh.renderOrder = referenceOverlay ? 10 : -1;
       const target = Math.min(1, Math.max(0, reference.opacity));
-      if (!reduce && visual.opacity < 0.05 && target > 0.05) {
-        const source = visual.source, from = donor(source.length)?.slice();
-        if (from) visual.morph = { from, start: now };
-        else {
-          let cx = 0, cy = 0, cz = 0; const n = source.length / 3;
-          for (let i = 0; i < source.length; i += 3) { cx += source[i] / n; cy += source[i + 1] / n; cz += source[i + 2] / n; }
-          const lifted = source.slice();
-          for (let i = 0; i < lifted.length; i += 3) {
-            lifted[i] = cx + (source[i] - cx) * 1.035; lifted[i + 1] = cy + (source[i + 1] - cy) * 1.035; lifted[i + 2] = cz + (source[i + 2] - cz) * 1.035;
-          }
-          visual.morph = { from: lifted, start: now };
-        }
-      }
+      if (visual.opacity < 0.05 && target > 0.05) entering.push(visual);
       visual.target = target;
     }
     for (const [canvas, visual] of visuals) if (!seen.has(canvas)) visual.target = 0;
+    const outgoing = [...visuals.values()].filter(visual => visual.opacity > 0.05 && visual.target <= 0.05)
+      .sort((a, b) => b.opacity - a.opacity);
+    for (const visual of visuals.values()) {
+      if (reduce) {
+        if (visual.morph || visual.displaced) { (visual.position.array as Float32Array).set(visual.source); visual.position.needsUpdate = true; }
+        visual.morph = null; visual.displaced = false;
+      } else if (entering.includes(visual)) {
+        const donor = outgoing.find(other => other.position.array.length === visual.source.length);
+        visual.morph = { from: donor ? current(donor) : lift(visual.source), to: visual.source, start: now };
+      } else if (visual.target > 0.05 && (visual.displaced || visual.morph && visual.morph.to !== visual.source)) {
+        // Vuelve a mostrarse a mitad de una salida: regresa a su propia profundidad.
+        visual.morph = { from: current(visual), to: visual.source, start: now };
+      }
+    }
+    if (!reduce) for (const visual of outgoing) {
+      const into = entering.find(other => other.source.length === visual.position.array.length);
+      const restart = into ? visual.morph?.to !== into.source : !visual.displaced && (!visual.morph || visual.morph.to === visual.source);
+      if (restart) visual.morph = { from: current(visual), to: into?.source ?? lift(visual.source), start: now };
+    }
     const fade = skinFade.current;
     if (skinVisible !== undefined) fade.managed = true;
     fade.target = skinVisible === undefined ? 1 : skinVisible ? Math.min(1, Math.max(0, skinOpacity ?? 1)) : 0;
@@ -823,11 +841,15 @@ const ThreeEngine: React.FC<{
         visual.material.opacity = visual.opacity;
         visual.mesh.visible = visual.opacity > 0.004;
         if (visual.morph) {
-          const t = Math.min(1, (time - visual.morph.start) / 460), eased = 1 - (1 - t) ** 3;
-          const array = visual.position.array as Float32Array, { from } = visual.morph, to = visual.source;
+          const t = Math.min(1, Math.max(0, time - visual.morph.start) / 520);
+          const eased = t < 0.5 ? 4 * t ** 3 : 1 - (-2 * t + 2) ** 3 / 2;
+          const array = visual.position.array as Float32Array, { from, to } = visual.morph;
           for (let i = 0; i < array.length; i++) array[i] = from[i] + (to[i] - from[i]) * eased;
           visual.position.needsUpdate = true;
-          if (t >= 1) visual.morph = null; else busy = true;
+          if (t >= 1) { visual.displaced = to !== visual.source; visual.morph = null; } else busy = true;
+        }
+        if (!visual.morph && visual.displaced && !visual.mesh.visible) {
+          (visual.position.array as Float32Array).set(visual.source); visual.position.needsUpdate = true; visual.displaced = false;
         }
         // Capas que ya no llegan (otra máscara) se liberan al terminar su fundido.
         if (!seen.has(canvas) && !visual.mesh.visible) {
