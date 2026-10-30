@@ -58,6 +58,22 @@ export function translateAnnotation(
   return mapAnnotation(binding, atlas, ({ x, y }) => ({ x: x + delta.x, y: y + delta.y }), accepts);
 }
 
+/** Escala y/o rota la figura completa alrededor de su centro anatómico (o centroide). */
+export function transformAnnotation(
+  binding: AnatomicalBinding, { scale = 1, degrees = 0 }: { scale?: number; degrees?: number }, atlas: GenericFaceAtlas,
+  accepts: (address: FaceAddress) => boolean = () => true,
+): AnatomicalBinding | null {
+  const points = binding.paths.flat().map(address => canonicalAnnotationPoint(address, atlas));
+  if (!points.length || !Number.isFinite(scale) || scale <= 0) return null;
+  const pivot = binding.center ? canonicalAnnotationPoint(binding.center, atlas)
+    : { x: points.reduce((s, p) => s + p.x, 0) / points.length, y: points.reduce((s, p) => s + p.y, 0) / points.length };
+  const cos = Math.cos(degrees * Math.PI / 180), sin = Math.sin(degrees * Math.PI / 180);
+  return mapAnnotation(binding, atlas, ({ x, y }) => {
+    const dx = (x - pivot.x) * scale, dy = (y - pivot.y) * scale;
+    return { x: pivot.x + dx * cos - dy * sin, y: pivot.y + dx * sin + dy * cos };
+  }, accepts);
+}
+
 /** Negativo en el atlas frontal = derecha DEL PACIENTE, no del observador. */
 export function annotationLaterality(binding: AnatomicalBinding, atlas: GenericFaceAtlas): string {
   const addresses = binding.center ? [binding.center] : binding.paths.flat();

@@ -27,6 +27,7 @@ try {
   await page.goto('http://127.0.0.1:5173/dev/hair-lab', { waitUntil: 'networkidle', timeout: 90000 });
   await page.getByRole('button', { name: 'Simulación facial', exact: true }).click();
   await page.getByRole('button', { name: 'Simular y marcar', exact: true }).click();
+  await page.getByRole('tab', { name: /Revisar/ }).click();
   await page.getByText('Importar de Inyectables', { exact: true }).click();
   await page.getByLabel('JSON de Inyectables', { exact: true }).fill(encoded);
   await page.getByRole('button', { name: 'Importar', exact: true }).click();
@@ -58,6 +59,7 @@ try {
   await page.getByRole('button', { name: 'Deshacer', exact: true }).click();
   assert.equal(await count(), 3);
   // El modal de volumen se valida en face-sim-local-flow; aquí se mide la acción bilateral pura.
+  await page.getByRole('tab', { name: /Inyectable/ }).click();
   await page.getByLabel('Pedir volumen al marcar', { exact: true }).uncheck();
   const bilateral = page.getByLabel('Modo bilateral · crear ambos lados en una acción', { exact: true });
   await bilateral.check();
@@ -74,6 +76,7 @@ try {
   await page.getByRole('button', { name: 'Deshacer', exact: true }).click();
   assert.equal(await count(), 3, 'Un solo deshacer retira el par completo.');
   await bilateral.uncheck();
+  await page.getByRole('tab', { name: /Capas y corte/ }).click();
   // La geometría y los controles permanecen compartidos entre vistas.
   const annotationLayers = page.getByRole('group', { name: 'Capa rápida', exact: true }).filter({ visible: true });
   await annotationLayers.getByRole('button', { name: 'Músculo', exact: true }).click();
@@ -142,8 +145,10 @@ try {
   await appearance.getByRole('button', { name: 'Capas', exact: true }).press('Enter');
   await mesh.uncheck();
   await page.getByRole('button', { name: 'Marcaciones e inyectables', exact: true }).click();
+  await page.getByRole('tab', { name: /Capas y corte/ }).click();
   assert.equal(await page.getByLabel('Mostrar mallado de zonas', { exact: true }).filter({ visible: true }).isChecked(), false);
   assert.equal(await count(), 3);
+  await page.getByRole('tab', { name: /Revisar/ }).click();
   await page.getByRole('button', { name: 'Limpiar', exact: true }).click();
   if (!await page.getByLabel('JSON de Inyectables', { exact: true }).isVisible()) {
     await page.getByText('Importar de Inyectables', { exact: true }).click();

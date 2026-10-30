@@ -1,5 +1,5 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Download, ImagePlus, Trash2, Wand2, Undo2, FileJson, ScanFace, Box, Image as ImageIcon, Move3d, MousePointer2, Crosshair, Brush, Spline, Slash, ArrowUpRight, Circle, Square, Fan, Grid3x3, Leaf, Layers, Scissors, FlipHorizontal2, Columns2, Syringe, ListChecks, Eye, Sparkles, UserRound, Gauge, type LucideIcon } from 'lucide-react';
+import { Download, ImagePlus, Trash2, Wand2, Undo2, FileJson, ScanFace, Box, Image as ImageIcon, Move3d, MousePointer2, Crosshair, Brush, Spline, Slash, ArrowUpRight, Circle, Square, Fan, Grid3x3, Leaf, Layers, Scissors, Columns2, Syringe, ListChecks, Eye, Sparkles, UserRound, Gauge, type LucideIcon } from 'lucide-react';
 import injectablesCatalog from '../../components/admin/ficha-clinica/data/injectables.json';
 import Clinical3DViewer, {
   type AnatomicalSurfaceOverlay, type DrawingTool, type FreehandLine, type Marker3D, type SurfaceShape,
@@ -26,13 +26,13 @@ import {
   addressHasPhotoCoverage, anatomicalPhotoElements, annotationViews, bindAnatomicalPaths, photoPatternPaths, requireMappedPoint, shapeOutline, surfaceNormal,
   type AnatomicalBinding, type AnatomicalBindings,
 } from './anatomicalAnnotations';
-import { annotationHistory, annotationLaterality, canonicalAnnotationPoint, mirrorAnnotation, translateAnnotation } from './annotationSymmetry';
+import { annotationHistory, annotationLaterality, canonicalAnnotationPoint, mirrorAnnotation, transformAnnotation, translateAnnotation } from './annotationSymmetry';
 import { annotationPhotoLayer, annotationUVs, bindingsOnLayer, buildAnnotationLayerView, type AnnotationLayerView } from './annotationLayerView';
 import { loadDefaultLayers, registerLayers, ANATOMY_PLANES } from './defaultLayers';
 import { AnatomyLayerControls, chooseAnatomyDisplay, initialAnatomyDisplay } from './anatomyDisplay';
 import { initialQuickRecordSettings, type QuickRecordSettings } from './quickRecord';
 import { EXTENDED_ZONE, ledgerRows, volumeTotals } from './markingModel';
-import { CheckChip, CutControls, IconToggle, ModeCards, NO_CUT, PointLedger, StepCard, ToolDock, VolumeDialog, VolumeHud, hudChip, type MarkingCut } from './MarkingPanels';
+import { CheckChip, CutControls, EditorTabs, EffectMixer, IconToggle, ModeCards, NO_CUT, PanelSection, PointLedger, SelectionInspector, ToolDock, VolumeDialog, VolumeHud, ZoneChip, ZoneView, createZoneStore, editorPanel, hudChip, type MarkingCut, type ZoneStore } from './MarkingPanels';
 import { DEFAULT_PREVIEW, PREVIEW_DESCRIPTIONS, buildIllustrativeEffects, previewPixels, previewSurface } from './injectablePreview';
 import { importLocalRecord, localRecord } from './injectableLocalRecord';
 
@@ -230,6 +230,16 @@ const TOOLS_PHOTO: { id: ElemKind; label: string; icon: LucideIcon }[] = [
   { id: 'pattern', label: 'Patrón', icon: Fan },
 ];
 const HA_CONFIG = { fanLines: 5, fanAngle: 25, gridCells: 4, fernBranches: 5 };
+/** El editor ocupa una pantalla: visor, herramientas y listado sin scroll de página en escritorio. */
+const VIEWER_HEIGHT = 'clamp(360px, calc(100dvh - 15rem), 760px)';
+/** Color estable por zona anatómica para el mallado (RGB 0–1). */
+function zoneTint(label: string): [number, number, number] {
+  let hash = 0;
+  for (const char of label.split(' · ')[0]) hash = (hash * 31 + char.charCodeAt(0)) >>> 0;
+  const h = (hash % 360) / 60, c = 0.62, x = c * (1 - Math.abs(h % 2 - 1)), m = 0.33;
+  const [r, g, b] = h < 1 ? [c, x, 0] : h < 2 ? [x, c, 0] : h < 3 ? [0, c, x] : h < 4 ? [0, x, c] : h < 5 ? [x, 0, c] : [c, 0, x];
+  return [r + m, g + m, b + m];
+}
 
 interface Slot {
   canvas: HTMLCanvasElement;
@@ -304,7 +314,7 @@ export default function FaceSimLab() {
   const [zone, setZone] = useState(AUTO_ZONE);
   const [product, setProduct] = useState('');
   const [dose, setDose] = useState(0);
-  const [preview, setPreview] = useState(DEFAULT_PREVIEW);
+  const [preview, setPreview] = useState({ ...DEFAULT_PREVIEW, after: false });
   const [split, setSplit] = useState(0);
   const [correct, setCorrect] = useState({ enabled: false, linear: true, mirror: true, tolerance: 0.02 });
   const [flipX, setFlipX] = useState(false);
@@ -327,7 +337,11 @@ export default function FaceSimLab() {
   const [boundaryReview, setBoundaryReview] = useState<PhotoSlotId[]>([]);
   // Altura de frente confirmada (normalizada glabela→mentón); la frontal tiene prioridad.
   const [foreheadReference, setForeheadReference] = useState<{ ratio: number; slot: PhotoSlotId } | null>(null);
-  const [hoveredZone, setHoveredZone] = useState<string | null>(null);
+  const hoverStoreRef = useRef<ZoneStore | null>(null);
+  if (!hoverStoreRef.current) hoverStoreRef.current = createZoneStore();
+  const hoverStore = hoverStoreRef.current;
+  const setHoveredZone = hoverStore.set;
+  const [markTab, setMarkTab] = useState<'inyectable' | 'capas' | 'revisar'>('inyectable');
   const [workspace, setWorkspace] = useState<'capture' | 'simulate'>('capture');
   const [editorGroup, setEditorGroup] = useState<'annotations' | 'appearance'>('annotations');
   const [appearanceOpened, setAppearanceOpened] = useState(false);
@@ -559,19 +573,19 @@ export default function FaceSimLab() {
       }
     }
     return {
-      generic: { positions: Float32Array.from(positions), colors: Float32Array.from(colors), labels, wireframe: true, opacity: showRegions ? 0.32 : 0, onHover: setHoveredZone, selectedZone: hoveredZone,
+      generic: { positions: Float32Array.from(positions), colors: Float32Array.from(colors), labels, wireframe: true, opacity: showRegions ? 0.32 : 0, onHover: setHoveredZone, highlight: 'mesh' as const,
         depthTest: false, zoneAt: (point: Vec3) => {
           const address = locateModelPoint(point, genericFaceAtlas);
           return address ? patientZone(regionCellAt(address, regionCells), address) : null;
         } },
-      personal: personal ? { positions: Float32Array.from(personalPositions), colors: Float32Array.from(colors), labels, wireframe: true, opacity: showRegions ? 0.32 : 0, onHover: setHoveredZone, selectedZone: hoveredZone,
+      personal: personal ? { positions: Float32Array.from(personalPositions), colors: Float32Array.from(colors), labels, wireframe: true, opacity: showRegions ? 0.32 : 0, onHover: setHoveredZone, highlight: 'mesh' as const,
         depthTest: regionPlane === 'superficial', zoneAt: (point: Vec3) => {
           if (!isOnObservedFace(point, personal.surface, personal.regionMap)) return null;
           const address = locatePhotoPoint(projectPersonal(point, personal.projection), personal.regionMap.landmarks, genericFaceAtlas);
           return address ? patientZone(regionCellAt(address, regionCells), address) : null;
         } } : undefined,
     } satisfies { generic: AnatomicalSurfaceOverlay; personal?: AnatomicalSurfaceOverlay };
-  }, [showRegions, overlayMode, regionCells, planePositions, regionPlane, personal, hoveredZone]);
+  }, [showRegions, overlayMode, regionCells, planePositions, regionPlane, personal, setHoveredZone]);
   const renderLayerSettings = useMemo(() => {
     const build = (available: AnnotationLayerView[]) => ({
       references: available.filter(layer => anatomyDisplay.references[layer.reference.kind].visible)
@@ -594,12 +608,12 @@ export default function FaceSimLab() {
         labels.push(label);
         for (const corner of cell.corners) {
           const point = active.point({ triangle: cell.triangle, weights: [corner[0], corner[1], corner[2]] });
-          positions.push(point.x, point.y, point.z); colors.push(0.35, 0.8, 1);
+          positions.push(point.x, point.y, point.z); colors.push(...zoneTint(label));
         }
       }
       return {
         ...(active ? { positions: Float32Array.from(positions), colors: Float32Array.from(colors), labels,
-          wireframe: true, opacity: showRegions && layerIsVisible ? 0.32 : 0, selectedZone: hoveredZone, onHover: setHoveredZone,
+          wireframe: true, opacity: showRegions && layerIsVisible ? 0.32 : 0, onHover: setHoveredZone, highlight: 'mesh' as const,
           zoneAt: (point: Vec3) => {
             const address = locateSkinAnnotation(source, point);
             return address && layerIsVisible ? active.zone(address) : null;
@@ -610,7 +624,7 @@ export default function FaceSimLab() {
       };
     };
     return { generic: build('generico'), personal: build('personal') };
-  }, [annotationLayers, anatomyDisplay, regionOverlays, regionCells, showRegions, hoveredZone, layerIsVisible, locateSkinAnnotation, renderLayerSettings]);
+  }, [annotationLayers, anatomyDisplay, regionOverlays, regionCells, showRegions, layerIsVisible, locateSkinAnnotation, renderLayerSettings, setHoveredZone]);
   const photoRegionOverlay = useMemo(() => {
     if (!regionMap || !slot?.landmarks) return null;
     if (photoLayer && !layerIsVisible) return null;
@@ -1110,6 +1124,13 @@ export default function FaceSimLab() {
     // updating=true impide que el modo bilateral cree un tercer elemento.
     if (commitBinding(uid(), mirrored, source, true, meta[selectedId])) setStatus('Espejo creado; original y registro conservados. Deshacer revierte toda la acción.');
   };
+  const transformSelected = (change: { scale?: number; degrees?: number }) => {
+    if (!selectedId || !bindings[selectedId]) return;
+    const source = workMode === 'foto' ? 'foto' : modelKind;
+    const next = transformAnnotation(bindings[selectedId], change, genericFaceAtlas, address => acceptsAddress(source, address));
+    if (!next) { blockedMark(); return; }
+    if (commitBinding(selectedId, next, source, true)) setStatus('Figura ajustada sobre la superficie; registro y volumen conservados.');
+  };
   const onMarker = (m: Marker3D, source: 'generico' | 'personal') => {
     if (workspace !== 'simulate' && !calibrating) return;
     if (preview.after && !calibrating) return;
@@ -1493,15 +1514,24 @@ export default function FaceSimLab() {
   const rows = useMemo(() => ledgerRows(meta, bindings, freeMarkerIds), [meta, bindings, freeMarkerIds]);
   const totals = useMemo(() => volumeTotals(rows), [rows]);
   const clipping = cut.scope === 'none' ? null : { ...cut, scope: cut.scope };
-  const pointColor = (id: string) => meta[id] ? SIM_MODES[meta[id].mode].color : undefined;
+  const editableBySource = useMemo(() => {
+    const build = (original: boolean) => [...(original ? genericAnnotations : personalAnnotations).markers,
+      ...(original ? markers.filter(m => m.id && !bindings[m.id]) : [])]
+      .flatMap(marker => marker.id ? [{ id: marker.id, type: 'free' as const, ...marker.position, lineIds: [],
+        name: meta[marker.id]?.zone, color: meta[marker.id] ? SIM_MODES[meta[marker.id].mode].color : undefined }] : []);
+    return { generico: build(true), personal: build(false) };
+  }, [genericAnnotations, personalAnnotations, markers, bindings, meta]);
+  const highlightedIds = useMemo(() => selectedId ? [selectedId] : [], [selectedId]);
+  const selectedRow = selectedId ? rows.find(r => r.id === selectedId) : undefined;
 
   const renderViewer = (source: 'generico' | 'personal') => {
     const original = source === 'generico';
     const annotations = original ? genericAnnotations : personalAnnotations;
-    // Antes: cabeza completa (cuello/cuero cabelludo visibles). Después/calibración: cara del atlas deformable.
-    const fullHead = original && workspace === 'simulate' && !calibrating && !preview.after;
+    // Visor dividido: SIEMPRE la cabeza GLB completa sin deformar como referencia.
+    // Vista única: Antes = cabeza completa; Después/calibración = cara del atlas deformable.
+    const splitHead = original && splitAnnotations && workspace === 'simulate' && !calibrating;
+    const fullHead = splitHead || original && workspace === 'simulate' && !calibrating && !preview.after;
     const ready = fullHead || (original ? !!genericPreviewGlb && (calibrating || genericPreviewAfter === preview.after) : !!personal);
-    const freePoints = original ? markers.filter(m => m.id && !bindings[m.id]) : [];
     return <section key={source} aria-label={original ? 'Modelo genérico 3D' : 'Foto personal en 3D'}
       onPointerDownCapture={() => { if (splitAnnotations) setModelKind(source); }}
       onFocusCapture={() => { if (splitAnnotations) setModelKind(source); }}
@@ -1514,13 +1544,11 @@ export default function FaceSimLab() {
       </h2>
       {overlayMode === 'attention' && <p className="bg-amber-100 px-3 py-2 text-xs font-semibold text-amber-950">SIMULACIÓN · No detecta vasos ni certifica zonas seguras.</p>}
       {ready ? <Clinical3DViewer
-        key={`${source}-${preview.after && !calibrating ? 'after' : 'before'}-${fullHead ? 'head' : 'atlas'}`}
+        key={`${source}-${preview.after && !calibrating && !splitHead ? 'after' : 'before'}-${splitHead ? 'split' : fullHead ? 'head' : 'atlas'}`}
         markers={[]} freehandLines={annotations.lines} surfaceShapes={[]}
-        editablePoints={[...annotations.markers, ...freePoints].flatMap(marker => marker.id ? [{ id: marker.id, type: 'free' as const,
-          ...marker.position, lineIds: [], name: meta[marker.id]?.zone, color: pointColor(marker.id) }] : [])}
+        editablePoints={editableBySource[source]}
         pointMode="none" selectedPointId={selectedId ?? undefined}
         onEditablePointClicked={id => { setSelectedId(id); beginEditing(); }}
-        onEditablePointHovered={id => { if (id) setSelectedId(id); }}
         onEditablePointMoved={(id, point) => {
           if (original && !bindings[id] && markers.some(m => m.id === id)) {
             if (!isOutsideMask(point)) { blockedMark(); return; }
@@ -1544,7 +1572,7 @@ export default function FaceSimLab() {
         onEstimatedSurfaceInteraction={blockedMark}
         selectedElementId={selectedId}
         onElementSelected={id => { setSelectedId(id); if (id) beginEditing(); }}
-        highlightedPointIds={selectedId ? [selectedId] : []}
+        highlightedPointIds={highlightedIds}
         onMarkerPlaced={(m: Marker3D) => onMarker(m, source)}
         activeTool={workspace !== 'simulate' || preview.after || workMode !== '3d' || tool3d === 'navigate' || tool3d === 'select' || tool3d === 'point' ? 'none' : tool3d}
         pendingBrushColor={color} pendingBrushThickness={1.5}
@@ -1554,9 +1582,9 @@ export default function FaceSimLab() {
           const current = annotations.lines.find(l => l.id === id);
           if (current) onLine({ ...current, points, segments }, source, true);
         }}
-        haShapeConfig={HA_CONFIG} cameraPreset={fullHead ? 'face' : 'face-surface'}
+        haShapeConfig={HA_CONFIG} cameraPreset={splitHead ? 'default' : fullHead ? 'face' : 'face-surface'}
         modelData={original ? fullHead ? null : genericPreviewGlb : personal ? preview.after && appearanceGlb?.personal === personal ? appearanceGlb.buffer : personal.glb : null}
-        pointMarkerScale={0.55} height="clamp(340px, 60vh, 590px)"
+        pointMarkerScale={0.55} height={VIEWER_HEIGHT}
         interactionHint={tool3d === 'navigate' || workMode === 'foto' ? 'Arrastra para rotar'
           : calibrating && original ? `Referencia ${anchorName(slot?.modelAnchors?.length ?? 0)}`
             : extendedZone && original ? 'Rostro + zona extendida' : 'Solo rostro observado'}
@@ -1619,8 +1647,9 @@ export default function FaceSimLab() {
   );
 
   return (
-    <div className="grid min-w-0 gap-4 lg:grid-cols-[260px_minmax(0,1fr)]">
-      <header className="space-y-2 lg:col-span-2">
+    <div className={`grid min-w-0 gap-4 ${workspace === 'simulate' && editorGroup === 'annotations'
+      ? 'lg:grid-cols-[264px_minmax(0,1fr)] xl:grid-cols-[264px_minmax(0,1fr)_300px]' : 'lg:grid-cols-[260px_minmax(0,1fr)]'}`}>
+      <header className="col-span-full space-y-2">
         <nav aria-label="Espacios del laboratorio" className="flex flex-wrap gap-2">
           {([['capture', 'Capturas'], ['simulate', 'Simular y marcar']] as const).map(([id, label]) =>
             <button type="button" key={id} aria-pressed={workspace === id} onClick={() => {
@@ -1650,132 +1679,82 @@ export default function FaceSimLab() {
             if (point) rememberForehead(reviewId, reviewSlot, point);
           }} />
       </Suspense>}
-      {(workspace === 'capture' || editorGroup === 'annotations') && <aside aria-label={workspace === 'capture' ? 'Revisión de capturas' : 'Herramientas de marcación'} className={`min-w-0 space-y-4 rounded-2xl border p-3 shadow-sm lg:self-start ${workspace === 'simulate' ? 'border-white/10 bg-slate-950 text-slate-100' : 'border-slate-200 bg-white'}`}>
-        {workspace === 'simulate' && <div className="space-y-3">
-          <StepCard step={1} title="Inyectable" icon={Syringe} state={product.trim() ? 'done' : 'active'}>
-            <ModeCards value={mode} onChange={changeMode} />
-            <label className="mt-3 block text-[11px] font-semibold uppercase tracking-wider text-slate-400">Producto / vial
-              <input list="face-annotation-products" value={product} onChange={e => setProduct(e.target.value)} placeholder="Ej. nombre comercial"
-                className="admin-focus-ring mt-1 min-h-10 w-full rounded-lg border border-white/10 bg-slate-900 px-2 text-sm normal-case tracking-normal text-slate-100 placeholder:text-slate-500" />
-            </label>
-            <div className="mt-2 flex flex-wrap items-center gap-2">
-              <CheckChip label="Pedir volumen al marcar" icon={Gauge} checked={askVolume} onChange={setAskVolume}>Volumen al marcar</CheckChip>
-              {!askVolume && <label className="flex items-center gap-1 text-[11px] text-slate-400">
-                <input aria-label="Dosis para nuevas marcas" type="number" min={0} step="any" value={dose}
-                  onChange={e => { const n = Number(e.target.value); if (Number.isFinite(n) && n >= 0) setDose(n); }}
-                  className="admin-focus-ring min-h-10 w-20 rounded-lg border border-white/10 bg-slate-900 px-2 text-sm text-slate-100" />{SIM_MODES[mode].unit}
-              </label>}
+      {(workspace === 'capture' || editorGroup === 'annotations') && <aside aria-label={workspace === 'capture' ? 'Revisión de capturas' : 'Herramientas de marcación'} className={`min-w-0 space-y-4 rounded-2xl border p-3 shadow-sm lg:self-start ${workspace === 'simulate' ? `${editorPanel} lg:sticky lg:top-4` : 'border-slate-200 bg-white'}`}>
+        {workspace === 'simulate' && <div className="flex min-h-0 flex-col gap-3 lg:max-h-[calc(100dvh-7rem)]">
+          <EditorTabs idBase="marcacion" value={markTab} onChange={setMarkTab} tabs={[
+            { id: 'inyectable', label: 'Inyectable', step: 1, icon: Syringe, done: !!product.trim() },
+            { id: 'capas', label: 'Capas y corte', step: 2, icon: Layers, done: rows.length > 0 },
+            { id: 'revisar', label: 'Revisar', step: 3, icon: ListChecks },
+          ]} />
+          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain pr-1 [scrollbar-color:rgba(222,184,135,.35)_transparent] [scrollbar-width:thin]">
+            <div role="tabpanel" id="marcacion-panel-inyectable" aria-labelledby="marcacion-tab-inyectable" hidden={markTab !== 'inyectable'} className="space-y-3">
+              <PanelSection title="Tipo" icon={Syringe}><ModeCards value={mode} onChange={changeMode} /></PanelSection>
+              <PanelSection title="Producto y volumen" icon={Gauge}>
+                <label className="block text-[11px] font-semibold text-stone-400">Producto / vial
+                  <input list="face-annotation-products" value={product} onChange={e => setProduct(e.target.value)} placeholder="Ej. nombre comercial"
+                    className="admin-focus-ring mt-1 min-h-10 w-full rounded-lg border border-white/10 bg-stone-900 px-2 text-sm text-stone-100 placeholder:text-stone-500" />
+                </label>
+                <CheckChip label="Pedir volumen al marcar" icon={Gauge} checked={askVolume} onChange={setAskVolume}>Volumen al marcar</CheckChip>
+                {!askVolume && <label className="flex items-center gap-2 text-[11px] text-stone-400">Dosis fija
+                  <input aria-label="Dosis para nuevas marcas" type="number" min={0} step="any" value={dose}
+                    onChange={e => { const n = Number(e.target.value); if (Number.isFinite(n) && n >= 0) setDose(n); }}
+                    className="admin-focus-ring min-h-10 w-24 rounded-lg border border-white/10 bg-stone-900 px-2 text-sm text-stone-100" />{SIM_MODES[mode].unit}
+                </label>}
+              </PanelSection>
+              <p className="rounded-xl border border-gold/20 bg-gold/5 p-2.5 text-[11px] leading-relaxed text-stone-300">
+                Elige una herramienta en la barra <b className="text-gold">Marcar</b> sobre el visor y haz clic en el rostro. Cada punto pide su volumen.
+              </p>
             </div>
-          </StepCard>
-
-          <StepCard step={2} title="Marcar" icon={Crosshair} state={!product.trim() ? 'idle' : rows.length ? 'done' : 'active'}
-            aside={<IconToggle label="Deshacer" icon={Undo2} disabled={!history.length} onClick={undo} />}>
-            <div role="group" aria-label="Superficie de marcación" className="grid grid-cols-3 gap-1 rounded-xl bg-slate-950/70 p-1">
-              {([['generico', 'Genérico', Box], ['personal', 'Personal', UserRound], ['foto', 'Foto', ImageIcon]] as const).map(([id, label, Icon]) => {
-                const active = id === 'foto' ? workMode === 'foto' : workMode === '3d' && modelKind === id;
-                return <button key={id} type="button" aria-pressed={active}
-                  disabled={id === 'foto' ? calibrating : id === 'personal' && !personal && (!captureSource || captureBlocked || buildingPersonal)}
-                  onClick={() => {
-                    setDraft(null);
-                    if (id === 'foto') { setWorkMode('foto'); setPhotoInteraction('draw'); beginEditing(); return; }
-                    setWorkMode('3d'); if (id === 'generico') activateGenericModel(); else activatePersonal();
-                  }}
-                  className="admin-focus-ring flex min-h-10 items-center justify-center gap-1 rounded-lg text-[11px] font-bold text-slate-400 transition aria-pressed:bg-slate-800 aria-pressed:text-cyan-200 aria-pressed:shadow-[inset_0_0_0_1px_rgba(34,211,238,.5)] disabled:opacity-30">
-                  <Icon className="h-3.5 w-3.5" aria-hidden="true" />{label}</button>;
-              })}
+            <div role="tabpanel" id="marcacion-panel-capas" aria-labelledby="marcacion-tab-capas" hidden={markTab !== 'capas'} className="space-y-3">
+              <PanelSection title="Capa anatómica" icon={Layers}>
+                <AnatomyLayerControls value={anatomyDisplay} onChange={value => {
+                  setAnatomyDisplay(value); setHoveredZone(null); setDraft(null);
+                }} showMesh={showRegions} onMeshChange={toggleMesh} />
+                {(layerError || annotationLayers.error) ? <div role="alert" className="flex items-center gap-2 text-xs text-rose-300">
+                  <span className="flex-1">{layerError ?? annotationLayers.error}</span>
+                  <button type="button" onClick={() => setLayerAttempt(n => n + 1)} className="admin-focus-ring min-h-10 rounded-lg border border-rose-400/40 px-2 font-semibold">Reintentar capas</button>
+                </div> : !defaultLayers.length && <p role="status" className="text-xs text-stone-400">Cargando capas anatómicas…</p>}
+                {!layerIsVisible && <p role="status" className="text-xs font-semibold text-amber-300">Capa activa oculta: muéstrala para marcar.</p>}
+              </PanelSection>
+              {workMode === '3d' && <PanelSection title="Corte" icon={Scissors}
+                aside={cut.scope !== 'none' && <span className="rounded-full bg-gold/20 px-2 text-[10px] normal-case tracking-normal text-gold">activo</span>}>
+                <CutControls value={cut} onChange={setCut} />
+              </PanelSection>}
+              <PanelSection title={`Zona ${zone === AUTO_ZONE ? 'automática' : 'manual'}`} icon={Crosshair}>
+                <select aria-label="Zona" value={zone} onChange={e => setZone(e.target.value)}
+                  className="admin-focus-ring min-h-10 w-full rounded-lg border border-white/10 bg-stone-900 px-2 text-xs text-stone-100">
+                  <option value={AUTO_ZONE}>Auto (mapa anatómico facial)</option>
+                  {ZONES.map(z => <option key={z}>{z}</option>)}
+                </select>
+              </PanelSection>
             </div>
-            {workMode === '3d' && <div className="mt-2 flex flex-wrap gap-1.5">
-              <CheckChip label="Visor dividido · genérico y máscara" icon={Columns2} checked={splitAnnotations}
-                onChange={checked => { setSplitAnnotations(checked); setDraft(null); }}>Dividido</CheckChip>
-              {(splitAnnotations || modelKind === 'personal') && !personal && <button type="button" disabled={buildingPersonal || hasPendingPhotos || captureBlocked || !captureSource}
-                onClick={activatePersonal} title={!captureSource ? 'Carga y revisa una foto en Capturas' : undefined}
-                className="admin-focus-ring min-h-10 rounded-lg border border-fuchsia-400/40 bg-fuchsia-500/10 px-2.5 text-[11px] font-bold text-fuchsia-100 disabled:opacity-40">
-                {buildingPersonal ? 'Calculando máscara personal…' : 'Preparar máscara personal'}</button>}
-            </div>}
-            {workMode === 'foto' && <div className="mt-2 flex flex-wrap items-center gap-1.5">
-              <select aria-label="Foto activa" value={view} onChange={e => { setView(e.target.value as ViewKind); setDraft(null); }}
-                className="admin-focus-ring min-h-10 flex-1 rounded-lg border border-white/10 bg-slate-900 px-2 text-xs text-slate-100">
-                {VIEWS.map(v => <option key={v.id} value={v.id} disabled={!photos[v.id]}>{v.label}</option>)}
-              </select>
-              <IconToggle label="Seleccionar sin dibujar" icon={MousePointer2} pressed={photoInteraction === 'select'} onClick={() => {
-                setPhotoInteraction(p => p === 'select' ? 'draw' : 'select'); setDraft(null); dragRef.current = null;
-              }} />
-            </div>}
-            <div className="mt-3">
-              {workMode === '3d'
-                ? <ToolDock label="Herramientas de marcación" items={TOOLS_3D} value={tool3d} accent={SIM_MODES[mode].color}
-                  disabled={id => calibrating && id !== 'point'} onSelect={id => { setTool3d(id); if (id !== 'navigate') beginEditing(); }} />
-                : <ToolDock label="Herramientas de marcación" items={TOOLS_PHOTO} value={photoInteraction === 'draw' ? toolPhoto : null} accent={SIM_MODES[mode].color}
-                  onSelect={id => { setToolPhoto(id); setPhotoInteraction('draw'); beginEditing(); }} />}
+            <div role="tabpanel" id="marcacion-panel-revisar" aria-labelledby="marcacion-tab-revisar" hidden={markTab !== 'revisar'} className="space-y-3">
+              <PanelSection title="Antes / después" icon={Eye}>
+                <div className="grid grid-cols-2 gap-1 rounded-xl bg-black/40 p-1">{([false, true] as const).map(after => <button key={String(after)} type="button" aria-pressed={preview.after === after}
+                  onClick={() => comparePreview(after)} className="admin-focus-ring min-h-9 rounded-lg text-xs font-bold text-stone-400 aria-pressed:bg-stone-800 aria-pressed:text-gold">{after ? 'Después' : 'Antes'}</button>)}</div>
+                {workMode === 'foto' && <label className="flex items-center gap-2 text-[11px] text-stone-400"><Columns2 className="h-3.5 w-3.5" aria-hidden="true" />
+                  <input aria-label="Comparación dividida · solo foto" type="range" min={0} max={1} step={0.01} value={split} onChange={e => setSplit(Number(e.target.value))} className="flex-1 accent-gold" />
+                </label>}
+                <p className="text-[11px] leading-relaxed text-stone-500">Los filtros se aplican sobre la máscara personal y la foto en «Después». Marcar se pausa mientras lo ves.</p>
+              </PanelSection>
+              <PanelSection title="Filtros por inyectable" icon={Sparkles}><EffectMixer value={preview} onChange={setPreview} /></PanelSection>
+              <PanelSection title="Exportar" icon={FileJson}>
+                <div className="grid grid-cols-3 gap-1.5">
+                  <IconToggle label="Exportar JSON de Inyectables" icon={FileJson} disabled={!hasLocalRecord} onClick={exportJson}>JSON</IconToggle>
+                  <IconToggle label="PNG" icon={Download} disabled={!hasImage} onClick={exportPng}>PNG</IconToggle>
+                  <IconToggle label="Limpiar" icon={Trash2} disabled={!hasQuickEntries && !elems.length && !markers.length && !lines.length && !shapes.length} onClick={clearAll}>Limpiar</IconToggle>
+                </div>
+                <details className="rounded-xl border border-white/10 bg-black/30 p-2 text-xs">
+                  <summary className="flex min-h-9 cursor-pointer list-none items-center gap-2 font-bold text-stone-300"><FileJson className="h-4 w-4 text-gold" aria-hidden="true" />Importar de Inyectables</summary>
+                  <textarea aria-label="JSON de Inyectables" value={importText} onChange={e => setImportText(e.target.value)} rows={4}
+                    className="admin-focus-ring mt-2 w-full rounded-lg border border-white/10 bg-stone-900 p-2 font-mono text-[10px] text-stone-100" />
+                  <button type="button" onClick={doImport} className="admin-focus-ring mt-2 min-h-10 w-full rounded-lg bg-gold font-bold text-stone-950">Importar</button>
+                </details>
+                {workMode === 'foto' && <CheckChip label="Mostrar marcas sobre la foto" icon={Eye} checked={showMarks} onChange={setShowMarks}>Marcas en foto</CheckChip>}
+              </PanelSection>
             </div>
-            {workMode === 'foto' && toolPhoto === 'pattern' && <select aria-label="Patrón ilustrativo" value={photoPattern} onChange={e => setPhotoPattern(e.target.value as typeof photoPattern)}
-              className="admin-focus-ring mt-2 min-h-10 w-full rounded-lg border border-white/10 bg-slate-900 px-2 text-xs text-slate-100">
-              <option value="fan">Abanico</option><option value="grid">Malla</option><option value="fern">Helecho</option>
-            </select>}
-            <div className="mt-2 flex flex-wrap gap-1.5">
-              <CheckChip label="Modo bilateral · crear ambos lados en una acción" icon={Sparkles} checked={bilateral} onChange={setBilateral}>Bilateral</CheckChip>
-              <IconToggle label="Espejar selección" icon={FlipHorizontal2} disabled={!selectedId || preview.after} onClick={mirrorSelected}>Espejo</IconToggle>
-              {workMode === '3d' && <CheckChip label="Zona extendida (cuello/cuero cabelludo)" icon={Move3d} checked={extendedZone}
-                onChange={checked => { setExtendedZone(checked); setOutsideHint(false); }}>Extendida</CheckChip>}
-            </div>
-            <div className="mt-3 rounded-xl border border-white/10 bg-slate-900 p-2 text-white">
-              <AnatomyLayerControls value={anatomyDisplay} onChange={value => {
-                setAnatomyDisplay(value); setHoveredZone(null); setDraft(null);
-              }} showMesh={showRegions} onMeshChange={toggleMesh} />
-            </div>
-            {(layerError || annotationLayers.error) ? <div role="alert" className="mt-2 flex items-center gap-2 text-xs text-rose-300">
-              <span className="flex-1">{layerError ?? annotationLayers.error}</span>
-              <button type="button" onClick={() => setLayerAttempt(n => n + 1)} className="admin-focus-ring min-h-10 rounded-lg border border-rose-400/40 px-2 font-semibold">Reintentar capas</button>
-            </div> : !defaultLayers.length && <p role="status" className="mt-2 text-xs text-slate-400">Cargando capas anatómicas…</p>}
-            {!layerIsVisible && <p role="status" className="mt-2 text-xs font-semibold text-amber-300">Capa activa oculta: muéstrala para marcar.</p>}
-            {workMode === '3d' && <details className="group mt-2 rounded-xl border border-white/10 bg-slate-900/60 p-2" open={cut.scope !== 'none' || undefined}>
-              <summary className="flex min-h-9 cursor-pointer list-none items-center gap-2 text-[11px] font-bold uppercase tracking-wider text-slate-300">
-                <Scissors className="h-4 w-4 text-amber-300" aria-hidden="true" />Corte{cut.scope !== 'none' && <span className="ml-auto rounded-full bg-amber-400/20 px-2 text-amber-200">activo</span>}</summary>
-              <div className="mt-2"><CutControls value={cut} onChange={setCut} /></div>
-            </details>}
-            <details className="mt-2 rounded-xl border border-white/10 bg-slate-900/60 p-2">
-              <summary className="flex min-h-9 cursor-pointer list-none items-center gap-2 text-[11px] font-bold uppercase tracking-wider text-slate-300">
-                <Layers className="h-4 w-4 text-cyan-300" aria-hidden="true" />Zona {zone === AUTO_ZONE ? 'automática' : 'manual'}</summary>
-              <select aria-label="Zona" value={zone} onChange={e => setZone(e.target.value)}
-                className="admin-focus-ring mt-2 min-h-10 w-full rounded-lg border border-white/10 bg-slate-900 px-2 text-xs text-slate-100">
-                <option value={AUTO_ZONE}>Auto (mapa anatómico facial)</option>
-                {ZONES.map(z => <option key={z}>{z}</option>)}
-              </select>
-            </details>
-          </StepCard>
-
-          <StepCard step={3} title="Revisar" icon={ListChecks} state={rows.length ? 'active' : 'idle'}>
-            <div role="group" aria-label="Preview cosmético ilustrativo" className="space-y-2">
-              <div className="grid grid-cols-2 gap-1 rounded-xl bg-slate-950/70 p-1">{([false, true] as const).map(after => <button key={String(after)} type="button" aria-pressed={preview.after === after}
-                onClick={() => comparePreview(after)} className="admin-focus-ring min-h-9 rounded-lg text-xs font-bold text-slate-400 aria-pressed:bg-slate-800 aria-pressed:text-cyan-200">{after ? 'Después' : 'Antes'}</button>)}</div>
-              <div className="flex flex-wrap gap-1.5">{(Object.keys(SIM_MODES) as SimMode[]).map(m => <label key={m} title={PREVIEW_DESCRIPTIONS[m]}
-                className="inline-flex min-h-8 cursor-pointer items-center gap-1.5 rounded-full border border-white/10 px-2 text-[11px] text-slate-300 has-[:checked]:text-white" style={preview.enabled[m] ? { borderColor: SIM_MODES[m].color } : undefined}>
-                <input type="checkbox" aria-label={`Efecto ${SIM_MODES[m].label}`} checked={preview.enabled[m]} className="h-3 w-3" style={{ accentColor: SIM_MODES[m].color }}
-                  onChange={e => setPreview(p => ({ ...p, enabled: { ...p.enabled, [m]: e.target.checked } }))} />{SIM_MODES[m].label}
-              </label>)}</div>
-              <label className="flex items-center gap-2 text-[11px] text-slate-400"><Eye className="h-3.5 w-3.5" aria-hidden="true" />
-                <input aria-label="Intensidad visual independiente" type="range" min={0} max={1} step={0.05} value={preview.intensity}
-                  onChange={e => setPreview(p => ({ ...p, intensity: Number(e.target.value) }))} className="flex-1 accent-cyan-400" />
-                <span className="w-9 text-right tabular-nums">{Math.round(preview.intensity * 100)}%</span>
-              </label>
-              {workMode === 'foto' && <label className="flex items-center gap-2 text-[11px] text-slate-400"><Columns2 className="h-3.5 w-3.5" aria-hidden="true" />
-                <input aria-label="Comparación dividida · solo foto" type="range" min={0} max={1} step={0.01} value={split} onChange={e => setSplit(Number(e.target.value))} className="flex-1 accent-cyan-400" />
-              </label>}
-            </div>
-            <div className="mt-3 grid grid-cols-3 gap-1.5">
-              <IconToggle label="Exportar JSON de Inyectables" icon={FileJson} disabled={!hasLocalRecord} onClick={exportJson}>JSON</IconToggle>
-              <IconToggle label="PNG" icon={Download} disabled={!hasImage} onClick={exportPng}>PNG</IconToggle>
-              <IconToggle label="Limpiar" icon={Trash2} disabled={!hasQuickEntries && !elems.length && !markers.length && !lines.length && !shapes.length} onClick={clearAll}>Limpiar</IconToggle>
-            </div>
-            <details className="mt-2 rounded-xl border border-white/10 bg-slate-900/60 p-2 text-xs">
-              <summary className="flex min-h-9 cursor-pointer list-none items-center gap-2 font-bold uppercase tracking-wider text-slate-300"><FileJson className="h-4 w-4 text-cyan-300" aria-hidden="true" />Importar de Inyectables</summary>
-              <textarea aria-label="JSON de Inyectables" value={importText} onChange={e => setImportText(e.target.value)} rows={4}
-                className="admin-focus-ring mt-2 w-full rounded-lg border border-white/10 bg-slate-900 p-2 font-mono text-[10px] text-slate-100" />
-              <button type="button" onClick={doImport} className="admin-focus-ring mt-2 min-h-10 w-full rounded-lg bg-cyan-400 font-bold text-slate-950">Importar</button>
-            </details>
-            {workMode === 'foto' && <CheckChip label="Mostrar marcas sobre la foto" icon={Eye} checked={showMarks} onChange={setShowMarks}>Marcas en foto</CheckChip>}
-          </StepCard>
-          <p className="text-[10px] leading-relaxed text-slate-500" title={PREVIEW_DESCRIPTIONS[mode]}>Simulación ilustrativa · no recomienda puntos ni dosis · exporta antes de salir.</p>
+          </div>
+          <p className="text-[10px] leading-relaxed text-stone-500" title={PREVIEW_DESCRIPTIONS[mode]}>Simulación ilustrativa · no recomienda puntos ni dosis · exporta antes de salir.</p>
         </div>}
         {workspace === 'capture' && <>
         <div>
@@ -2157,15 +2136,63 @@ export default function FaceSimLab() {
           </Suspense>
         </div>}
         <div hidden={workspace === 'simulate' && editorGroup !== 'annotations'} className="space-y-4" data-face-annotations-group>
-        {workspace === 'simulate' && <div className="flex flex-wrap items-center gap-1.5 rounded-2xl border border-white/10 bg-slate-950 p-2">
-          <span role="status" className={hudChip} style={{ borderColor: hoveredZone ? SIM_MODES[mode].color : undefined }}>
-            <Crosshair className="h-3.5 w-3.5" aria-hidden="true" style={{ color: SIM_MODES[mode].color }} />
-            {hoveredZone ?? 'Pasa el cursor sobre la capa'}
+        {workspace === 'simulate' && <div role="toolbar" aria-label="Marcar" className={`${editorPanel} flex flex-wrap items-center gap-2 p-2`}>
+          <span className="inline-flex min-h-10 items-center gap-1.5 rounded-lg bg-gold/15 px-2.5 text-[11px] font-black uppercase tracking-[0.14em] text-gold">
+            <span aria-hidden="true" className="grid h-4 w-4 place-items-center rounded-full bg-gold text-[9px] text-stone-950">✓</span>Marcar
           </span>
-          <span className={hudChip} title="Capa activa (lateralidad del paciente)"><Layers className="h-3.5 w-3.5 text-cyan-300" aria-hidden="true" />
+          <div role="group" aria-label="Superficie de marcación" className="flex gap-1 rounded-xl bg-black/40 p-1">
+            {([['generico', 'Genérico', Box], ['personal', 'Personal', UserRound], ['foto', 'Foto', ImageIcon]] as const).map(([id, label, Icon]) => {
+              const active = id === 'foto' ? workMode === 'foto' : workMode === '3d' && modelKind === id;
+              return <button key={id} type="button" aria-pressed={active}
+                disabled={id === 'foto' ? calibrating : id === 'personal' && !personal && (!captureSource || captureBlocked || buildingPersonal)}
+                onClick={() => {
+                  setDraft(null);
+                  if (id === 'foto') { setWorkMode('foto'); setPhotoInteraction('draw'); beginEditing(); return; }
+                  setWorkMode('3d'); if (id === 'generico') activateGenericModel(); else activatePersonal();
+                }}
+                className="admin-focus-ring flex min-h-9 items-center justify-center gap-1 whitespace-nowrap rounded-lg px-2.5 text-xs font-bold text-stone-400 transition aria-pressed:bg-stone-800 aria-pressed:text-gold disabled:opacity-30">
+                <Icon className="h-3.5 w-3.5" aria-hidden="true" />{label}</button>;
+            })}
+          </div>
+          {workMode === '3d' && <CheckChip label="Visor dividido · genérico y máscara" icon={Columns2} checked={splitAnnotations}
+            onChange={checked => { setSplitAnnotations(checked); setDraft(null); }}>Dividido</CheckChip>}
+          {workMode === '3d' && (splitAnnotations || modelKind === 'personal') && !personal && <button type="button" disabled={buildingPersonal || hasPendingPhotos || captureBlocked || !captureSource}
+            onClick={activatePersonal} title={!captureSource ? 'Carga y revisa una foto en Capturas' : undefined}
+            className="admin-focus-ring min-h-10 whitespace-nowrap rounded-lg border border-gold/40 bg-gold/10 px-2.5 text-xs font-bold text-gold disabled:opacity-40">
+            {buildingPersonal ? 'Calculando máscara personal…' : 'Preparar máscara personal'}</button>}
+          {workMode === 'foto' && <>
+            <select aria-label="Foto activa" value={view} onChange={e => { setView(e.target.value as ViewKind); setDraft(null); }}
+              className="admin-focus-ring min-h-10 rounded-lg border border-white/10 bg-stone-900 px-2 text-xs text-stone-100">
+              {VIEWS.map(v => <option key={v.id} value={v.id} disabled={!photos[v.id]}>{v.label}</option>)}
+            </select>
+            <IconToggle label="Seleccionar sin dibujar" icon={MousePointer2} pressed={photoInteraction === 'select'} onClick={() => {
+              setPhotoInteraction(p => p === 'select' ? 'draw' : 'select'); setDraft(null); dragRef.current = null;
+            }} />
+          </>}
+          <span aria-hidden="true" className="hidden h-8 w-px bg-white/10 sm:block" />
+          {workMode === '3d'
+            ? <ToolDock label="Herramientas de marcación" items={TOOLS_3D} value={tool3d} accent={SIM_MODES[mode].color}
+              disabled={id => calibrating && id !== 'point'} onSelect={id => { setTool3d(id); if (id !== 'navigate') beginEditing(); }} />
+            : <ToolDock label="Herramientas de marcación" items={TOOLS_PHOTO} value={photoInteraction === 'draw' ? toolPhoto : null} accent={SIM_MODES[mode].color}
+              onSelect={id => { setToolPhoto(id); setPhotoInteraction('draw'); beginEditing(); }} />}
+          {workMode === 'foto' && toolPhoto === 'pattern' && <select aria-label="Patrón ilustrativo" value={photoPattern} onChange={e => setPhotoPattern(e.target.value as typeof photoPattern)}
+            className="admin-focus-ring min-h-10 rounded-lg border border-white/10 bg-stone-900 px-2 text-xs text-stone-100">
+            <option value="fan">Abanico</option><option value="grid">Malla</option><option value="fern">Helecho</option>
+          </select>}
+          <span aria-hidden="true" className="hidden h-8 w-px bg-white/10 sm:block" />
+          <CheckChip label="Modo bilateral · crear ambos lados en una acción" icon={Sparkles} checked={bilateral} onChange={setBilateral}>Bilateral</CheckChip>
+          {workMode === '3d' && <CheckChip label="Zona extendida (cuello/cuero cabelludo)" icon={Move3d} checked={extendedZone}
+            onChange={checked => { setExtendedZone(checked); setOutsideHint(false); }}>Extendida</CheckChip>}
+          <IconToggle label="Deshacer" icon={Undo2} disabled={!history.length} onClick={undo} />
+        </div>}
+        {workspace === 'simulate' && <div className="flex flex-wrap items-center gap-1.5">
+          <ZoneChip store={hoverStore} color={SIM_MODES[mode].color} />
+          <span className={hudChip} title="Capa activa (lateralidad del paciente)"><Layers className="h-3.5 w-3.5 text-gold" aria-hidden="true" />
             {ANATOMY_PLANES.find(plane => plane.id === anatomyDisplay.anatomy)?.label}</span>
+          {preview.after && <button type="button" onClick={() => comparePreview(false)} className={`${hudChip} border-gold/50 text-gold`}>
+            <Eye className="h-3.5 w-3.5" aria-hidden="true" />Vista «Después» · volver a marcar</button>}
           <span className="ml-auto" />
-          {totals.length ? <VolumeHud totals={totals} /> : <span className={`${hudChip} text-slate-400`}><Gauge className="h-3.5 w-3.5" aria-hidden="true" />0 {SIM_MODES[mode].unit}</span>}
+          {totals.length ? <VolumeHud totals={totals} /> : <span className={`${hudChip} text-stone-400`}><Gauge className="h-3.5 w-3.5" aria-hidden="true" />0 {SIM_MODES[mode].unit}</span>}
         </div>}
       <div className={`grid min-w-0 content-start gap-4 ${workspace === 'simulate' && workMode === '3d' && splitAnnotations ? 'lg:grid-cols-2' : ''}`}>
         {workspace === 'simulate' && workMode === '3d' && (splitAnnotations
@@ -2184,8 +2211,7 @@ export default function FaceSimLab() {
                 const address = locatePhotoPoint(toNorm(e), slot.landmarks, genericFaceAtlas);
                 setHoveredZone(address && layerIsVisible ? photoLayer ? photoLayer.zone(address)
                   : patientZone(regionCellAt(address, regionCells), address) : null);
-                const hoveredId = hitPhoto(toNorm(e));
-                if (hoveredId) setSelectedId(hoveredId);
+
               }
             }} onPointerLeave={() => setHoveredZone(null)} onPointerUp={onUp}
             onPointerCancel={() => { setDraft(null); dragRef.current = null; }} onContextMenu={e => e.preventDefault()}>
@@ -2196,11 +2222,11 @@ export default function FaceSimLab() {
               style={{ opacity: photoSkinOpacity }}
               className="pointer-events-none absolute inset-0 h-full w-full" />}
             {anatomyDisplay.overlay && photoLayerOverlay}
-            {photoRegionOverlay && <svg viewBox="0 0 1 1" preserveAspectRatio="none" aria-hidden="true" className="pointer-events-none absolute inset-0 h-full w-full">
+            {photoRegionOverlay && <ZoneView store={hoverStore}>{hoveredZone => <svg viewBox="0 0 1 1" preserveAspectRatio="none" aria-hidden="true" className="pointer-events-none absolute inset-0 h-full w-full">
               {photoRegionOverlay.map(({ label, path }) => <path key={label} d={path}
                 fill={hoveredZone === label ? photoLayer ? '#38bdf8' : faceRegionColor(label) : 'none'} fillOpacity={0.3}
                 stroke={overlayMode === 'attention' ? faceAttentionColor(label) : '#7dd3fc'} strokeOpacity={hoveredZone === label ? 0.9 : showRegions ? 0.35 : 0} strokeWidth="0.0008" />)}
-            </svg>}
+            </svg>}</ZoneView>}
             {currentSkinReview?.result.usable && <img src={currentSkinReview.urls[skinChannel]} alt="" aria-hidden="true" style={{ opacity: skinOpacity }} className="pointer-events-none absolute inset-0 h-full w-full" />}
             {currentForeheadPreview && <svg aria-hidden="true" className="pointer-events-none absolute inset-0 h-full w-full" viewBox="0 0 1 1" preserveAspectRatio="none">
               <line x1={Math.max(0, currentForeheadPreview.point.x - 0.12)} x2={Math.min(1, currentForeheadPreview.point.x + 0.12)} y1={currentForeheadPreview.point.y} y2={currentForeheadPreview.point.y} stroke="#f59e0b" strokeWidth="0.003" strokeDasharray="0.008 0.005" />
@@ -2244,7 +2270,11 @@ export default function FaceSimLab() {
             ))}
           </div>
         </section>
-        {workspace === 'simulate' && <PointLedger rows={rows} selectedId={selectedId}
+      </div>
+      </div>
+      </div>
+      {workspace === 'simulate' && editorGroup === 'annotations' && <div className="flex min-w-0 flex-col lg:col-span-2 xl:sticky xl:top-4 xl:col-span-1 xl:h-[calc(100dvh-7rem)] xl:self-start">
+        <PointLedger rows={rows} selectedId={selectedId}
           onSelect={row => {
             setSelectedId(row.id); beginEditing();
             const binding = bindings[row.id];
@@ -2253,43 +2283,47 @@ export default function FaceSimLab() {
               setAnatomyDisplay(current => chooseAnatomyDisplay(current, binding.illustrativePlane ?? 'skin'));
             }
           }}
-          onHover={row => { if (row) setSelectedId(row.id); setHoveredZone(row ? `${row.zone} · ${row.side}` : null); }}
+          onHover={row => setHoveredZone(row ? `${row.zone} · ${row.side}` : null)}
           onDose={editDose} onDelete={id => { snap(); removeEl(id); }}
-          onPlane={(ids, plane) => { snap(); setMeta(m => ({ ...m, ...Object.fromEntries(ids.filter(id => m[id]).map(id => [id, { ...m[id], plane: plane || undefined }])) })); }}>
-          {selectedId && meta[selectedId] && <form key={selectedId} aria-label="Editar marca seleccionada" className="grid gap-2 rounded-xl border border-white/10 bg-slate-900 p-3 sm:grid-cols-4" onSubmit={e => {
-            e.preventDefault();
-            const data = new FormData(e.currentTarget), nextMode = data.get('mode') as SimMode;
-            snap(); setMeta(m => ({ ...m, [selectedId]: { ...m[selectedId], mode: nextMode,
-              zone: String(data.get('zone')), product: String(data.get('product')) || undefined } }));
-            setStatus('Marca actualizada.');
-          }}>
-            <label className="text-[11px] text-slate-400">Categoría
-              <select name="mode" defaultValue={meta[selectedId].mode} className="admin-focus-ring mt-1 min-h-10 w-full rounded-lg border border-white/10 bg-slate-950 px-2 text-xs text-slate-100">
-                {(Object.keys(SIM_MODES) as SimMode[]).map(m => <option key={m} value={m}>{SIM_MODES[m].label}</option>)}
-              </select>
-            </label>
-            <label className="text-[11px] text-slate-400">Zona registrada
-              <input name="zone" defaultValue={meta[selectedId].zone} className="admin-focus-ring mt-1 min-h-10 w-full rounded-lg border border-white/10 bg-slate-950 px-2 text-xs text-slate-100" />
-            </label>
-            <label className="text-[11px] text-slate-400">Producto registrado
-              <input name="product" list="face-annotation-products" defaultValue={meta[selectedId].product ?? ''} className="admin-focus-ring mt-1 min-h-10 w-full rounded-lg border border-white/10 bg-slate-950 px-2 text-xs text-slate-100" />
-            </label>
-            <button type="submit" className="admin-focus-ring min-h-10 self-end rounded-lg bg-cyan-400 px-3 text-xs font-bold text-slate-950">Guardar cambios de marca</button>
-          </form>}
-        </PointLedger>}
-        {workspace === 'simulate' && pendingVolume && meta[pendingVolume[0]] && <VolumeDialog open mode={meta[pendingVolume[0]].mode} count={pendingVolume.length}
-          place={rows.find(r => r.id === pendingVolume[0]) ? `${meta[pendingVolume[0]].zone} · ${rows.find(r => r.id === pendingVolume[0])!.side}` : meta[pendingVolume[0]].zone}
-          initialDose={dose}
-          onSave={(value, plane) => {
-            const ids = pendingVolume;
-            setMeta(m => ({ ...m, ...Object.fromEntries(ids.filter(id => m[id]).map(id => [id, { ...m[id], dose: value, plane: plane || undefined }])) }));
-            setDose(value); setPendingVolume(null);
-            setStatus(`${ids.length} punto(s) · ${value} ${SIM_MODES[meta[ids[0]].mode].unit} registrados.`);
-          }}
-          onDiscard={() => { setPendingVolume(null); undo(); setStatus('Punto descartado.'); }} />}
-      </div>
-      </div>
-      </div>
+          onPlane={(ids, plane) => { snap(); setMeta(m => ({ ...m, ...Object.fromEntries(ids.filter(id => m[id]).map(id => [id, { ...m[id], plane: plane || undefined }])) })); }}
+          header={selectedRow && meta[selectedRow.id] && <SelectionInspector row={selectedRow} onDose={editDose}
+            onDelete={id => { snap(); removeEl(id); setSelectedId(null); }} onMirror={mirrorSelected} mirrorDisabled={preview.after || !bindings[selectedRow.id]}
+            onTransform={bindings[selectedRow.id] && !preview.after ? transformSelected : undefined}>
+            <details className="rounded-lg border border-white/10 bg-black/30 p-2">
+              <summary className="flex min-h-8 cursor-pointer list-none items-center text-[11px] font-bold text-stone-300">Editar categoría, zona y producto</summary>
+              <form key={selectedRow.id} aria-label="Editar marca seleccionada" className="mt-2 grid gap-2" onSubmit={e => {
+                e.preventDefault();
+                const data = new FormData(e.currentTarget), nextMode = data.get('mode') as SimMode, id = selectedRow.id;
+                snap(); setMeta(m => ({ ...m, [id]: { ...m[id], mode: nextMode,
+                  zone: String(data.get('zone')), product: String(data.get('product')) || undefined } }));
+                setStatus('Marca actualizada.');
+              }}>
+                <label className="text-[11px] text-stone-400">Categoría
+                  <select name="mode" defaultValue={meta[selectedRow.id].mode} className="admin-focus-ring mt-1 min-h-10 w-full rounded-lg border border-white/10 bg-stone-950 px-2 text-xs text-stone-100">
+                    {(Object.keys(SIM_MODES) as SimMode[]).map(m => <option key={m} value={m}>{SIM_MODES[m].label}</option>)}
+                  </select>
+                </label>
+                <label className="text-[11px] text-stone-400">Zona registrada
+                  <input name="zone" defaultValue={meta[selectedRow.id].zone} className="admin-focus-ring mt-1 min-h-10 w-full rounded-lg border border-white/10 bg-stone-950 px-2 text-xs text-stone-100" />
+                </label>
+                <label className="text-[11px] text-stone-400">Producto registrado
+                  <input name="product" list="face-annotation-products" defaultValue={meta[selectedRow.id].product ?? ''} className="admin-focus-ring mt-1 min-h-10 w-full rounded-lg border border-white/10 bg-stone-950 px-2 text-xs text-stone-100" />
+                </label>
+                <button type="submit" className="admin-focus-ring min-h-10 rounded-lg bg-gold px-3 text-xs font-bold text-stone-950">Guardar cambios de marca</button>
+              </form>
+            </details>
+          </SelectionInspector>} />
+      </div>}
+      {workspace === 'simulate' && pendingVolume && meta[pendingVolume[0]] && <VolumeDialog open mode={meta[pendingVolume[0]].mode} count={pendingVolume.length}
+        place={rows.find(r => r.id === pendingVolume[0]) ? `${meta[pendingVolume[0]].zone} · ${rows.find(r => r.id === pendingVolume[0])!.side}` : meta[pendingVolume[0]].zone}
+        initialDose={dose}
+        onSave={(value, plane) => {
+          const ids = pendingVolume;
+          setMeta(m => ({ ...m, ...Object.fromEntries(ids.filter(id => m[id]).map(id => [id, { ...m[id], dose: value, plane: plane || undefined }])) }));
+          setDose(value); setPendingVolume(null);
+          setStatus(`${ids.length} punto(s) · ${value} ${SIM_MODES[meta[ids[0]].mode].unit} registrados.`);
+        }}
+        onDiscard={() => { setPendingVolume(null); undo(); setStatus('Punto descartado.'); }} />}
     </div>
   );
 }

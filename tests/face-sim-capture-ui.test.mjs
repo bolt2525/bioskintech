@@ -188,7 +188,7 @@ test('malla predeterminada permite hover sin añadir marcas y revisión abre mod
     assert.deepEqual(colors.slice(i, i + 3), colors.slice(i + 6, i + 9), 'sin degradado hacia otra zona');
   }
   viewer.props.anatomicalOverlay.onHover('Mentón');
-  assert.match(text(app.render()), /MentónPiel0 U/);
+  assert.match(text(app.render()), /Mentón.*Piel.*0 U/);
   openCapture(app);
   app.photos({ frontal: photo() });
   tree = app.render();

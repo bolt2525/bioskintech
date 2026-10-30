@@ -44,7 +44,7 @@ try {
   await page.mouse.click(at(0.5, 0.5).x, at(0.5, 0.5).y);
   assert.equal(await count(), 0);
   await page.getByRole('button', { name: 'Punto', exact: true }).click();
-  assert.equal(await page.getByRole('button', { name: 'Antes', exact: true }).getAttribute('aria-pressed'), 'true');
+  assert.equal(await page.getByRole('button', { name: 'Vista «Después» · volver a marcar', exact: true }).count(), 0, 'Marcar vuelve a «Antes».');
   await canvas.waitFor({ state: 'visible' }); await page.waitForTimeout(700);
   await canvas.scrollIntoViewIfNeeded();
   bounds = await canvas.boundingBox();
@@ -64,6 +64,7 @@ try {
   const initialCount = await count();
   const dose = page.getByLabel('Dosis marca 1', { exact: true });
   assert.equal(await dose.inputValue(), '7.5');
+  await page.getByRole('tab', { name: /Revisar/ }).click();
   await page.getByLabel('Intensidad visual independiente', { exact: true }).fill('0.9');
   assert.equal(await dose.inputValue(), '7.5');
   for (const name of ['Toxina', 'Relleno HA', 'Hidratación', 'Bioestimulador']) {
@@ -78,6 +79,7 @@ try {
   await page.mouse.click(previewBounds.x + previewBounds.width * 0.5, previewBounds.y + previewBounds.height * 0.5);
   assert.equal(await count(), initialCount, 'Después no puede registrar marcas.');
   await page.getByRole('button', { name: 'Seleccionar marca 1', exact: true }).click();
+  await page.getByText('Editar categoría, zona y producto', { exact: true }).click();
   const editor = page.getByRole('form', { name: 'Editar marca seleccionada' });
   await editor.getByLabel('Producto registrado', { exact: true }).fill('Producto QA ficticio');
   await editor.getByRole('button', { name: 'Guardar cambios de marca', exact: true }).click();

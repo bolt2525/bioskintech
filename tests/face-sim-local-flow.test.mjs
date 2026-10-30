@@ -69,6 +69,9 @@ test('preview: buffers originales intactos, tapa fuera del límite y toxina sin 
   const next = preview.previewPixels(pixels, 2, 1, [{ mode: 'hidratacion', x: 0, y: 0 }], settings, new Uint8Array([1, 0]));
   assert.ok(next[0] > pixels[0]);
   assert.deepEqual(next.slice(4), pixels.slice(4));
+  const off = preview.previewPixels(pixels, 2, 1, [{ mode: 'hidratacion', x: 0, y: 0 }], { ...settings, levels: { hidratacion: 0 } }, new Uint8Array([1, 0]));
+  assert.deepEqual(off, pixels, 'nivel 0 del inyectable anula su filtro');
+  assert.equal(preview.previewGain({ ...settings, levels: { toxina: 9 } }, 'toxina'), preview.MAX_LEVEL);
 });
 
 test('Inyectables: export/import mixto conserva categorías, producto, zona y dosis cero', () => {

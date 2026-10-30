@@ -7,7 +7,7 @@ import vm from 'node:vm';
 import React from 'react';
 import ts from 'typescript';
 import atlas from '../src/lab/faceSim/genericFaceAtlas.json' with { type: 'json' };
-import { annotationHistory, annotationLaterality, mirrorAnnotation, translateAnnotation } from '../src/lab/faceSim/annotationSymmetry.ts';
+import { annotationHistory, annotationLaterality, mirrorAnnotation, transformAnnotation, translateAnnotation } from '../src/lab/faceSim/annotationSymmetry.ts';
 import { photoPatternPaths } from '../src/lab/faceSim/anatomicalAnnotations.ts';
 import { locateModelPoint, modelPoint } from '../src/lab/faceSim/faceTransfer.ts';
 
@@ -73,6 +73,16 @@ test('traslado conserva kind, segmentos y centro sin mutar ni recortar el origin
     assert.deepEqual(binding, before);
     assert.equal(translateAnnotation(binding, { x: 100, y: 0 }, atlas), null);
   }
+});
+
+test('escalar/rotar conserva estructura y rechaza escala inválida', () => {
+  const binding = make('line'), before = structuredClone(binding);
+  const same = transformAnnotation(binding, { scale: 1, degrees: 0 }, atlas);
+  assert.ok(same);
+  assert.deepEqual(same.paths.map(p => p.length), binding.paths.map(p => p.length));
+  assert.ok(transformAnnotation(binding, { scale: 0.8, degrees: 15 }, atlas));
+  assert.equal(transformAnnotation(binding, { scale: 0 }, atlas), null);
+  assert.deepEqual(binding, before);
 });
 
 test('historial conserva una transacción bilateral como un solo deshacer', () => {

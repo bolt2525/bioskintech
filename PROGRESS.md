@@ -541,3 +541,6 @@ Las entradas siguientes conservan la evidencia previa al despliegue y la evoluci
 - ✅ Oct 29 Mallado: 283 pruebas, build, Chromium.
 - ✅ Oct 29 Frente: detección directa del nacimiento capilar.
 - ✅ Oct 29 Revisión de frente en todas las fotos; altura compartida.
+- ✅ Oct 29 Editor de marcaciones: pestañas, toolbar, listado lateral e inspector.
+- ✅ Oct 29 Hover con mallado coloreado y raycast por frame; dividido con GLB completo.
+- ✅ Oct 29 Intensidad por inyectable sobre máscara personal; 1 U / 1 ml.

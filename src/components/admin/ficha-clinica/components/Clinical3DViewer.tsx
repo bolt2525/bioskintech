@@ -94,6 +94,8 @@ export interface AnatomicalSurfaceOverlay {
   depthTest?: boolean;
   zoneAt?: (point: { x: number; y: number; z: number }) => string | null;
   selectedZone?: string | null;
+  /** 'mesh': resalta la zona bajo el cursor como mallado con su color (por defecto, relleno azul). */
+  highlight?: 'fill' | 'mesh';
   /** Capas visuales auxiliares; no participan en el raycast ni cambian la superficie canónica. */
   references?: readonly {
     positions: Float32Array;
@@ -784,46 +786,60 @@ const ThreeEngine: React.FC<{
     mesh.name = 'ANATOMICAL_REFERENCE_OVERLAY';
     mesh.renderOrder = 12;
     scene.add(mesh);
+    const meshHighlight = anatomicalOverlay.highlight === 'mesh';
     const highlightGeometry = new THREE.BufferGeometry();
-    const highlightMaterial = new THREE.MeshBasicMaterial({ color: '#38bdf8', transparent: true, opacity: 0.3,
+    const highlightMaterial = new THREE.MeshBasicMaterial({ color: meshHighlight ? '#ffffff' : '#38bdf8', vertexColors: meshHighlight,
+      wireframe: meshHighlight, transparent: true, opacity: meshHighlight ? 0.95 : 0.3,
       side: THREE.FrontSide, depthTest: anatomicalOverlay.depthTest ?? true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -3 });
     const highlight = new THREE.Mesh(highlightGeometry, highlightMaterial);
     highlight.renderOrder = 13;
     scene.add(highlight);
     const raycaster = new THREE.Raycaster(), cursor = new THREE.Vector2();
-    let active: string | null = null;
+    let active: string | null = null, frame = 0, pending: PointerEvent | null = null;
     const select = (zone: string | null) => {
       if (zone === active) return;
       active = zone;
-      const positions: number[] = [];
+      const positions: number[] = [], colors: number[] = [];
       anatomicalOverlay.labels?.forEach((label, triangle) => {
-        if (label === zone || zone && label.startsWith(`${zone} ·`)) positions.push(...anatomicalOverlay.positions.slice(triangle * 9, triangle * 9 + 9));
+        if (label !== zone && !(zone && label.startsWith(`${zone} ·`))) return;
+        positions.push(...anatomicalOverlay.positions.subarray(triangle * 9, triangle * 9 + 9));
+        if (meshHighlight) colors.push(...anatomicalOverlay.colors.subarray(triangle * 9, triangle * 9 + 9));
       });
       highlightGeometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+      if (meshHighlight) highlightGeometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
       highlightGeometry.computeBoundingSphere();
       anatomicalOverlay.onHover?.(zone);
     };
-    const hover = (event: PointerEvent) => {
-      if (!cameraRef.current || event.buttons) return;
+    const probe = () => {
+      frame = 0;
+      const event = pending; pending = null;
+      if (!event || !cameraRef.current) return;
       const bounds = rendererRef.current?.domElement.getBoundingClientRect();
       if (!bounds || !bounds.width || !bounds.height) return;
       cursor.set((event.clientX - bounds.left) / bounds.width * 2 - 1, -(event.clientY - bounds.top) / bounds.height * 2 + 1);
       raycaster.setFromCamera(cursor, cameraRef.current);
-      const hit = raycaster.intersectObject(mesh)[0];
       const surface = faceMeshRef.current && raycaster.intersectObject(faceMeshRef.current, true)[0];
       if (anatomicalOverlay.zoneAt) {
         select(surface ? anatomicalOverlay.zoneAt(surface.point) : null);
         return;
       }
+      const hit = raycaster.intersectObject(mesh)[0];
       select(hit && (!surface || hit.distance <= surface.distance + 0.03)
         ? anatomicalOverlay.labels?.[hit.faceIndex ?? -1] ?? null : null);
     };
-    const leave = () => select(null);
+    // Un raycast por frame como máximo: el hover no debe competir con la rotación ni el render.
+    const hover = (event: PointerEvent) => {
+      if (event.buttons) return;
+      pending = event;
+      if (!frame) frame = requestAnimationFrame(probe);
+    };
+    const leave = () => { pending = null; if (frame) cancelAnimationFrame(frame); frame = 0; select(null); };
     select(anatomicalOverlay.selectedZone ?? null);
     const element = rendererRef.current?.domElement;
     element?.addEventListener('pointermove', hover);
     element?.addEventListener('pointerleave', leave);
     return () => {
+      if (frame) cancelAnimationFrame(frame);
       element?.removeEventListener('pointermove', hover); element?.removeEventListener('pointerleave', leave);
       scene.remove(mesh, highlight); geometry.dispose(); material.dispose(); highlightGeometry.dispose(); highlightMaterial.dispose();
     };

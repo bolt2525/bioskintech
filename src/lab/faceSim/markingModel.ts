@@ -10,10 +10,10 @@ export const INJECTION_PLANES: Record<SimMode, readonly string[]> = {
   bioestimulador: ['Subdérmico', 'Subcutáneo', 'Supraperióstico'],
 };
 export const QUICK_VOLUMES: Record<SimMode, readonly number[]> = {
-  toxina: [2, 4, 5, 10],
-  relleno_ha: [0.05, 0.1, 0.2, 0.5],
-  hidratacion: [0.05, 0.1, 0.2, 0.5],
-  bioestimulador: [0.1, 0.2, 0.3, 0.5],
+  toxina: [1, 2, 4, 5, 10],
+  relleno_ha: [0.05, 0.1, 0.2, 0.5, 1],
+  hidratacion: [0.05, 0.1, 0.2, 0.5, 1],
+  bioestimulador: [0.1, 0.2, 0.3, 0.5, 1],
 };
 export const EXTENDED_ZONE = 'Zona extendida';
 
