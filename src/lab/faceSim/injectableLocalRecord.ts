@@ -51,11 +51,17 @@ export function importLocalRecord(text: string, zones: string[]) {
     if (!modes.includes(value.mode as SimMode) || typeof value.dose !== 'number'
       || !Number.isFinite(value.dose) || value.dose < 0 || typeof value.zone !== 'string'
       || value.product !== undefined && typeof value.product !== 'string'
-      || value.plane !== undefined && typeof value.plane !== 'string') {
+      || value.plane !== undefined && typeof value.plane !== 'string'
+      || value.entry !== undefined && typeof value.entry !== 'boolean'
+      || value.technique !== undefined && typeof value.technique !== 'string'
+      || value.parent !== undefined && typeof value.parent !== 'string'
+      || value.tip !== undefined && !Number.isInteger(value.tip)) {
       throw new Error('Los metadatos locales son inválidos; no se ha importado el registro.');
     }
     result.meta[id] = { mode: value.mode, dose: value.dose, zone: value.zone, product: value.product,
-      ...(value.plane ? { plane: value.plane } : {}) } as Meta;
+      ...(value.plane ? { plane: value.plane } : {}),
+      ...(value.entry ? { entry: true } : {}), ...(value.technique ? { technique: value.technique } : {}),
+      ...(value.parent ? { parent: value.parent, tip: value.tip ?? 0 } : {}) } as Meta;
   }
   return { ...result, kinds: restoredKinds, centers: restoredCenters, quickRecord, illustrativePlanes };
 }

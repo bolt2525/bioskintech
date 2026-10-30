@@ -235,10 +235,14 @@ test('foto: Capturas no marca; punto, arrastre, trazo, cancelación y undo usan 
   ui.button('Línea').props.onClick(); ui.render();
   photo().props.onPointerDown(event(50)); ui.render();
   photo().props.onPointerMove(event(205)); ui.render(); photo().props.onPointerUp(); ui.render();
-  assert.equal(Object.keys(ui.get('bindings')).length, 2);
+  // La línea es entrada de aguja (sin dosis) + una punta con dosis en su extremo.
+  assert.equal(Object.keys(ui.get('bindings')).length, 3);
+  const lineId = Object.keys(ui.get('meta')).find(key => ui.get('meta')[key].entry);
+  const tip = Object.values(ui.get('meta')).find(m => m.parent === lineId);
+  assert.ok(lineId && tip && tip.tip === 0 && ui.get('meta')[lineId].dose === 0);
   photo().props.onPointerDown(event(205)); ui.render(); photo().props.onPointerCancel(); ui.render();
   photo().props.onPointerUp(); ui.render();
-  assert.equal(Object.keys(ui.get('bindings')).length, 2);
+  assert.equal(Object.keys(ui.get('bindings')).length, 3);
 });
 
 test('visor dividido: registro único bidireccional, selección y undo entre genérico y máscara', () => {

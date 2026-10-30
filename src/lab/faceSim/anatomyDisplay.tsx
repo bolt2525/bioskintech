@@ -32,6 +32,29 @@ export function chooseAnatomyDisplay(current: AnatomyDisplayState, kind: Anatomy
   };
 }
 
+export const DEPTH_STOPS: readonly AnatomyPlane[] = ['skin', 'muscle', 'vessels', 'bone'];
+/**
+ * Corte en profundidad: pela piel → músculo → vascular → óseo. La capa superior se desvanece
+ * mientras la siguiente ya aparece debajo; la capa dominante pasa a ser la capa activa para marcar.
+ */
+export function depthPeelDisplay(current: AnatomyDisplayState, position: number): AnatomyDisplayState {
+  if (!Number.isFinite(position)) throw new Error('Posición de corte inválida.');
+  const scaled = Math.min(1, Math.max(0, position)) * (DEPTH_STOPS.length - 1);
+  const index = Math.min(DEPTH_STOPS.length - 2, Math.floor(scaled)), fraction = scaled - index;
+  const weight = (kind: AnatomyPlane) => {
+    const k = DEPTH_STOPS.indexOf(kind);
+    return Math.round((k === index ? 1 - fraction : k === index + 1 ? Math.min(1, fraction * 2) : 0) * 1000) / 1000;
+  };
+  // Los vasos son líneas finas: un músculo tenue detrás les da contexto.
+  const muscle = Math.max(weight('muscle'), Math.round(weight('vessels') * 0.35 * 1000) / 1000);
+  const layer = (kind: ReferenceKind, opacity: number) => ({ ...current.references[kind], visible: opacity > 0, opacity });
+  return {
+    anatomy: DEPTH_STOPS[fraction < 0.5 ? index : index + 1], overlay: false,
+    skin: { visible: weight('skin') > 0, opacity: weight('skin') },
+    references: { muscle: layer('muscle', muscle), vessels: layer('vessels', weight('vessels')), bone: layer('bone', weight('bone')) },
+  };
+}
+
 export interface AnatomyLayerControlsProps {
   value: AnatomyDisplayState;
   onChange: (value: AnatomyDisplayState) => void;

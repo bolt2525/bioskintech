@@ -24,15 +24,15 @@ import genericFaceAtlas from './genericFaceAtlas.json' with { type: 'json' };
 import { locateModelPoint, locatePhotoPoint, modelPoint as tryModelPoint, photoPoint as tryPhotoPoint, surfacePoint as trySurfacePoint, type FaceAddress } from './faceTransfer';
 import {
   addressHasPhotoCoverage, anatomicalPhotoElements, annotationViews, bindAnatomicalPaths, photoPatternPaths, requireMappedPoint, shapeOutline, surfaceNormal,
-  type AnatomicalBinding, type AnatomicalBindings,
+  DEFAULT_PATTERN, type AnatomicalBinding, type AnatomicalBindings, type PatternConfig,
 } from './anatomicalAnnotations';
 import { annotationHistory, annotationLaterality, canonicalAnnotationPoint, mirrorAnnotation, transformAnnotation, translateAnnotation } from './annotationSymmetry';
 import { annotationPhotoLayer, annotationUVs, bindingsOnLayer, buildAnnotationLayerView, type AnnotationLayerView } from './annotationLayerView';
 import { loadDefaultLayers, registerLayers, ANATOMY_PLANES } from './defaultLayers';
-import { AnatomyLayerControls, chooseAnatomyDisplay, initialAnatomyDisplay } from './anatomyDisplay';
+import { AnatomyLayerControls, chooseAnatomyDisplay, depthPeelDisplay, initialAnatomyDisplay } from './anatomyDisplay';
 import { initialQuickRecordSettings, type QuickRecordSettings } from './quickRecord';
-import { EXTENDED_ZONE, ledgerRows, volumeTotals } from './markingModel';
-import { CheckChip, CutControls, EditorTabs, EffectMixer, IconToggle, ModeCards, NO_CUT, PanelSection, PointLedger, SelectionInspector, ToolDock, VolumeDialog, VolumeHud, ZoneChip, ZoneView, createZoneStore, editorPanel, hudChip, type MarkingCut, type ZoneStore } from './MarkingPanels';
+import { EXTENDED_ZONE, KIND_LABELS, formatVolume, ledgerRows, patternTips, volumeTotals } from './markingModel';
+import { CheckChip, CutControls, EditorTabs, EffectMixer, IconToggle, ModeCards, PatternSetupDialog, NO_CUT, PanelSection, PointLedger, SelectionInspector, ToolDock, VolumeDialog, VolumeHud, ZoneChip, ZoneView, createZoneStore, editorPanel, hudChip, isDepthCut, type MarkingCut, type ZoneStore } from './MarkingPanels';
 import { DEFAULT_PREVIEW, PREVIEW_DESCRIPTIONS, buildIllustrativeEffects, previewPixels, previewSurface } from './injectablePreview';
 import { importLocalRecord, localRecord } from './injectableLocalRecord';
 
@@ -229,7 +229,10 @@ const TOOLS_PHOTO: { id: ElemKind; label: string; icon: LucideIcon }[] = [
   { id: 'free', label: 'Libre', icon: Brush }, { id: 'circle', label: 'Círculo', icon: Circle }, { id: 'rect', label: 'Rectángulo', icon: Square },
   { id: 'pattern', label: 'Patrón', icon: Fan },
 ];
-const HA_CONFIG = { fanLines: 5, fanAngle: 25, gridCells: 4, fernBranches: 5 };
+type PatternTool = 'ha-fan' | 'ha-grid' | 'ha-fern' | 'photo-pattern';
+const PHOTO_PATTERN_NAMES = { fan: 'Abanico', grid: 'Malla', fern: 'Helecho' } as const;
+/** Grosor visible de trazos y patrones sobre cualquier tono de piel. */
+const LINE_THICKNESS = 3;
 /** El editor ocupa una pantalla: visor, herramientas y listado sin scroll de página en escritorio. */
 const VIEWER_HEIGHT = 'clamp(360px, calc(100dvh - 15rem), 760px)';
 /** Color estable por zona anatómica para el mallado (RGB 0–1). */
@@ -301,6 +304,9 @@ export default function FaceSimLab() {
   const [tool3d, setTool3d] = useState<Tool3D>('navigate');
   const [toolPhoto, setToolPhoto] = useState<ElemKind>('point');
   const [photoPattern, setPhotoPattern] = useState<'fan' | 'grid' | 'fern'>('fan');
+  const [haConfig, setHaConfig] = useState<PatternConfig>(DEFAULT_PATTERN);
+  /** Patrón en ajuste: se configura y previsualiza antes de trazar, como en Fichas → Inyectables. */
+  const [patternSetup, setPatternSetup] = useState<PatternTool | null>(null);
   const [markers, setMarkers] = useState<Marker3D[]>([]);
   const [lines, setLines] = useState<FreehandLine[]>([]);
   const [shapes, setShapes] = useState<SurfaceShape[]>([]);
@@ -548,10 +554,11 @@ export default function FaceSimLab() {
   const personalLayer = annotationLayers.personal.find(layer => layer.reference.kind === anatomyDisplay.anatomy);
   const photoLayer = annotationLayers.photo.find(layer => layer.reference.kind === anatomyDisplay.anatomy);
   const photoLayerImages = useMemo(() => {
-    if (!slot?.landmarks) return [];
+    // Tres PNG de 1000×1000: solo cuando realmente se muestra la foto.
+    if (!slot?.landmarks || workMode !== 'foto') return [];
     return annotationLayers.photo.map(layer => ({ kind: layer.reference.kind,
       url: annotationPhotoLayer(layer, slot.landmarks!, genericFaceAtlas) }));
-  }, [annotationLayers.photo, slot?.landmarks]);
+  }, [annotationLayers.photo, slot?.landmarks, workMode]);
   const triangleRegions = useMemo(() => buildFaceTriangleRegions(canonicalRegionMap, genericFaceAtlas.positions), [canonicalRegionMap]);
   const regionCells = useMemo(() => buildRegionCells(canonicalRegionMap, triangleRegions), [canonicalRegionMap, triangleRegions]);
   const planePositions = useMemo(() => ({
@@ -588,9 +595,12 @@ export default function FaceSimLab() {
   }, [showRegions, overlayMode, regionCells, planePositions, regionPlane, personal, setHoveredZone]);
   const renderLayerSettings = useMemo(() => {
     const build = (available: AnnotationLayerView[]) => ({
-      references: available.filter(layer => anatomyDisplay.references[layer.reference.kind].visible)
-        .map(layer => ({ positions: layer.positions, indices: layer.indices, uvs: layer.reference.uvs, canvas: layer.reference.canvas,
-          opacity: anatomyDisplay.references[layer.reference.kind].opacity })),
+      // Ocultas con opacidad 0 (no filtradas): el visor conserva textura y malla y hace fundido/morph.
+      references: available.map(layer => {
+        const setting = anatomyDisplay.references[layer.reference.kind];
+        return { positions: layer.positions, indices: layer.indices, uvs: layer.reference.uvs, canvas: layer.reference.canvas,
+          opacity: setting.visible ? setting.opacity : 0 };
+      }),
       skin: anatomyDisplay.skin, referenceOverlay: anatomyDisplay.overlay,
     });
     return { generic: build(annotationLayers.generic), personal: build(annotationLayers.personal) };
@@ -1067,18 +1077,36 @@ export default function FaceSimLab() {
     bindAnatomicalPaths(paths, p => skinOnly ? locateSkinAnnotation(source, p) : locateAnnotation(source, p), kind, source === 'foto' ? 0.004 : 0.035);
   const commitBinding = (
     id: string, value: AnatomicalBinding, source: 'generico' | 'personal' | 'foto',
-    updating = false, properties = meta[id] ?? curMeta(),
+    updating = false, properties = meta[id] ?? curMeta(), tipDoses?: readonly number[],
   ): boolean => {
     const binding = { ...value, illustrativePlane: value.illustrativePlane ?? anatomyDisplay.anatomy };
-    const entries: [string, AnatomicalBinding][] = [[id, binding]];
+    const containers: [string, AnatomicalBinding][] = [[id, binding]];
     if (!updating && bilateral) {
       const mirrored = mirrorAnnotation(binding, genericFaceAtlas, address => acceptsAddress(source, address));
       if (!mirrored) { blockedMark(); return false; }
-      entries.push([uid(), mirrored]);
+      containers.push([uid(), mirrored]);
+    }
+    // Trazo de entrada: la aguja entra por el inicio (zona) y la dosis se deposita en cada punta.
+    const own: Meta = { ...properties, parent: undefined, tip: undefined, entry: undefined, technique: undefined };
+    const technique = properties.technique ?? KIND_LABELS[binding.kind];
+    const tipMeta: Record<string, Meta> = {}, staleTips = new Set<string>();
+    const entries: [string, AnatomicalBinding][] = [];
+    for (const [key, entry] of containers) {
+      entries.push([key, entry]);
+      const tips = patternTips(entry);
+      if (!tips.length) continue;
+      const previous = Object.entries(meta).filter(([, m]) => m.parent === key);
+      previous.forEach(([tipId, m]) => { if ((m.tip ?? 0) >= tips.length) staleTips.add(tipId); });
+      tips.forEach((address, tip) => {
+        const [tipId, old] = previous.find(([, m]) => m.tip === tip) ?? [uid(), undefined];
+        entries.push([tipId, { paths: [[address]], kind: 'point', illustrativePlane: entry.illustrativePlane }]);
+        tipMeta[tipId] = { ...own, ...(old ? { dose: old.dose, plane: old.plane } : { dose: tipDoses?.[tip] ?? (properties.entry ? 0 : properties.dose) }), parent: key, tip };
+      });
+      tipMeta[key] = { ...own, dose: 0, entry: true, technique };
     }
     // Validación completa ANTES de tomar un único snapshot, también para ambos lados.
     snap();
-    const ids = new Set(entries.map(([key]) => key));
+    const ids = new Set([...entries.map(([key]) => key), ...staleTips]);
     setMarkers(current => [
       ...current.filter(marker => !marker.id || !ids.has(marker.id)),
       ...entries.filter(([, entry]) => entry.kind === 'point').map(([key, entry]): Marker3D => {
@@ -1093,16 +1121,17 @@ export default function FaceSimLab() {
         const paths = entry.paths.map(path => path.map(address => modelPoint(address, genericFaceAtlas)));
         const previous = current.find(line => line.id === key);
         return { ...previous, id: key, points: paths[0], segments: paths.length > 1 ? paths : undefined,
-          color: SIM_MODES[properties.mode].color, thickness: previous?.thickness ?? 1.5,
+          color: SIM_MODES[properties.mode].color, thickness: previous?.thickness ?? LINE_THICKNESS,
           ...(entry.kind === 'arrow' ? { technique_preset: 'Flecha' } : {}) };
       }),
     ]);
     // Los contornos se editan como su polígono real, no como una segunda copia.
     setShapes(current => current.filter(shape => !ids.has(shape.id)));
-    setBindings(current => ({ ...current, ...Object.fromEntries(entries) }));
-    setMeta(current => ({ ...current, ...Object.fromEntries(entries.map(([key]) => [key, { ...properties }])) }));
+    const drop = <T,>(record: Record<string, T>) => Object.fromEntries(Object.entries(record).filter(([key]) => !staleTips.has(key)));
+    setBindings(current => ({ ...drop(current), ...Object.fromEntries(entries) }));
+    setMeta(current => ({ ...drop(current), ...Object.fromEntries(entries.map(([key]) => [key, tipMeta[key] ?? { ...properties }])) }));
     setSelectedId(id);
-    if (!updating && askVolume) setPendingVolume(entries.map(([key]) => key));
+    if (!updating && askVolume) setPendingVolume(entries.filter(([key]) => !tipMeta[key]?.entry).map(([key]) => key));
     return true;
   };
   /** Marca solo en la cabeza completa (cuello, cuero cabelludo): sin binding, no se transfiere. */
@@ -1121,8 +1150,11 @@ export default function FaceSimLab() {
     const source = workMode === 'foto' ? 'foto' : modelKind;
     const mirrored = mirrorAnnotation(bindings[selectedId], genericFaceAtlas, address => acceptsAddress(source, address));
     if (!mirrored) { blockedMark(); return; }
-    // updating=true impide que el modo bilateral cree un tercer elemento.
-    if (commitBinding(uid(), mirrored, source, true, meta[selectedId])) setStatus('Espejo creado; original y registro conservados. Deshacer revierte toda la acción.');
+    // updating=true impide que el modo bilateral cree un tercer elemento. Una punta espejada es un punto propio.
+    const { parent: _parent, tip: _tip, ...source0 } = meta[selectedId];
+    void _parent; void _tip;
+    const tipDoses = Object.values(meta).filter(m => m.parent === selectedId).sort((a, b) => (a.tip ?? 0) - (b.tip ?? 0)).map(m => m.dose);
+    if (commitBinding(uid(), mirrored, source, true, source0, tipDoses)) setStatus('Espejo creado; original y registro conservados. Deshacer revierte toda la acción.');
   };
   const transformSelected = (change: { scale?: number; degrees?: number }) => {
     if (!selectedId || !bindings[selectedId]) return;
@@ -1195,7 +1227,8 @@ export default function FaceSimLab() {
       binding.center = address;
     }
     if (previous?.illustrativePlane) binding.illustrativePlane = previous.illustrativePlane;
-    if (!commitBinding(l.id, binding, source, updating)) return;
+    if (!commitBinding(l.id, binding, source, updating,
+      meta[l.id] ?? { ...curMeta(), ...(l.technique_preset ? { technique: l.technique_preset } : {}) })) return;
     setStatus('Trazo anatómico compartido actualizado. Se conserva al cambiar modelo, superficie o foto.');
   };
   const onShape = (s: SurfaceShape, source: 'generico' | 'personal') => {
@@ -1392,7 +1425,7 @@ export default function FaceSimLab() {
       const end = d.pts[1];
       path = [center, { x: end.x, y: center.y }, end, { x: center.x, y: end.y }, center];
     }
-    const paths = d.kind === 'pattern' ? photoPatternPaths(center, d.pts[1], aspect, photoPattern) : [path];
+    const paths = d.kind === 'pattern' ? photoPatternPaths(center, d.pts[1], aspect, photoPattern, haConfig) : [path];
     const binding = makeBinding(paths.map(points => points.map(p => ({ ...p, z: 0 }))), 'foto', d.kind);
     if (!binding) { blockedMark(); return; }
     if (d.kind === 'circle' || d.kind === 'rect') {
@@ -1401,19 +1434,24 @@ export default function FaceSimLab() {
       if (!address) { blockedMark(); return; }
       binding.center = address;
     }
-    if (!commitBinding(id, binding, 'foto')) return;
+    if (!commitBinding(id, binding, 'foto', false, d.kind === 'pattern' ? { ...curMeta(), technique: PHOTO_PATTERN_NAMES[photoPattern] } : curMeta())) return;
     setStatus('Marcación creada desde la foto y compartida con modelo original y superficie personal.');
   };
 
   const removeEl = (id: string) => {
-    setMarkers(p => p.filter(m => m.id !== id)); setLines(p => p.filter(l => l.id !== id)); setShapes(p => p.filter(s => s.id !== id));
-    setPhotoEls(p => p.filter(e => e.id !== id)); setMeta(({ [id]: _x, ...rest }) => { void _x; return rest; });
-    setBindings(({ [id]: _x, ...rest }) => { void _x; return rest; });
+    // Borrar un trazo de entrada borra también sus puntas de dosis.
+    const gone = new Set([id, ...Object.entries(meta).filter(([, m]) => m.parent === id).map(([key]) => key)]);
+    const keep = <T,>(record: Record<string, T>) => Object.fromEntries(Object.entries(record).filter(([key]) => !gone.has(key)));
+    setMarkers(p => p.filter(m => !m.id || !gone.has(m.id))); setLines(p => p.filter(l => !gone.has(l.id))); setShapes(p => p.filter(s => !gone.has(s.id)));
+    setPhotoEls(p => p.filter(e => !gone.has(e.id))); setMeta(keep); setBindings(keep);
   };
   const editDose = (id: string, v: number) => {
     if (!Number.isFinite(v) || v < 0) return;
     snap();
-    if (meta[id]) setMeta(m => ({ ...m, [id]: { ...m[id], dose: v } }));
+    if (meta[id]?.entry) {
+      const tips = Object.keys(meta).filter(key => meta[key].parent === id);
+      setMeta(m => ({ ...m, ...Object.fromEntries(tips.map(key => [key, { ...m[key], dose: v }])) }));
+    } else if (meta[id]) setMeta(m => ({ ...m, [id]: { ...m[id], dose: v } }));
     else setPhotoEls(p => p.map(e => (e.id === id ? { ...e, dose: v } : e)));
   };
 
@@ -1507,13 +1545,13 @@ export default function FaceSimLab() {
   };
   const poly = (pts: P2[]) => pts.map(p => `${p.x},${p.y}`).join(' ');
   const draftEl: Elem | null = draft ? draft.kind === 'pattern' && draft.pts.length > 1
-    ? { ...curMeta(), id: 'draft', kind: 'pattern', paths: photoPatternPaths(draft.pts[0], draft.pts[1], aspect, photoPattern) }
+    ? { ...curMeta(), id: 'draft', kind: 'pattern', paths: photoPatternPaths(draft.pts[0], draft.pts[1], aspect, photoPattern, haConfig) }
     : elemsFromPhoto([{ ...curMeta(), id: 'draft', view, kind: draft.kind, pts: draft.pts }], aspect)[0] : null;
 
   const freeMarkerIds = useMemo(() => markers.flatMap(m => m.id && !bindings[m.id] ? [m.id] : []), [markers, bindings]);
   const rows = useMemo(() => ledgerRows(meta, bindings, freeMarkerIds), [meta, bindings, freeMarkerIds]);
   const totals = useMemo(() => volumeTotals(rows), [rows]);
-  const clipping = cut.scope === 'none' ? null : { ...cut, scope: cut.scope };
+  const clipping = cut.scope === 'none' || isDepthCut(cut) ? null : { ...cut, scope: cut.scope };
   const editableBySource = useMemo(() => {
     const build = (original: boolean) => [...(original ? genericAnnotations : personalAnnotations).markers,
       ...(original ? markers.filter(m => m.id && !bindings[m.id]) : [])]
@@ -1575,14 +1613,14 @@ export default function FaceSimLab() {
         highlightedPointIds={highlightedIds}
         onMarkerPlaced={(m: Marker3D) => onMarker(m, source)}
         activeTool={workspace !== 'simulate' || preview.after || workMode !== '3d' || tool3d === 'navigate' || tool3d === 'select' || tool3d === 'point' ? 'none' : tool3d}
-        pendingBrushColor={color} pendingBrushThickness={1.5}
+        pendingBrushColor={color} pendingBrushThickness={LINE_THICKNESS}
         onFreehandLineComplete={l => onLine(l, source)}
         onShapeComplete={s => onShape(s, source)}
         onFreehandLineUpdated={(id, points, segments) => {
           const current = annotations.lines.find(l => l.id === id);
           if (current) onLine({ ...current, points, segments }, source, true);
         }}
-        haShapeConfig={HA_CONFIG} cameraPreset={splitHead ? 'default' : fullHead ? 'face' : 'face-surface'}
+        haShapeConfig={haConfig} cameraPreset={splitHead ? 'default' : fullHead ? 'face' : 'face-surface'}
         modelData={original ? fullHead ? null : genericPreviewGlb : personal ? preview.after && appearanceGlb?.personal === personal ? appearanceGlb.buffer : personal.glb : null}
         pointMarkerScale={0.55} height={VIEWER_HEIGHT}
         interactionHint={tool3d === 'navigate' || workMode === 'foto' ? 'Arrastra para rotar'
@@ -1600,14 +1638,22 @@ export default function FaceSimLab() {
   };
 
   const renderShapes = (list: Elem[], dashed = false) => list.filter(e => e.kind !== 'point').map(e => {
-    const col = selectedId === e.id ? '#fbbf24' : SIM_MODES[e.mode].color, common = { stroke: col, strokeWidth: selectedId === e.id ? 3 : 2, fill: 'none', vectorEffect: 'non-scaling-stroke' as const, strokeDasharray: dashed ? '5 4' : undefined };
+    const width = selectedId === e.id ? 4.5 : 3.5;
+    const col = selectedId === e.id ? '#fbbf24' : SIM_MODES[e.mode].color, common = { stroke: col, strokeWidth: width, strokeLinecap: 'round' as const, fill: 'none', vectorEffect: 'non-scaling-stroke' as const, strokeDasharray: dashed ? '5 4' : undefined };
+    // Halo oscuro bajo cada trazo: se distingue sobre piel clara, oscura o con barba.
+    const halo = { ...common, stroke: '#0c0a09', strokeOpacity: 0.6, strokeWidth: width + 2.5, strokeDasharray: undefined };
     if (e.boundary) return <polygon key={e.id} points={poly(e.boundary)} {...common} fill={col} fillOpacity={0.15} />;
     if (e.kind === 'circle') return <ellipse key={e.id} cx={e.paths[0][0].x} cy={e.paths[0][0].y} rx={e.rx} ry={e.ry} {...common} fill={col} fillOpacity={0.15} />;
     if (e.kind === 'rect') return <rect key={e.id} x={e.paths[0][0].x - (e.rx ?? 0)} y={e.paths[0][0].y - (e.ry ?? 0)} width={(e.rx ?? 0) * 2} height={(e.ry ?? 0) * 2} {...common} fill={col} fillOpacity={0.15} />;
+    const head = e.kind === 'arrow' && e.paths[0].length >= 2 ? arrowHead(e.paths[0]) : [];
+    const tip = e.paths[0].at(-1)!, entry = e.paths[0][0];
     return (
       <g key={e.id}>
+        {e.paths.map((p, i) => <polyline key={`h${i}`} points={poly(p)} {...halo} />)}
+        {head.map((h, i) => <line key={`hh${i}`} x1={tip.x} y1={tip.y} x2={h.x} y2={h.y} {...halo} />)}
         {e.paths.map((p, i) => <polyline key={i} points={poly(p)} {...common} />)}
-        {e.kind === 'arrow' && e.paths[0].length >= 2 && arrowHead(e.paths[0]).map((h, i) => <line key={i} x1={e.paths[0].at(-1)!.x} y1={e.paths[0].at(-1)!.y} x2={h.x} y2={h.y} {...common} />)}
+        {head.map((h, i) => <line key={i} x1={tip.x} y1={tip.y} x2={h.x} y2={h.y} {...common} />)}
+        {meta[e.id]?.entry && <circle cx={entry.x} cy={entry.y} r={0.007} fill="#0c0a09" stroke={col} strokeWidth={2.5} vectorEffect="non-scaling-stroke"><title>Entrada de aguja</title></circle>}
       </g>
     );
   });
@@ -1648,7 +1694,7 @@ export default function FaceSimLab() {
 
   return (
     <div className={`grid min-w-0 gap-4 ${workspace === 'simulate' && editorGroup === 'annotations'
-      ? 'lg:grid-cols-[264px_minmax(0,1fr)] xl:grid-cols-[264px_minmax(0,1fr)_300px]' : 'lg:grid-cols-[260px_minmax(0,1fr)]'}`}>
+      ? 'lg:grid-cols-[264px_minmax(0,1fr)] xl:grid-cols-[256px_minmax(0,1fr)_336px]' : 'lg:grid-cols-[260px_minmax(0,1fr)]'}`}>
       <header className="col-span-full space-y-2">
         <nav aria-label="Espacios del laboratorio" className="flex flex-wrap gap-2">
           {([['capture', 'Capturas'], ['simulate', 'Simular y marcar']] as const).map(([id, label]) =>
@@ -1709,6 +1755,7 @@ export default function FaceSimLab() {
               <PanelSection title="Capa anatómica" icon={Layers}>
                 <AnatomyLayerControls value={anatomyDisplay} onChange={value => {
                   setAnatomyDisplay(value); setHoveredZone(null); setDraft(null);
+                  if (isDepthCut(cut)) setCut(NO_CUT);
                 }} showMesh={showRegions} onMeshChange={toggleMesh} />
                 {(layerError || annotationLayers.error) ? <div role="alert" className="flex items-center gap-2 text-xs text-rose-300">
                   <span className="flex-1">{layerError ?? annotationLayers.error}</span>
@@ -1718,7 +1765,11 @@ export default function FaceSimLab() {
               </PanelSection>
               {workMode === '3d' && <PanelSection title="Corte" icon={Scissors}
                 aside={cut.scope !== 'none' && <span className="rounded-full bg-gold/20 px-2 text-[10px] normal-case tracking-normal text-gold">activo</span>}>
-                <CutControls value={cut} onChange={setCut} />
+                <CutControls value={cut} onChange={next => {
+                  if (isDepthCut(next)) setAnatomyDisplay(current => depthPeelDisplay(current, next.position));
+                  else if (isDepthCut(cut)) setAnatomyDisplay(current => chooseAnatomyDisplay({ ...current, references: initialAnatomyDisplay().references }, current.anatomy));
+                  setCut(next); setHoveredZone(null);
+                }} />
               </PanelSection>}
               <PanelSection title={`Zona ${zone === AUTO_ZONE ? 'automática' : 'manual'}`} icon={Crosshair}>
                 <select aria-label="Zona" value={zone} onChange={e => setZone(e.target.value)}
@@ -2172,9 +2223,12 @@ export default function FaceSimLab() {
           <span aria-hidden="true" className="hidden h-8 w-px bg-white/10 sm:block" />
           {workMode === '3d'
             ? <ToolDock label="Herramientas de marcación" items={TOOLS_3D} value={tool3d} accent={SIM_MODES[mode].color}
-              disabled={id => calibrating && id !== 'point'} onSelect={id => { setTool3d(id); if (id !== 'navigate') beginEditing(); }} />
+              disabled={id => calibrating && id !== 'point'} onSelect={id => {
+                if (id === 'ha-fan' || id === 'ha-grid' || id === 'ha-fern') { setPatternSetup(id); return; }
+                setTool3d(id); if (id !== 'navigate') beginEditing();
+              }} />
             : <ToolDock label="Herramientas de marcación" items={TOOLS_PHOTO} value={photoInteraction === 'draw' ? toolPhoto : null} accent={SIM_MODES[mode].color}
-              onSelect={id => { setToolPhoto(id); setPhotoInteraction('draw'); beginEditing(); }} />}
+              onSelect={id => { if (id === 'pattern') { setPatternSetup('photo-pattern'); return; } setToolPhoto(id); setPhotoInteraction('draw'); beginEditing(); }} />}
           {workMode === 'foto' && toolPhoto === 'pattern' && <select aria-label="Patrón ilustrativo" value={photoPattern} onChange={e => setPhotoPattern(e.target.value as typeof photoPattern)}
             className="admin-focus-ring min-h-10 rounded-lg border border-white/10 bg-stone-900 px-2 text-xs text-stone-100">
             <option value="fan">Abanico</option><option value="grid">Malla</option><option value="fern">Helecho</option>
@@ -2281,6 +2335,7 @@ export default function FaceSimLab() {
             const layer = activeLayer(workMode === 'foto' ? 'foto' : modelKind);
             if (binding && (!layerIsVisible || layer && !binding.paths.flat().every(layer.accepts))) {
               setAnatomyDisplay(current => chooseAnatomyDisplay(current, binding.illustrativePlane ?? 'skin'));
+              setCut(current => isDepthCut(current) ? NO_CUT : current);
             }
           }}
           onHover={row => setHoveredZone(row ? `${row.zone} · ${row.side}` : null)}
@@ -2314,16 +2369,36 @@ export default function FaceSimLab() {
             </details>
           </SelectionInspector>} />
       </div>}
-      {workspace === 'simulate' && pendingVolume && meta[pendingVolume[0]] && <VolumeDialog open mode={meta[pendingVolume[0]].mode} count={pendingVolume.length}
-        place={rows.find(r => r.id === pendingVolume[0]) ? `${meta[pendingVolume[0]].zone} · ${rows.find(r => r.id === pendingVolume[0])!.side}` : meta[pendingVolume[0]].zone}
-        initialDose={dose}
-        onSave={(value, plane) => {
-          const ids = pendingVolume;
-          setMeta(m => ({ ...m, ...Object.fromEntries(ids.filter(id => m[id]).map(id => [id, { ...m[id], dose: value, plane: plane || undefined }])) }));
-          setDose(value); setPendingVolume(null);
-          setStatus(`${ids.length} punto(s) · ${value} ${SIM_MODES[meta[ids[0]].mode].unit} registrados.`);
-        }}
-        onDiscard={() => { setPendingVolume(null); undo(); setStatus('Punto descartado.'); }} />}
+      {patternSetup && <PatternSetupDialog open color={SIM_MODES[mode].color} config={haConfig}
+        kind={patternSetup === 'photo-pattern' ? photoPattern : patternSetup === 'ha-fan' ? 'fan' : patternSetup === 'ha-grid' ? 'grid' : 'fern'}
+        onKind={patternSetup === 'photo-pattern' ? setPhotoPattern : undefined}
+        onCancel={() => setPatternSetup(null)}
+        onConfirm={config => {
+          setHaConfig(config);
+          if (patternSetup === 'photo-pattern') { setToolPhoto('pattern'); setPhotoInteraction('draw'); }
+          else setTool3d(patternSetup);
+          beginEditing(); setPatternSetup(null);
+          setStatus('Patrón listo: pulsa en la entrada de aguja y arrastra; verás la vista previa antes de soltar.');
+        }} />}
+      {workspace === 'simulate' && pendingVolume && meta[pendingVolume[0]] && (() => {
+        const first = meta[pendingVolume[0]], row = rows.find(r => r.id === pendingVolume[0]);
+        const parentRow = first.parent ? rows.find(r => r.id === first.parent) : undefined;
+        const technique = first.parent ? meta[first.parent]?.technique : undefined;
+        const sideOf = (id: string) => { const r = rows.find(x => x.id === id), parent = r?.parent && rows.find(x => x.id === r.parent); return (parent || r)?.side; };
+        const multiSide = new Set(pendingVolume.map(sideOf)).size > 1;
+        return <VolumeDialog open mode={first.mode} count={pendingVolume.length} technique={technique}
+          place={`${(parentRow ?? row)?.zone ?? first.zone}${(parentRow ?? row) ? ` · ${(parentRow ?? row)!.side}` : ''}`}
+          targets={pendingVolume.map(id => ({ id, label: `${meta[id]?.parent ? `Punta ${(meta[id].tip ?? 0) + 1}` : 'Punto'}${multiSide ? ` · ${sideOf(id) === 'derecho' ? 'D' : sideOf(id) === 'izquierdo' ? 'I' : 'C'}` : ''}` }))}
+          initialDose={dose}
+          onSave={(value, plane, perTarget) => {
+            const ids = pendingVolume;
+            setMeta(m => ({ ...m, ...Object.fromEntries(ids.filter(id => m[id]).map(id => [id, { ...m[id], dose: perTarget?.[id] ?? value, plane: plane || undefined }])) }));
+            setDose(value); setPendingVolume(null);
+            const total = ids.reduce((sum, id) => sum + (perTarget?.[id] ?? value), 0);
+            setStatus(`${ids.length} ${technique ? 'punta(s)' : 'punto(s)'} · total ${formatVolume(total)} ${SIM_MODES[first.mode].unit} registrados.`);
+          }}
+          onDiscard={() => { setPendingVolume(null); undo(); setStatus(technique ? 'Trazo descartado.' : 'Punto descartado.'); }} />;
+      })()}
     </div>
   );
 }

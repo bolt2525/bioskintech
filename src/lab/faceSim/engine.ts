@@ -518,7 +518,15 @@ export type ViewKind = 'frontal' | 'izquierda' | 'derecha';
 export type ElemKind = 'point' | 'line' | 'arrow' | 'free' | 'pattern' | 'circle' | 'rect';
 export interface P2 { x: number; y: number }
 export interface Vec3 { x: number; y: number; z: number }
-export interface Meta { mode: SimMode; dose: number; zone: string; product?: string; plane?: string }
+export interface Meta {
+  mode: SimMode; dose: number; zone: string; product?: string; plane?: string;
+  /** Trazo de entrada de aguja (patrón, línea, flecha): define zona y no lleva dosis; la llevan sus puntas. */
+  entry?: boolean;
+  /** Técnica del trazo de entrada (Abanico, Malla, Helecho, Línea, Flecha). */
+  technique?: string;
+  /** Punta de dosis: id del trazo de entrada e índice de punta. */
+  parent?: string; tip?: number;
+}
 export interface Elem extends Meta {
   id: string; kind: ElemKind; paths: P2[][];
   /** Semiejes (coordenadas normalizadas) para circle/rect */

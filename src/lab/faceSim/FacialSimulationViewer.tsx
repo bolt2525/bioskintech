@@ -154,7 +154,7 @@ function mountFacialSimulation(
   rim.position.set(4, 1, -3); scene.add(rim);
   let texture: THREE.CanvasTexture | undefined;
   let signalTexture: THREE.CanvasTexture | undefined, previousSignal: HTMLCanvasElement | undefined;
-  const referenceTextures: THREE.Texture[] = [];
+  const referenceTextures = new Map<HTMLCanvasElement, THREE.Texture>();
   let previousReferences: readonly AnatomicalReference[] | undefined;
   let observer: ResizeObserver | undefined;
   let disposed = false, failed = false, frame = 0;
@@ -449,18 +449,24 @@ function mountFacialSimulation(
           if (object instanceof THREE.Mesh) { object.geometry.dispose(); object.material.dispose(); }
           referenceGroup.remove(object);
         }
-        referenceTextures.forEach(texture => texture.dispose()); referenceTextures.length = 0;
+        // Textura con margen cacheada por canvas: mover un slider de morfología solo rehace la geometría.
+        const liveCanvases = new Set(next.references.map(reference => reference.canvas));
+        for (const [canvas, cached] of referenceTextures) if (!liveCanvases.has(canvas)) { cached.dispose(); referenceTextures.delete(canvas); }
         if (next.references.length) {
           const { positions, indices: observedIndices } = buildSimulationReferenceSurface(mesh, next.parameters);
           const sourceReference = mesh.source === 'personal' ? buildSimulationReferenceSurface(sourceMesh, next.parameters) : null;
           next.references.forEach(reference => {
-            const padded = document.createElement('canvas');
-            padded.width = reference.canvas.width + 4; padded.height = reference.canvas.height + 4;
-            const context = padded.getContext('2d');
-            if (!context) throw new Error('No se pudo preparar la referencia anatómica.');
-            context.drawImage(reference.canvas, 2, 2);
-            const map = new THREE.CanvasTexture(padded);
-            map.flipY = false; map.colorSpace = THREE.SRGBColorSpace; referenceTextures.push(map);
+            let map = referenceTextures.get(reference.canvas);
+            if (!map) {
+              const padded = document.createElement('canvas');
+              padded.width = reference.canvas.width + 4; padded.height = reference.canvas.height + 4;
+              const context = padded.getContext('2d');
+              if (!context) throw new Error('No se pudo preparar la referencia anatómica.');
+              context.drawImage(reference.canvas, 2, 2);
+              map = new THREE.CanvasTexture(padded);
+              map.flipY = false; map.colorSpace = THREE.SRGBColorSpace; referenceTextures.set(reference.canvas, map);
+            }
+            const padded = { width: reference.canvas.width + 4, height: reference.canvas.height + 4 };
             const data = buildReferenceGeometry(positions, observedIndices, reference);
             const geometry = new THREE.BufferGeometry();
             geometry.setAttribute('position', new THREE.BufferAttribute(data.positions, 3));

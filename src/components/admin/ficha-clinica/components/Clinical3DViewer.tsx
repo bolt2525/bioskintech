@@ -202,6 +202,18 @@ const CAMERA_PRESETS: Record<ClinicalCameraPreset, { position: [number, number, 
   scalp: { position: [0, 3.7, 5.8], target: [0, 0.75, 0] },
 };
 
+interface ReferenceVisual {
+  mesh: THREE.Mesh;
+  material: THREE.MeshBasicMaterial;
+  position: THREE.BufferAttribute;
+  source: Float32Array;
+  uvs: Float32Array;
+  indices: Uint32Array;
+  opacity: number;
+  target: number;
+  morph: { from: Float32Array; start: number } | null;
+}
+
 const disposeObject3D = (object: THREE.Object3D) => {
   object.traverse((child) => {
     const renderable = child as THREE.Mesh;
@@ -707,60 +719,145 @@ const ThreeEngine: React.FC<{
   const referenceLayers = anatomicalOverlay?.references;
   const skinDisplay = anatomicalOverlay?.skin;
   const referenceOverlay = anatomicalOverlay?.referenceOverlay;
+  // Caché por canvas: textura, material y geometría se crean UNA vez y solo se actualizan
+  // (opacidad, UV, posiciones). Ocultar no destruye; así no se re-sube la textura a la GPU.
+  const referenceVisuals = useRef(new Map<HTMLCanvasElement, ReferenceVisual>());
+  const referenceGroupRef = useRef<THREE.Group | null>(null);
+  const skinFade = useRef({ current: 1, target: 1, managed: false });
+  const skinDefaults = useRef(new WeakMap<THREE.Material, { opacity: number; transparent: boolean; depthWrite: boolean }>());
+  const skinVisible = skinDisplay?.visible, skinOpacity = skinDisplay?.opacity;
   useEffect(() => {
     const scene = sceneRef.current;
     if (!scene) return;
-    const references = new THREE.Group();
-    const skinMaterials: { material: THREE.Material; opacity: number; transparent: boolean; depthWrite: boolean }[] = [];
-    if (skinDisplay) faceMeshRef.current?.traverse(object => {
-      if (!(object instanceof THREE.Mesh)) return;
-      const materials = Array.isArray(object.material) ? object.material : [object.material];
-      for (const material of materials) {
-        skinMaterials.push({ material, opacity: material.opacity, transparent: material.transparent, depthWrite: material.depthWrite });
-        const opacity = skinDisplay.visible ? skinDisplay.opacity : 0;
-        // Mantener la malla raycastable aunque la piel esté oculta.
-        material.opacity *= opacity;
-        material.transparent = material.transparent || opacity < 1;
-        material.depthWrite = opacity >= 0.99 && material.depthWrite;
-        material.needsUpdate = true;
-      }
-    });
+    const group = referenceGroupRef.current ?? new THREE.Group();
+    referenceGroupRef.current = group;
+    if (group.parent !== scene) scene.add(group);
+    const visuals = referenceVisuals.current;
+    const reduce = typeof window !== 'undefined' && !!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+    const now = performance.now();
+    // Morph: la capa entrante parte de la saliente (misma topología) o, si venía la piel, ligeramente por fuera.
+    const donor = (length: number) => [...visuals.values()]
+      .filter(visual => visual.opacity > 0.05 && visual.position.array.length === length)
+      .sort((a, b) => b.opacity - a.opacity)[0]?.position.array as Float32Array | undefined;
+    const seen = new Set<HTMLCanvasElement>();
     for (const reference of referenceLayers ?? []) {
-      const geometry = new THREE.BufferGeometry();
-      geometry.setAttribute('position', new THREE.BufferAttribute(reference.positions, 3));
-      geometry.setAttribute('uv', new THREE.BufferAttribute(reference.uvs, 2));
-      geometry.setIndex(new THREE.BufferAttribute(reference.indices, 1));
-      const texture = new THREE.CanvasTexture(reference.canvas);
-      texture.flipY = false; texture.colorSpace = THREE.SRGBColorSpace;
-      const material = new THREE.MeshBasicMaterial({
-        map: texture, transparent: true, opacity: reference.opacity, alphaTest: 0.01,
-        side: THREE.FrontSide, depthWrite: false, depthTest: !referenceOverlay,
-      });
-      material.onBeforeCompile = shader => {
-        shader.fragmentShader = shader.fragmentShader.replace('#include <map_fragment>',
-          '#ifdef USE_MAP\nif (any(lessThan(vMapUv, vec2(0.0))) || any(greaterThan(vMapUv, vec2(1.0)))) discard;\n#endif\n#include <map_fragment>');
-      };
-      const mesh = new THREE.Mesh(geometry, material);
-      mesh.name = 'ANATOMICAL_REFERENCE_VISUAL_ONLY'; mesh.renderOrder = referenceOverlay ? 10 : -1;
-      references.add(mesh);
+      seen.add(reference.canvas);
+      let visual = visuals.get(reference.canvas);
+      if (!visual) {
+        const texture = new THREE.CanvasTexture(reference.canvas);
+        texture.flipY = false; texture.colorSpace = THREE.SRGBColorSpace;
+        const material = new THREE.MeshBasicMaterial({ map: texture, transparent: true, opacity: 0, alphaTest: 0.01, side: THREE.FrontSide, depthWrite: false });
+        material.onBeforeCompile = shader => {
+          shader.fragmentShader = shader.fragmentShader.replace('#include <map_fragment>',
+            '#ifdef USE_MAP\nif (any(lessThan(vMapUv, vec2(0.0))) || any(greaterThan(vMapUv, vec2(1.0)))) discard;\n#endif\n#include <map_fragment>');
+        };
+        const position = new THREE.BufferAttribute(Float32Array.from(reference.positions), 3);
+        position.setUsage(THREE.DynamicDrawUsage);
+        const geometry = new THREE.BufferGeometry();
+        geometry.setAttribute('position', position);
+        geometry.setAttribute('uv', new THREE.BufferAttribute(reference.uvs, 2));
+        geometry.setIndex(new THREE.BufferAttribute(reference.indices, 1));
+        const mesh = new THREE.Mesh(geometry, material);
+        mesh.name = 'ANATOMICAL_REFERENCE_VISUAL_ONLY'; mesh.visible = false; mesh.frustumCulled = false;
+        group.add(mesh);
+        visual = { mesh, material, position, source: reference.positions, uvs: reference.uvs, indices: reference.indices, opacity: 0, target: 0, morph: null };
+        visuals.set(reference.canvas, visual);
+      }
+      const geometry = visual.mesh.geometry;
+      if (visual.indices !== reference.indices) { geometry.setIndex(new THREE.BufferAttribute(reference.indices, 1)); visual.indices = reference.indices; }
+      if (visual.uvs !== reference.uvs) { geometry.setAttribute('uv', new THREE.BufferAttribute(reference.uvs, 2)); visual.uvs = reference.uvs; }
+      if (visual.source !== reference.positions) {
+        if (visual.position.array.length !== reference.positions.length) {
+          visual.position = new THREE.BufferAttribute(Float32Array.from(reference.positions), 3);
+          visual.position.setUsage(THREE.DynamicDrawUsage);
+          geometry.setAttribute('position', visual.position);
+          visual.morph = null;
+        } else if (!visual.morph) { (visual.position.array as Float32Array).set(reference.positions); visual.position.needsUpdate = true; }
+        visual.source = reference.positions;
+      }
+      visual.material.depthTest = !referenceOverlay;
+      visual.mesh.renderOrder = referenceOverlay ? 10 : -1;
+      const target = Math.min(1, Math.max(0, reference.opacity));
+      if (!reduce && visual.opacity < 0.05 && target > 0.05) {
+        const source = visual.source, from = donor(source.length)?.slice();
+        if (from) visual.morph = { from, start: now };
+        else {
+          let cx = 0, cy = 0, cz = 0; const n = source.length / 3;
+          for (let i = 0; i < source.length; i += 3) { cx += source[i] / n; cy += source[i + 1] / n; cz += source[i + 2] / n; }
+          const lifted = source.slice();
+          for (let i = 0; i < lifted.length; i += 3) {
+            lifted[i] = cx + (source[i] - cx) * 1.035; lifted[i + 1] = cy + (source[i + 1] - cy) * 1.035; lifted[i + 2] = cz + (source[i + 2] - cz) * 1.035;
+          }
+          visual.morph = { from: lifted, start: now };
+        }
+      }
+      visual.target = target;
     }
-    scene.add(references);
-    return () => {
-      scene.remove(references); disposeObject3D(references);
-      skinMaterials.forEach(({ material, opacity, transparent, depthWrite }) => {
-        material.opacity = opacity; material.transparent = transparent; material.depthWrite = depthWrite; material.needsUpdate = true;
+    for (const [canvas, visual] of visuals) if (!seen.has(canvas)) visual.target = 0;
+    const fade = skinFade.current;
+    if (skinVisible !== undefined) fade.managed = true;
+    fade.target = skinVisible === undefined ? 1 : skinVisible ? Math.min(1, Math.max(0, skinOpacity ?? 1)) : 0;
+    const applySkin = () => {
+      if (!fade.managed) return;
+      faceMeshRef.current?.traverse(object => {
+        if (!(object instanceof THREE.Mesh)) return;
+        for (const material of Array.isArray(object.material) ? object.material : [object.material]) {
+          let base = skinDefaults.current.get(material);
+          if (!base) { base = { opacity: material.opacity, transparent: material.transparent, depthWrite: material.depthWrite }; skinDefaults.current.set(material, base); }
+          // La malla sigue raycastable aunque la piel quede invisible.
+          material.opacity = base.opacity * fade.current;
+          const transparent = base.transparent || fade.current < 1;
+          if (material.transparent !== transparent) { material.transparent = transparent; material.needsUpdate = true; }
+          material.depthWrite = fade.current >= 0.99 && base.depthWrite;
+        }
       });
     };
-  }, [referenceLayers, skinDisplay, referenceOverlay, modelVersion]);
+    let frame = 0, last = now;
+    const step = (time: number) => {
+      const k = reduce ? 1 : 1 - Math.exp(-Math.max(0, time - last) / 90);
+      last = time;
+      let busy = false;
+      for (const [canvas, visual] of visuals) {
+        visual.opacity += (visual.target - visual.opacity) * k;
+        if (Math.abs(visual.target - visual.opacity) < 0.004) visual.opacity = visual.target; else busy = true;
+        visual.material.opacity = visual.opacity;
+        visual.mesh.visible = visual.opacity > 0.004;
+        if (visual.morph) {
+          const t = Math.min(1, (time - visual.morph.start) / 460), eased = 1 - (1 - t) ** 3;
+          const array = visual.position.array as Float32Array, { from } = visual.morph, to = visual.source;
+          for (let i = 0; i < array.length; i++) array[i] = from[i] + (to[i] - from[i]) * eased;
+          visual.position.needsUpdate = true;
+          if (t >= 1) visual.morph = null; else busy = true;
+        }
+        // Capas que ya no llegan (otra máscara) se liberan al terminar su fundido.
+        if (!seen.has(canvas) && !visual.mesh.visible) {
+          group.remove(visual.mesh); visual.mesh.geometry.dispose(); visual.material.map?.dispose(); visual.material.dispose();
+          visuals.delete(canvas);
+        }
+      }
+      fade.current += (fade.target - fade.current) * k;
+      if (Math.abs(fade.target - fade.current) < 0.004) fade.current = fade.target; else busy = true;
+      applySkin();
+      if (busy) frame = requestAnimationFrame(step);
+    };
+    applySkin();
+    frame = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(frame);
+  }, [referenceLayers, skinVisible, skinOpacity, referenceOverlay, modelVersion]);
+  useEffect(() => () => {
+    const group = referenceGroupRef.current;
+    group?.parent?.remove(group);
+    referenceVisuals.current.forEach(visual => { visual.mesh.geometry.dispose(); visual.material.map?.dispose(); visual.material.dispose(); });
+    referenceVisuals.current.clear();
+  }, []);
+  // Plano persistente: mover el slider solo cambia normal/constante; los shaders se recompilan
+  // únicamente cuando cambia el conjunto de materiales recortados.
+  const clipPlane = useRef(new THREE.Plane());
   const clipScope = clipping?.scope, clipAxis = clipping?.axis, clipPosition = clipping?.position, clipReverse = clipping?.reverse;
   useEffect(() => {
     const scene = sceneRef.current, model = faceMeshRef.current;
-    if (!scene || !model || !clipScope || !clipAxis || clipPosition === undefined) return;
-    const bounds = new THREE.Box3().setFromObject(model);
-    const sign = clipReverse ? -1 : 1, margin = (bounds.max.y - bounds.min.y) * 0.04;
-    const value = bounds.min[clipAxis] - margin + Math.min(1, Math.max(0, clipPosition)) * (bounds.max[clipAxis] - bounds.min[clipAxis] + margin * 2);
-    const normal = new THREE.Vector3(); normal[clipAxis] = sign;
-    const planes = [new THREE.Plane(normal, -value * sign)];
+    if (!scene || !model || !clipScope) return;
+    const planes = [clipPlane.current];
     const touched: THREE.Material[] = [];
     const clip = (object: THREE.Object3D) => object.traverse(child => {
       if (!(child instanceof THREE.Mesh)) return;
@@ -770,9 +867,18 @@ const ThreeEngine: React.FC<{
     });
     clip(model);
     // ponytail: el corte es visual; el raycast sigue tocando la malla recortada → filtrar intersecciones si se requiere.
-    if (clipScope === 'all') scene.traverse(child => { if (child.name === 'ANATOMICAL_REFERENCE_VISUAL_ONLY') clip(child); });
+    if (clipScope === 'all' && referenceGroupRef.current) clip(referenceGroupRef.current);
     return () => touched.forEach(material => { material.clippingPlanes = null; material.needsUpdate = true; });
-  }, [clipScope, clipAxis, clipPosition, clipReverse, referenceLayers, skinDisplay, referenceOverlay, modelVersion]);
+  }, [clipScope, referenceLayers, modelVersion]);
+  useEffect(() => {
+    const model = faceMeshRef.current;
+    if (!model || !clipAxis || clipPosition === undefined) return;
+    const bounds = new THREE.Box3().setFromObject(model);
+    const sign = clipReverse ? -1 : 1, margin = (bounds.max.y - bounds.min.y) * 0.04;
+    const value = bounds.min[clipAxis] - margin + Math.min(1, Math.max(0, clipPosition)) * (bounds.max[clipAxis] - bounds.min[clipAxis] + margin * 2);
+    const normal = new THREE.Vector3(); normal[clipAxis] = sign;
+    clipPlane.current.set(normal, -value * sign);
+  }, [clipAxis, clipPosition, clipReverse, modelVersion]);
   useEffect(() => {
     const scene = sceneRef.current;
     if (!scene || !anatomicalOverlay) return;

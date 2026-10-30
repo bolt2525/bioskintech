@@ -544,3 +544,6 @@ Las entradas siguientes conservan la evidencia previa al despliegue y la evoluci
 - ✅ Oct 29 Editor de marcaciones: pestañas, toolbar, listado lateral e inspector.
 - ✅ Oct 29 Hover con mallado coloreado y raycast por frame; dividido con GLB completo.
 - ✅ Oct 29 Intensidad por inyectable sobre máscara personal; 1 U / 1 ml.
+- ✅ Oct 30 Capas cacheadas, morph y corte por pelado de profundidad.
+- ✅ Oct 30 Patrones: modal de ajuste, entrada de aguja y dosis por punta.
+- ✅ Oct 30 Listado y corte sin textos cortados; puntas compactas.

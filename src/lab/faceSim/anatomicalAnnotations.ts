@@ -18,16 +18,28 @@ export interface AnatomicalBinding {
 export type AnatomicalBindings = Record<string, AnatomicalBinding>;
 
 /** Patrones geométricos ilustrativos en el chart de la foto, sin parámetros clínicos. */
-export function photoPatternPaths(start: P2, end: P2, aspect: number, pattern: 'fan' | 'grid' | 'fern'): P2[][] {
+export interface PatternConfig { fanLines: number; fanAngle: number; gridCells: number; fernBranches: number }
+export const DEFAULT_PATTERN: PatternConfig = { fanLines: 5, fanAngle: 25, gridCells: 4, fernBranches: 5 };
+const clampInt = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, Math.round(Number.isFinite(v) ? v : lo)));
+
+/** Patrones en el chart de la foto: cada segmento va de la entrada de aguja a su punta. `fanAngle` es media apertura. */
+export function photoPatternPaths(start: P2, end: P2, aspect: number, pattern: 'fan' | 'grid' | 'fern', config: PatternConfig = DEFAULT_PATTERN): P2[][] {
   const dx = (end.x - start.x) * aspect, dy = end.y - start.y;
   const offset = (point: P2, n: number): P2 => ({ x: point.x - dy * n / aspect, y: point.y + dx * n });
-  if (pattern === 'fan') return Array.from({ length: 5 }, (_, i) => [start, offset(end, (i - 2) * 0.18)]);
   const lerp = (t: number): P2 => ({ x: start.x + (end.x - start.x) * t, y: start.y + (end.y - start.y) * t });
-  if (pattern === 'grid') return [
-    ...Array.from({ length: 5 }, (_, i) => [offset(start, (i - 2) * 0.16), offset(end, (i - 2) * 0.16)]),
-    ...Array.from({ length: 5 }, (_, i) => [offset(lerp(i / 4), -0.32), offset(lerp(i / 4), 0.32)]),
-  ];
-  return [[start, end], ...Array.from({ length: 5 }, (_, i) => (i + 1) / 6)
+  if (pattern === 'fan') {
+    const n = clampInt(config.fanLines, 2, 12), half = Math.min(60, Math.max(5, config.fanAngle)) * Math.PI / 180;
+    return Array.from({ length: n }, (_, i) => [start, offset(end, Math.tan(-half + 2 * half * i / (n - 1)))]);
+  }
+  if (pattern === 'grid') {
+    const cells = clampInt(config.gridCells, 2, 8), w = 0.32;
+    return [
+      ...Array.from({ length: cells + 1 }, (_, i) => [offset(start, -w + 2 * w * i / cells), offset(end, -w + 2 * w * i / cells)]),
+      ...Array.from({ length: cells + 1 }, (_, i) => [offset(lerp(i / cells), -w), offset(lerp(i / cells), w)]),
+    ];
+  }
+  const branches = clampInt(config.fernBranches, 2, 10);
+  return [[start, end], ...Array.from({ length: branches }, (_, i) => (i + 1) / (branches + 1))
     .flatMap(t => [-1, 1].map(side => [lerp(t), offset(lerp(Math.min(1, t + 0.15)), side * 0.22)]))];
 }
 

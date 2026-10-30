@@ -129,3 +129,16 @@ test('editor: imágenes independientes, opacidad no forzada y dos modos de corte
   assert.equal(control('Revelar', 'select').props.value, 'bone');
   assert.equal(find(control('Revelar', 'select'), node => node.type === 'option').length, 1);
 });
+
+test('corte en profundidad pela piel → músculo → vascular → óseo con capa dominante', () => {
+  const start = displayAPI.initialAnatomyDisplay();
+  const at = p => displayAPI.depthPeelDisplay(start, p);
+  const op = d => [d.skin.opacity, d.references.muscle.opacity, d.references.vessels.opacity, d.references.bone.opacity];
+  assert.deepEqual([at(0).anatomy, ...op(at(0))], ['skin', 1, 0, 0, 0]);
+  assert.deepEqual([at(1 / 3).anatomy, ...op(at(1 / 3))], ['muscle', 0, 1, 0, 0]);
+  assert.deepEqual([at(2 / 3).anatomy, ...op(at(2 / 3))], ['vessels', 0, 0.35, 1, 0]);
+  assert.deepEqual([at(1).anatomy, ...op(at(1))], ['bone', 0, 0, 0, 1]);
+  const mid = at(1 / 6);
+  assert.ok(mid.skin.opacity > 0 && mid.references.muscle.opacity > 0 && mid.references.muscle.visible, 'transición cruzada');
+  assert.throws(() => at(Number.NaN));
+});

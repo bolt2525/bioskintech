@@ -135,18 +135,38 @@ export function CheckChip({ label, icon: Icon, checked, onChange, children }: {
 
 export interface MarkingCut { scope: 'none' | 'skin' | 'all'; axis: 'x' | 'y' | 'z'; position: number; reverse: boolean }
 export const NO_CUT: MarkingCut = { scope: 'none', axis: 'z', position: 0.55, reverse: false };
+/** Profundidad = pelado por capas (no un plano): piel → músculo → vascular → óseo. */
+export const isDepthCut = (cut: MarkingCut) => cut.scope !== 'none' && cut.axis === 'z';
+const DEPTH_LABELS = ['Piel', 'Músculo', 'Vascular', 'Óseo'];
 export function CutControls({ value, onChange }: { value: MarkingCut; onChange: (cut: MarkingCut) => void }) {
-  const segment = <K extends 'scope' | 'axis'>(key: K, label: string, options: [MarkingCut[K], string][]) => (
-    <div role="group" aria-label={label} className="grid grid-cols-3 gap-1">
-      {options.map(([id, name]) => <button key={id} type="button" aria-pressed={value[key] === id} onClick={() => onChange({ ...value, [key]: id })}
-        className="admin-focus-ring min-h-9 rounded-md bg-black/30 px-1 text-[11px] font-semibold text-stone-300 aria-pressed:bg-gold aria-pressed:text-stone-950">{name}</button>)}
-    </div>
-  );
+  const kind = value.scope === 'none' ? 'none' : value.axis === 'z' ? 'depth' : 'plane';
+  const button = (pressed: boolean, label: string, onClick: () => void) => <button key={label} type="button" aria-pressed={pressed} onClick={onClick}
+    className="admin-focus-ring min-h-9 min-w-0 rounded-md bg-black/30 px-1 text-[11px] font-semibold leading-tight text-stone-300 [overflow-wrap:anywhere] aria-pressed:bg-gold aria-pressed:text-stone-950">{label}</button>;
+  const stop = Math.round(value.position * 3);
   return (
     <div className="space-y-2">
-      {segment('scope', 'Alcance del corte', [['none', 'Sin corte'], ['skin', 'Piel'], ['all', 'Todo']])}
-      {value.scope !== 'none' && <>
-        {segment('axis', 'Eje del corte', [['x', 'Lateral'], ['y', 'Vertical'], ['z', 'Profundidad']])}
+      <div role="group" aria-label="Tipo de corte" className="grid grid-cols-[1fr_1.45fr_1fr] gap-1">
+        {button(kind === 'none', 'Sin corte', () => onChange({ ...value, scope: 'none' }))}
+        {button(kind === 'depth', 'Profundidad', () => onChange({ ...value, scope: 'all', axis: 'z', position: kind === 'depth' ? value.position : 0 }))}
+        {button(kind === 'plane', 'Plano', () => onChange({ ...value, scope: value.scope === 'skin' ? 'skin' : 'all', axis: value.axis === 'z' ? 'x' : value.axis, position: kind === 'plane' ? value.position : 0.5 }))}
+      </div>
+      {kind === 'depth' && <>
+        <input type="range" aria-label="Profundidad del corte" aria-valuetext={DEPTH_LABELS[stop]} min={0} max={1} step={0.01} value={value.position}
+          onChange={e => onChange({ ...value, position: Number(e.target.value) })} className="w-full accent-gold" />
+        <div role="group" aria-label="Capas de profundidad" className="grid grid-cols-2 gap-1">
+          {DEPTH_LABELS.map((label, i) => button(Math.abs(value.position * 3 - i) < 0.5, label, () => onChange({ ...value, position: i / 3 })))}
+        </div>
+        <p className="text-[11px] leading-snug text-stone-400">Retira la piel y avanza por músculo y vasos hasta el hueso. Se marca sobre la capa dominante.</p>
+      </>}
+      {kind === 'plane' && <>
+        <div role="group" aria-label="Alcance del corte" className="grid grid-cols-2 gap-1">
+          {button(value.scope === 'skin', 'Solo piel', () => onChange({ ...value, scope: 'skin' }))}
+          {button(value.scope === 'all', 'Todas las capas', () => onChange({ ...value, scope: 'all' }))}
+        </div>
+        <div role="group" aria-label="Eje del corte" className="grid grid-cols-2 gap-1">
+          {button(value.axis === 'x', 'Lateral', () => onChange({ ...value, axis: 'x' }))}
+          {button(value.axis === 'y', 'Vertical', () => onChange({ ...value, axis: 'y' }))}
+        </div>
         <div className="flex items-center gap-2">
           <input type="range" aria-label="Posición del corte" min={0} max={1} step={0.01} value={value.position}
             onChange={e => onChange({ ...value, position: Number(e.target.value) })} className="flex-1 accent-gold" />
@@ -167,45 +187,162 @@ function QuickVolumes({ mode, value, onPick }: { mode: SimMode; value: number | 
   </div>;
 }
 
-export function VolumeDialog({ open, mode, count, place, initialDose, onSave, onDiscard }: {
+export interface DoseTarget { id: string; label: string }
+/**
+ * Volumen tras marcar. Con varias puntas (patrón, bilateral) permite la misma dosis para todas
+ * o una dosis individual por punta; el total se calcula en vivo.
+ */
+export function VolumeDialog({ open, mode, count, place, initialDose, targets, technique, onSave, onDiscard }: {
   open: boolean; mode: SimMode; count: number; place: string; initialDose: number;
-  onSave: (dose: number, plane: string) => void; onDiscard: () => void;
+  targets?: DoseTarget[]; technique?: string;
+  onSave: (dose: number, plane: string, perTarget?: Record<string, number>) => void; onDiscard: () => void;
 }) {
   const ref = useRef<HTMLDialogElement>(null), titleId = useId();
   const [dose, setDose] = useState(String(initialDose || ''));
   const [plane, setPlane] = useState('');
+  const [individual, setIndividual] = useState(false);
+  const [each, setEach] = useState<Record<string, string>>({});
   useEffect(() => {
     const dialog = ref.current; if (!dialog) return;
-    if (open && !dialog.open) { setDose(initialDose ? String(initialDose) : ''); setPlane(''); dialog.showModal(); }
+    if (open && !dialog.open) { setDose(initialDose ? String(initialDose) : ''); setPlane(''); setIndividual(false); setEach({}); dialog.showModal(); }
     if (!open && dialog.open) dialog.close();
   }, [open, initialDose]);
   const { unit, color, label } = SIM_MODES[mode], Icon = MODE_ICONS[mode];
-  const value = Number(dose), valid = dose !== '' && Number.isFinite(value) && value >= 0;
+  const value = Number(dose), validShared = dose !== '' && Number.isFinite(value) && value >= 0;
+  const list = targets ?? [], perTarget = list.length > 1 && individual;
+  const parsed = Object.fromEntries(list.map(t => [t.id, Number(each[t.id] ?? dose)]));
+  const validEach = list.every(t => { const raw = each[t.id] ?? dose, v = Number(raw); return raw !== '' && Number.isFinite(v) && v >= 0; });
+  const valid = perTarget ? validEach : validShared;
+  const total = perTarget ? Object.values(parsed).reduce((s, v) => s + (Number.isFinite(v) ? v : 0), 0) : (validShared ? value : 0) * count;
   return (
     <dialog ref={ref} aria-labelledby={titleId} onCancel={e => { e.preventDefault(); onDiscard(); }}
-      className="w-[min(92vw,400px)] rounded-2xl border border-gold/20 bg-stone-950 p-0 text-stone-100 shadow-2xl backdrop:bg-black/70 backdrop:backdrop-blur-sm">
-      <form method="dialog" className="space-y-4 p-4" onSubmit={e => { e.preventDefault(); if (valid) onSave(value, plane); }}>
+      className="w-[min(94vw,440px)] rounded-2xl border border-gold/20 bg-stone-950 p-0 text-stone-100 shadow-2xl backdrop:bg-black/70 backdrop:backdrop-blur-sm">
+      <form method="dialog" className="max-h-[85dvh] space-y-4 overflow-y-auto p-4" onSubmit={e => { e.preventDefault(); if (valid) onSave(value, plane, perTarget ? parsed : undefined); }}>
         <header className="flex items-center gap-3">
           <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl" style={{ background: `${color}2e`, color, ...glow(color) }}><Icon className="h-5 w-5" aria-hidden="true" /></span>
           <div className="min-w-0">
             <h2 id={titleId} className="text-sm font-black uppercase tracking-[0.14em]">Volumen · {label}</h2>
-            <p className="text-xs text-stone-400">{place}{count > 1 ? ` · ${count} puntos (bilateral)` : ''}</p>
+            <p className="break-words text-xs text-stone-400">{technique ? `${technique} · ` : ''}{place}{count > 1 ? ` · ${count} ${technique ? 'puntas' : 'puntos'}` : ''}</p>
           </div>
         </header>
-        <QuickVolumes mode={mode} value={dose !== '' && Number.isFinite(value) ? value : null} onPick={v => setDose(String(v))} />
-        <label className="block text-xs font-semibold text-stone-300">Volumen por punto ({unit})
-          <input autoFocus required type="number" min={0} step="any" inputMode="decimal" aria-label={`Volumen por punto (${unit})`} value={dose}
-            onChange={e => setDose(e.target.value)} className={`${field} mt-1 text-lg font-bold`} />
+        {technique && <p className="rounded-xl border border-white/5 bg-black/30 p-2 text-[11px] leading-snug text-stone-400">
+          La entrada del trazo es la entrada de aguja y define la zona; la dosis se deposita en cada punta.</p>}
+        {list.length > 1 && <div role="radiogroup" aria-label="Reparto de dosis" className="grid grid-cols-2 gap-1 rounded-xl bg-black/40 p-1">
+          {([[false, 'Igual en todas'], [true, 'Individual']] as const).map(([v, text]) => <button key={text} type="button" role="radio" aria-checked={individual === v}
+            onClick={() => setIndividual(v)} className="admin-focus-ring min-h-9 rounded-lg text-xs font-bold text-stone-300 aria-checked:bg-gold aria-checked:text-stone-950">{text}</button>)}
+        </div>}
+        <QuickVolumes mode={mode} value={dose !== '' && Number.isFinite(value) ? value : null} onPick={v => { setDose(String(v)); setEach({}); }} />
+        <label className="block text-xs font-semibold text-stone-300">{perTarget ? 'Dosis base' : count > 1 ? 'Dosis por punta' : 'Volumen por punto'} ({unit})
+          <input autoFocus required={!perTarget} type="number" min={0} step="any" inputMode="decimal" aria-label={`Volumen por punto (${unit})`} value={dose}
+            onChange={e => { setDose(e.target.value); setEach({}); }} className={`${field} mt-1 text-lg font-bold`} />
         </label>
+        {perTarget && <ul aria-label="Dosis por punta" className="grid max-h-56 grid-cols-2 gap-1.5 overflow-y-auto pr-1">
+          {list.map((t, i) => <li key={t.id}><label className="flex items-center gap-1.5 rounded-lg border border-white/5 bg-black/30 p-1.5 text-[11px] font-semibold text-stone-300">
+            <span className="grid h-6 w-6 shrink-0 place-items-center rounded-md text-[10px] font-black text-stone-950" style={{ background: color }}>{i + 1}</span>
+            <span className="min-w-0 flex-1 break-words leading-tight">{t.label}</span>
+            <input type="number" min={0} step="any" inputMode="decimal" aria-label={`Dosis ${t.label}`} value={each[t.id] ?? dose}
+              onChange={e => setEach(c => ({ ...c, [t.id]: e.target.value }))} className="admin-focus-ring min-h-8 w-14 rounded-md border border-white/10 bg-stone-900 px-1 text-right text-sm font-bold tabular-nums" />
+          </label></li>)}
+        </ul>}
         <label className="block text-xs font-semibold text-stone-300">Plano <span className="font-normal text-stone-500">(opcional)</span>
           <select aria-label="Plano de aplicación" value={plane} onChange={e => setPlane(e.target.value)} className={`${field} mt-1`}>
             <option value="">Sin plano</option>
             {INJECTION_PLANES[mode].map(p => <option key={p}>{p}</option>)}
           </select>
         </label>
+        {count > 1 && <p role="status" className="flex items-center justify-between rounded-xl border border-white/5 bg-black/30 px-3 py-2 text-xs text-stone-300">
+          Total de esta marca <b className="text-base tabular-nums" style={{ color }}>{unitLabel(mode, total)}</b></p>}
         <div className="flex gap-2">
-          <button type="button" onClick={onDiscard} className="admin-focus-ring min-h-11 flex-1 rounded-xl border border-white/10 text-sm font-semibold text-stone-300">Descartar punto</button>
+          <button type="button" onClick={onDiscard} className="admin-focus-ring min-h-11 flex-1 rounded-xl border border-white/10 text-sm font-semibold text-stone-300">Descartar</button>
           <button type="submit" disabled={!valid} className="admin-focus-ring min-h-11 flex-1 rounded-xl text-sm font-black text-stone-950 disabled:opacity-40" style={{ background: color }}>Guardar</button>
+        </div>
+      </form>
+    </dialog>
+  );
+}
+
+export type PatternKind = 'fan' | 'grid' | 'fern';
+export interface PatternSettings { fanLines: number; fanAngle: number; gridCells: number; fernBranches: number }
+const PATTERN_INFO: Record<PatternKind, { label: string; help: string }> = {
+  fan: { label: 'Abanico', help: 'Pulsa en la entrada de aguja y arrastra hacia la zona a tratar. Cada línea termina en una punta con dosis.' },
+  grid: { label: 'Malla', help: 'Pulsa en la entrada, arrastra para fijar el largo y suelta; luego ajusta el ancho. Cada línea termina en una punta.' },
+  fern: { label: 'Helecho', help: 'Pulsa en la entrada y arrastra a lo largo del eje. Cada rama termina en una punta con dosis.' },
+};
+/** Vista previa fiel a la geometría: segmentos desde la entrada y puntas con dosis. */
+export function patternPreview(kind: PatternKind, c: PatternSettings): { segments: [number, number, number, number][]; entry: [number, number] } {
+  const entry: [number, number] = [20, 60];
+  if (kind === 'fan') {
+    const n = Math.max(2, c.fanLines), half = c.fanAngle * Math.PI / 180;
+    return { entry, segments: Array.from({ length: n }, (_, i) => {
+      const a = -half + 2 * half * i / (n - 1);
+      return [20, 60, 20 + Math.cos(a) * 92, 60 + Math.sin(a) * 92];
+    }) };
+  }
+  if (kind === 'grid') {
+    const n = Math.max(2, c.gridCells), w = 70, step = w / n;
+    return { entry, segments: [
+      ...Array.from({ length: n + 1 }, (_, i): [number, number, number, number] => [20, 25 + i * step, 112, 25 + i * step]),
+      ...Array.from({ length: n + 1 }, (_, i): [number, number, number, number] => [20 + i * 92 / n, 25, 20 + i * 92 / n, 95]),
+    ] };
+  }
+  const b = Math.max(2, c.fernBranches);
+  return { entry, segments: [[20, 60, 112, 60], ...Array.from({ length: b }, (_, i) => (i + 1) / (b + 1)).flatMap(t =>
+    [-1, 1].map((s): [number, number, number, number] => [20 + 92 * t, 60, 20 + 92 * Math.min(1, t + 0.15), 60 + s * 26]))] };
+}
+
+/** Ajuste previo del patrón (como Fichas → Inyectables): parámetros + vista previa, luego «Trazar». */
+export function PatternSetupDialog({ open, kind, config, color, onKind, onConfirm, onCancel }: {
+  open: boolean; kind: PatternKind; config: PatternSettings; color: string;
+  onKind?: (kind: PatternKind) => void; onConfirm: (config: PatternSettings) => void; onCancel: () => void;
+}) {
+  const ref = useRef<HTMLDialogElement>(null), titleId = useId();
+  const [draft, setDraft] = useState(config);
+  useEffect(() => {
+    const dialog = ref.current; if (!dialog) return;
+    if (open && !dialog.open) { setDraft(config); dialog.showModal(); }
+    if (!open && dialog.open) dialog.close();
+  }, [open, config]);
+  const { segments, entry } = patternPreview(kind, draft);
+  const tips = segments.length;
+  const range = (key: keyof PatternSettings, text: string, min: number, max: number, scale = 1, suffix = '') => (
+    <label className="block text-xs font-semibold text-stone-300">
+      <span className="flex justify-between"><span>{text}</span><b className="tabular-nums text-stone-100">{draft[key] * scale}{suffix}</b></span>
+      <input type="range" min={min} max={max} step={1} value={draft[key]} aria-label={text}
+        onChange={e => setDraft(d => ({ ...d, [key]: Number(e.target.value) }))} className="mt-1 w-full" style={{ accentColor: color }} />
+    </label>);
+  return (
+    <dialog ref={ref} aria-labelledby={titleId} onCancel={e => { e.preventDefault(); onCancel(); }}
+      className="w-[min(94vw,420px)] rounded-2xl border border-gold/20 bg-stone-950 p-0 text-stone-100 shadow-2xl backdrop:bg-black/70 backdrop:backdrop-blur-sm">
+      <form method="dialog" className="max-h-[88dvh] space-y-4 overflow-y-auto p-4" onSubmit={e => { e.preventDefault(); onConfirm(draft); }}>
+        <header className="flex items-center gap-3">
+          <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl" style={{ background: `${color}2e`, color, ...glow(color) }}><SlidersHorizontal className="h-5 w-5" aria-hidden="true" /></span>
+          <div className="min-w-0">
+            <h2 id={titleId} className="text-sm font-black uppercase tracking-[0.14em]">Ajustar {PATTERN_INFO[kind].label}</h2>
+            <p className="text-xs text-stone-400">{tips} puntas con dosis · {kind === 'grid' ? 'una entrada por línea' : '1 entrada de aguja'}</p>
+          </div>
+        </header>
+        {onKind && <div role="radiogroup" aria-label="Tipo de patrón" className="grid grid-cols-3 gap-1 rounded-xl bg-black/40 p-1">
+          {(Object.keys(PATTERN_INFO) as PatternKind[]).map(k => <button key={k} type="button" role="radio" aria-checked={kind === k} onClick={() => onKind(k)}
+            className="admin-focus-ring min-h-9 rounded-lg text-xs font-bold text-stone-300 aria-checked:bg-gold aria-checked:text-stone-950">{PATTERN_INFO[k].label}</button>)}
+        </div>}
+        <svg viewBox="0 0 132 120" role="img" aria-label={`Vista previa: ${PATTERN_INFO[kind].label} con ${tips} puntas`} className="h-40 w-full rounded-xl border border-white/5 bg-black/40">
+          {segments.map(([x1, y1, x2, y2], i) => <g key={i}>
+            <line x1={x1} y1={y1} x2={x2} y2={y2} stroke="#0c0a09" strokeWidth={5} strokeLinecap="round" />
+            <line x1={x1} y1={y1} x2={x2} y2={y2} stroke={color} strokeWidth={2.6} strokeLinecap="round" />
+            <circle cx={x2} cy={y2} r={3.4} fill={color} stroke="#0c0a09" strokeWidth={1.2} />
+          </g>)}
+          {kind !== 'grid' ? <circle cx={entry[0]} cy={entry[1]} r={5} fill="#0c0a09" stroke="white" strokeWidth={2} />
+            : segments.map(([x1, y1], i) => <circle key={`e${i}`} cx={x1} cy={y1} r={2.6} fill="#0c0a09" stroke="white" strokeWidth={1.2} />)}
+        </svg>
+        <div className="space-y-3">
+          {kind === 'fan' && <>{range('fanLines', 'Líneas', 3, 12)}{range('fanAngle', 'Apertura total', 10, 60, 2, '°')}</>}
+          {kind === 'grid' && range('gridCells', 'Celdas por lado', 2, 8)}
+          {kind === 'fern' && range('fernBranches', 'Ramas por lado', 2, 10)}
+        </div>
+        <p className="rounded-xl border border-white/5 bg-black/30 p-2 text-[11px] leading-snug text-stone-400">{PATTERN_INFO[kind].help} Verás la vista previa antes de soltar.</p>
+        <div className="flex gap-2">
+          <button type="button" onClick={onCancel} className="admin-focus-ring min-h-11 flex-1 rounded-xl border border-white/10 text-sm font-semibold text-stone-300">Cancelar</button>
+          <button type="submit" className="admin-focus-ring min-h-11 flex-1 rounded-xl text-sm font-black text-stone-950" style={{ background: color }}>Trazar</button>
         </div>
       </form>
     </dialog>
@@ -267,8 +404,9 @@ export function SelectionInspector({ row, onDose, onDelete, onMirror, mirrorDisa
       <header className="flex items-start gap-2">
         <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg text-xs font-black text-stone-950" style={{ background: color }}>{row.index}</span>
         <div className="min-w-0 flex-1">
-          <p className="text-sm font-bold leading-tight">{row.zone}</p>
-          <p className="text-[11px] text-stone-400"><Icon className="mr-1 inline h-3 w-3" style={{ color }} aria-hidden="true" />{row.product || label} · {sideLong}</p>
+          <p className="break-words text-sm font-bold leading-tight">{row.zone}</p>
+          <p className="break-words text-[11px] text-stone-400"><Icon className="mr-1 inline h-3 w-3" style={{ color }} aria-hidden="true" />{row.label} · {row.product || label} · {sideLong}</p>
+          {row.entry && <p className="text-[11px] text-stone-500">Entrada de aguja · la dosis rápida se aplica a sus {row.tips} puntas.</p>}
         </div>
         <button type="button" aria-label={`Eliminar marca ${row.index} seleccionada`} title="Eliminar" onClick={() => onDelete(row.id)}
           className="admin-focus-ring grid h-9 w-9 shrink-0 place-items-center rounded-lg text-stone-400 hover:bg-red-500/15 hover:text-red-300"><Trash2 className="h-4 w-4" aria-hidden="true" /></button>
@@ -301,7 +439,9 @@ export function PointLedger({ rows, selectedId, onSelect, onHover, onDose, onDel
   const visible = useMemo(() => filterRows(rows, filter), [rows, filter]);
   const zones = useMemo(() => [...new Set(rows.map(r => r.zone))].sort((a, b) => a.localeCompare(b, 'es')), [rows]);
   const live = new Set(rows.map(r => r.id)), picked = visible.filter(r => checked.has(r.id) && live.has(r.id));
-  const targets = picked.length ? picked : visible;
+  // Una entrada en lote arrastra sus puntas; la entrada no lleva dosis ni plano propio.
+  const targets = (picked.length ? picked : visible).flatMap(r => r.entry ? rows.filter(t => t.parent === r.id) : [r])
+    .filter((r, i, all) => all.findIndex(x => x.id === r.id) === i);
   const planes = [...new Set(targets.flatMap(r => INJECTION_PLANES[r.mode]))];
   const set = <K extends keyof LedgerFilter>(key: K, v: LedgerFilter[K]) => setFilter(f => ({ ...f, [key]: v }));
   const compact = 'admin-focus-ring min-h-9 w-full rounded-lg border border-white/10 bg-stone-900 px-2 text-xs text-stone-100';
@@ -309,7 +449,7 @@ export function PointLedger({ rows, selectedId, onSelect, onHover, onDose, onDel
     <section aria-label="Listado de puntos" className={`${editorPanel} flex h-full min-h-0 min-w-0 flex-col gap-2 p-3`}>
       {header}
       <header className="flex flex-wrap items-center gap-2">
-        <h2 className="flex-1 text-xs font-black uppercase tracking-[0.16em]">Puntos <span className="text-gold tabular-nums">{visible.length}/{rows.length}</span></h2>
+        <h2 className="flex-1 whitespace-nowrap text-xs font-black uppercase tracking-[0.16em]">Marcas <span className="text-gold tabular-nums">{visible.length}/{rows.length}</span></h2>
         <div role="group" aria-label="Filtrar por inyectable" className="flex gap-1">
           {(['all', ...MODES] as const).map(m => <button key={m} type="button" aria-pressed={filter.mode === m} onClick={() => set('mode', m)}
             title={m === 'all' ? 'Todos' : SIM_MODES[m].label}
@@ -329,42 +469,61 @@ export function PointLedger({ rows, selectedId, onSelect, onHover, onDose, onDel
           <option value="all">Todo volumen</option><option value="with">Con volumen</option><option value="without">Sin volumen</option>
         </select>
       </div>
-      {rows.length > 0 && <div className="flex flex-wrap items-center gap-1.5 rounded-xl border border-white/5 bg-black/30 p-1.5">
+      {rows.length > 0 && <div className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-1.5 rounded-xl border border-white/5 bg-black/30 p-1.5">
         <label className="flex min-h-9 items-center gap-1.5 text-[11px] font-semibold text-stone-300">
           <input type="checkbox" aria-label="Seleccionar todos los puntos visibles" checked={visible.length > 0 && picked.length === visible.length}
             onChange={e => setChecked(e.target.checked ? new Set(visible.map(r => r.id)) : new Set())} className="h-4 w-4 accent-gold" />
           {picked.length ? `${picked.length} sel.` : 'Lote'}
         </label>
-        <select aria-label="Plano para el lote" value={bulkPlane} onChange={e => setBulkPlane(e.target.value)} className={`${compact} w-auto min-w-0 flex-1`}>
+        <select aria-label="Plano para el lote" value={bulkPlane} onChange={e => setBulkPlane(e.target.value)} className={`${compact} min-w-0`}>
           <option value="">Sin plano</option>{planes.map(p => <option key={p}>{p}</option>)}
         </select>
         <button type="button" disabled={!targets.length} onClick={() => onPlane(targets.map(r => r.id), bulkPlane)}
-          className="admin-focus-ring min-h-9 whitespace-nowrap rounded-lg bg-gold px-2.5 text-[11px] font-black text-stone-950 disabled:opacity-40">Aplicar plano ({targets.length})</button>
+          className="admin-focus-ring col-span-2 min-h-9 rounded-lg bg-gold px-2.5 text-[11px] font-black text-stone-950 disabled:opacity-40">Aplicar plano a {targets.length} punto(s)</button>
       </div>}
       {!rows.length && <p className="rounded-xl border border-dashed border-white/15 p-5 text-center text-sm text-stone-400">Elige una herramienta y marca sobre el rostro.</p>}
       <ul aria-label="Elementos marcados" className="min-h-[8rem] flex-1 space-y-1.5 overflow-y-auto overscroll-contain pr-1">
         {visible.map(r => {
           const { color, unit, label } = SIM_MODES[r.mode], [sideShort, sideLong] = SIDE[r.side], active = selectedId === r.id;
+          const tipTotal = r.entry ? rows.filter(t => t.parent === r.id).reduce((sum, t) => sum + t.dose, 0) : 0;
+          const detail = [r.product || label, r.plane, r.extended ? 'solo 3D' : ''].filter(Boolean).join(' · ');
           return <li key={r.id} onPointerEnter={() => onHover(r)} onPointerLeave={() => onHover(null)}
-            className={`flex items-center gap-1.5 rounded-xl border bg-stone-900/70 p-1.5 transition ${active ? 'border-gold/70' : 'border-white/5'}`}
+            className={`rounded-xl border bg-stone-900/70 p-1.5 transition ${r.parent ? 'ml-4' : ''} ${active ? 'border-gold/70' : 'border-white/5'}`}
             style={active ? glow(color) : { borderLeft: `3px solid ${color}` }}>
-            <input type="checkbox" aria-label={`Incluir marca ${r.index} en lote`} checked={checked.has(r.id)} className="h-4 w-4 shrink-0 accent-gold"
-              onChange={e => setChecked(c => { const n = new Set(c); if (e.target.checked) n.add(r.id); else n.delete(r.id); return n; })} />
-            <button type="button" aria-pressed={active} aria-label={`Seleccionar marca ${r.index}`} onFocus={() => onHover(r)} onBlur={() => onHover(null)}
-              onClick={() => onSelect(r)} className="admin-focus-ring flex min-h-10 min-w-0 flex-1 items-center gap-2 rounded-lg text-left">
-              <span className="grid h-7 w-7 shrink-0 place-items-center rounded-lg text-[11px] font-black text-stone-950" style={{ background: color }}>{r.index}</span>
-              <span className="min-w-0">
-                <span className="block text-xs font-bold leading-tight">{r.zone} <span title={sideLong} className="font-black text-stone-400">· {sideShort}</span></span>
-                <span className="block text-[10px] leading-tight text-stone-400">{r.product || label}{r.plane ? ` · ${r.plane}` : ''}{r.kind !== 'point' ? ` · ${r.kind}` : ''}{r.extended ? ' · solo 3D' : ''}</span>
-              </span>
-            </button>
-            <label className="flex shrink-0 items-center gap-1 text-[10px] text-stone-400">
-              <input type="number" min={0} step="any" inputMode="decimal" value={r.dose} aria-label={`Dosis marca ${r.index}`}
-                onChange={e => onDose(r.id, Number(e.target.value))} className="admin-focus-ring min-h-9 w-14 rounded-md border border-white/10 bg-stone-950 px-1 text-right text-sm font-bold tabular-nums text-white" />
-              {unit}
-            </label>
-            <button type="button" aria-label={`Eliminar marca ${r.index}`} title="Eliminar" onClick={() => onDelete(r.id)}
-              className="admin-focus-ring grid h-9 w-8 shrink-0 place-items-center rounded-lg text-stone-400 hover:bg-red-500/15 hover:text-red-300"><Trash2 className="h-4 w-4" aria-hidden="true" /></button>
+            <div className="flex items-start gap-1.5">
+              <input type="checkbox" aria-label={`Incluir marca ${r.index} en lote`} checked={checked.has(r.id)} className="mt-2.5 h-4 w-4 shrink-0 accent-gold"
+                onChange={e => setChecked(c => { const n = new Set(c); if (e.target.checked) n.add(r.id); else n.delete(r.id); return n; })} />
+              <button type="button" aria-pressed={active} aria-label={`Seleccionar marca ${r.index}`} onFocus={() => onHover(r)} onBlur={() => onHover(null)}
+                onClick={() => onSelect(r)} className="admin-focus-ring flex min-h-10 min-w-0 flex-1 items-start gap-2 rounded-lg py-0.5 text-left">
+                <span className={`grid shrink-0 place-items-center text-[11px] font-black ${r.entry ? 'h-7 w-7 rounded-full border-2 bg-stone-950 text-stone-100' : r.parent ? 'mt-0.5 h-6 w-6 rounded-md text-stone-950' : 'h-7 w-7 rounded-lg text-stone-950'}`}
+                  style={r.entry ? { borderColor: color } : { background: color }}>{r.parent ? r.label.replace(/\D+/g, '') : r.index}</span>
+                <span className="min-w-0 flex-1">
+                  <span className="block break-words text-xs font-bold leading-snug">
+                    {r.parent ? r.label : <>{r.zone} <span title={sideLong} className="font-black text-stone-400">· {sideShort}</span></>}
+                  </span>
+                  <span className="block break-words text-[11px] leading-snug text-stone-400">
+                    {r.entry ? `Entrada · ${r.label} · ${r.tips} puntas` : r.parent ? r.zone : `${r.label} · ${detail}`}
+                  </span>
+                </span>
+              </button>
+              {r.parent && <label className="flex shrink-0 items-center gap-1 self-center text-[11px] text-stone-400">
+                <span className="sr-only">Dosis</span>
+                <input type="number" min={0} step="any" inputMode="decimal" value={r.dose} aria-label={`Dosis marca ${r.index}`}
+                  onChange={e => onDose(r.id, Number(e.target.value))} className="admin-focus-ring min-h-8 w-14 rounded-md border border-white/10 bg-stone-950 px-1 text-right text-sm font-bold tabular-nums text-white" />
+                <span>{unit}</span>
+              </label>}
+              <button type="button" aria-label={`Eliminar marca ${r.index}`} title={r.entry ? 'Eliminar trazo y sus puntas' : 'Eliminar'} onClick={() => onDelete(r.id)}
+                className="admin-focus-ring grid h-9 w-8 shrink-0 place-items-center rounded-lg text-stone-400 hover:bg-red-500/15 hover:text-red-300"><Trash2 className="h-4 w-4" aria-hidden="true" /></button>
+            </div>
+            {!r.parent && <div className="mt-1 flex items-center justify-end gap-1.5 pl-6 text-[11px] text-stone-400">
+              {r.entry
+                ? <span className="tabular-nums">Total <b style={{ color }}>{formatVolume(tipTotal)} {unit}</b></span>
+                : <label className="flex items-center gap-1">Dosis
+                  <input type="number" min={0} step="any" inputMode="decimal" value={r.dose} aria-label={`Dosis marca ${r.index}`}
+                    onChange={e => onDose(r.id, Number(e.target.value))} className="admin-focus-ring min-h-8 w-16 rounded-md border border-white/10 bg-stone-950 px-1.5 text-right text-sm font-bold tabular-nums text-white" />
+                  <span className="w-6">{unit}</span>
+                </label>}
+            </div>}
           </li>;
         })}
       </ul>

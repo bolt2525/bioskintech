@@ -1,5 +1,6 @@
-import type { Meta, SimMode } from './engine';
-import type { AnatomicalBindings } from './anatomicalAnnotations';
+import type { ElemKind, Meta, SimMode } from './engine';
+import type { AnatomicalBinding, AnatomicalBindings } from './anatomicalAnnotations';
+import type { FaceAddress } from './faceTransfer';
 import { addressPlacement, type FacialThird, type PatientSide } from './quickRecord';
 
 /** Planos de aplicación por inyectable (copias de los catálogos de Fichas clínicas). */
@@ -31,40 +32,72 @@ export interface LedgerRow {
   kind: string;
   /** Marca solo en el modelo completo: no se transfiere a máscara ni foto. */
   extended: boolean;
+  /** Trazo de entrada de aguja: no suma volumen; lo suman sus puntas. */
+  entry: boolean;
+  /** Etiqueta legible: «Punto», «Abanico», «Punta 3»… */
+  label: string;
+  parent?: string;
+  tips: number;
 }
 export interface LedgerFilter { mode: SimMode | 'all'; zone: string; third: LedgerThird | 'all'; volume: 'all' | 'with' | 'without' }
 export const ALL_ROWS: LedgerFilter = { mode: 'all', zone: 'all', third: 'all', volume: 'all' };
 
-/** Una fila por marca (bilateral = dos filas). Las marcas libres conservan meta sin binding. */
+export const KIND_LABELS: Record<ElemKind, string> = {
+  point: 'Punto', line: 'Línea', arrow: 'Flecha', free: 'Trazo libre', circle: 'Círculo', rect: 'Área', pattern: 'Patrón',
+};
+/** Trazos con entrada de aguja: la dosis se deposita en sus puntas, no a lo largo del trazo. */
+export const TIP_KINDS: ReadonlySet<ElemKind> = new Set(['pattern', 'line', 'arrow']);
+/**
+ * Puntas de dosis de un trazo de entrada. Cada segmento empieza en la entrada (vértice del
+ * abanico, base de la malla o de la rama) y termina en su punta. La flecha solo su asta.
+ */
+export function patternTips(binding: AnatomicalBinding): FaceAddress[] {
+  if (!TIP_KINDS.has(binding.kind)) return [];
+  const paths = binding.kind === 'arrow' ? binding.paths.slice(0, 1) : binding.paths;
+  return paths.filter(path => path.length > 1).map(path => path[path.length - 1]);
+}
+
+/** Una fila por marca (bilateral = dos filas); las puntas siguen a su entrada. */
 export function ledgerRows(meta: Record<string, Meta>, bindings: AnatomicalBindings, freeIds: readonly string[] = []): LedgerRow[] {
   const rows: LedgerRow[] = [];
-  const base = (id: string, item: Meta) => ({ id, index: rows.length + 1, mode: item.mode, product: item.product?.trim() ?? '',
-    dose: item.dose, plane: item.plane ?? '' });
+  const base = (id: string, item: Meta) => ({ id, index: 0, mode: item.mode, product: item.product?.trim() ?? '',
+    dose: item.entry ? 0 : item.dose, plane: item.plane ?? '', entry: !!item.entry, tips: 0,
+    ...(item.parent ? { parent: item.parent } : {}) });
   for (const [id, binding] of Object.entries(bindings)) {
     const item = meta[id];
     if (!item) continue;
     const address = binding.center ?? binding.paths[0]?.[0];
     let place: { zone: string; third: FacialThird; side: PatientSide } = { zone: item.zone, third: 'medio', side: 'central' };
     try { if (address) place = addressPlacement(address, item.zone); } catch { /* dirección degenerada: conserva la zona manual */ }
-    rows.push({ ...base(id, item), ...place, kind: binding.kind, extended: false });
+    const label = item.parent ? `Punta ${(item.tip ?? 0) + 1}` : item.technique ?? KIND_LABELS[binding.kind] ?? binding.kind;
+    rows.push({ ...base(id, item), ...place, kind: binding.kind, extended: false, label });
   }
   for (const id of freeIds) {
     const item = meta[id];
-    if (item && !bindings[id]) rows.push({ ...base(id, item), zone: EXTENDED_ZONE, third: 'extendida', side: 'central', kind: 'point', extended: true });
+    if (item && !bindings[id]) rows.push({ ...base(id, item), zone: EXTENDED_ZONE, third: 'extendida', side: 'central', kind: 'point', extended: true, label: 'Punto' });
   }
-  return rows;
+  const children = new Map<string, LedgerRow[]>();
+  for (const row of rows) if (row.parent && rows.some(r => r.id === row.parent)) children.set(row.parent, [...children.get(row.parent) ?? [], row]);
+  const ordered: LedgerRow[] = [];
+  for (const row of rows) {
+    if (row.parent && children.has(row.parent)) continue;
+    const tips = (children.get(row.id) ?? []).sort((a, b) => (meta[a.id]?.tip ?? 0) - (meta[b.id]?.tip ?? 0));
+    ordered.push({ ...row, tips: tips.length }, ...tips);
+  }
+  return ordered.map((row, i) => ({ ...row, index: i + 1 }));
 }
 
 export const filterRows = (rows: readonly LedgerRow[], f: LedgerFilter) => rows.filter(r =>
   (f.mode === 'all' || r.mode === f.mode) && (f.zone === 'all' || r.zone === f.zone)
   && (f.third === 'all' || r.third === f.third)
-  && (f.volume === 'all' || (f.volume === 'with' ? r.dose > 0 : r.dose <= 0)));
+  && (f.volume === 'all' || !r.entry && (f.volume === 'with' ? r.dose > 0 : r.dose <= 0)));
 
 export interface VolumeTotal { key: string; mode: SimMode; product: string; total: number; points: number; pending: number }
 /** Totales en tiempo real por inyectable y vial; los puntos sin volumen cuentan como pendientes. */
 export function volumeTotals(rows: readonly LedgerRow[]): VolumeTotal[] {
   const totals = new Map<string, VolumeTotal>();
   for (const r of rows) {
+    if (r.entry) continue;
     const key = JSON.stringify([r.mode, r.product]);
     const t = totals.get(key) ?? { key, mode: r.mode, product: r.product, total: 0, points: 0, pending: 0 };
     t.points++;

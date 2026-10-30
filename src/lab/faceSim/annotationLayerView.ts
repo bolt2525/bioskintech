@@ -26,6 +26,18 @@ export function annotationUVs(atlas: GenericFaceAtlas): Float32Array {
   return Float32Array.from(xs.flatMap((x, i) => [(x - left) / (right - left), (top - ys[i]) / (top - bottom)]));
 }
 
+/** Los canvas de capa no se modifican tras cargarse: una lectura de píxeles por canvas y sesión. */
+const pixelCache = new WeakMap<HTMLCanvasElement, ImageData>();
+function coveragePixels(canvas: HTMLCanvasElement): ImageData {
+  const cached = pixelCache.get(canvas);
+  if (cached && cached.width === canvas.width && cached.height === canvas.height) return cached;
+  const context = canvas.getContext('2d', { willReadFrequently: true });
+  if (!context) throw new Error('No se pudo leer la cobertura de la referencia.');
+  const pixels = context.getImageData(0, 0, canvas.width, canvas.height);
+  pixelCache.set(canvas, pixels);
+  return pixels;
+}
+
 /** La profundidad solo modifica buffers VISUALES; el localizador sigue en piel. */
 export function buildAnnotationLayerView(
   input: AnatomicalReference, atlas: GenericFaceAtlas, surface?: PersonalSurface,
@@ -50,9 +62,7 @@ export function buildAnnotationLayerView(
   const triangles = new Set<string>();
   const key = (ids: number[]) => ids.slice().sort((a, b) => a - b).join(':');
   for (let i = 0; i < geometry.indices.length; i += 3) triangles.add(key(Array.from(geometry.indices.slice(i, i + 3))));
-  const context = reference.canvas.getContext('2d', { willReadFrequently: true });
-  if (!context) throw new Error('No se pudo leer la cobertura de la referencia.');
-  const pixels = context.getImageData(0, 0, reference.canvas.width, reference.canvas.height);
+  const pixels = coveragePixels(reference.canvas);
   const idsAt = (address: FaceAddress) => atlas.triangles.slice(address.triangle * 3, address.triangle * 3 + 3);
   const uvAt = (address: FaceAddress) => [0, 1].map(axis => idsAt(address)
     .reduce((sum, id, i) => sum + reference.uvs[id * 2 + axis] * address.weights[i], 0));

@@ -169,7 +169,9 @@ for (const workMode of ['3d', 'foto']) test(`handlers ${workMode}: espejo todos 
     ui.set('markers', []); ui.set('lines', []); ui.set('shapes', []); ui.set('history', []);
     ui.set('selectedId', 'original'); ui.set('bilateral', true); ui.render();
     ui.button('Espejar selección').props.onClick(); ui.render();
-    assert.equal(Object.keys(ui.get('bindings')).length, 2, kind);
+    // Los trazos con entrada de aguja (línea, flecha, patrón) generan además sus puntas de dosis.
+    const tips = kind === 'arrow' || kind === 'line' ? 1 : kind === 'pattern' ? binding.paths.filter(p => p.length > 1).length : 0;
+    assert.equal(Object.keys(ui.get('bindings')).length, 2 + tips, kind);
     assert.deepEqual(ui.get('bindings').original, snapshot);
     assert.equal(ui.get('history').length, 1, 'el modo bilateral no crea un tercer elemento ni dos snapshots');
     assert.ok(Object.values(ui.get('meta')).every(m => m.dose === 0 && m.product === 'Vial de prueba'));
