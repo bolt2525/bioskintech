@@ -539,3 +539,5 @@ Las entradas siguientes conservan la evidencia previa al despliegue y la evoluci
 - ✅ Oct 29 Contornos morfológicos suavizados; anclas intactas.
 - ✅ Oct 29 Nariz/mentón: deformación distribuida y acotada.
 - ✅ Oct 29 Mallado: 283 pruebas, build, Chromium.
+- ✅ Oct 29 Frente: detección directa del nacimiento capilar.
+- ✅ Oct 29 Revisión de frente en todas las fotos; altura compartida.

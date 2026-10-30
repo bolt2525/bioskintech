@@ -10,7 +10,7 @@ import {
   buildPersonalSurface, projectPersonal, refineDepthFromProfiles, registrationAnchorIndices, trianglesFromEdges, fitHairPhotoProjection,
   type AffineRegistration, type DepthDiagnostic, type PersonalSurface, type PersonalProjection, type CorrectedPoint, type Elem, type ElemKind, type FaceFrame, type Meta, type P2, type PhotoEl, type SimMode, type Vec3, type ViewKind,
 } from './engine';
-import { moveFaceLandmark, refinePhotoContour, extendVisibleForehead, proposeForeheadBoundary } from './faceContour';
+import { moveFaceLandmark, refinePhotoContour, extendVisibleForehead, proposeForeheadBoundary, foreheadRatio, foreheadPointFromRatio } from './faceContour';
 import { buildFaceRegionMap, buildFaceTriangleRegions, faceRegionColor, rasterizeFaceRegions, facialZoneAt, isOnObservedFace, faceAttentionColor, FACE_REGION_EDUCATION, FACE_REGION_SEEDS, type FaceRegionMap } from './faceRegions';
 import { buildRegionCells, regionCellAt, regionCellPositions, regionPlanePositions, REGION_PLANES, type RegionPlane } from './regionMesh';
 import { DEFAULT_HAIR, buildPhotoHairPatches, type EstimatedHairSettings, type PhotoHairPatch } from './estimatedHair';
@@ -323,7 +323,10 @@ export default function FaceSimLab() {
   const [skinReview, setSkinReview] = useState<SkinReview | null>(null);
   const [skinChannel, setSkinChannel] = useState<SkinAppearanceVisualChannel>('contrast');
   const [analyzingSkin, setAnalyzingSkin] = useState(false);
-  const [boundaryReview, setBoundaryReview] = useState(false);
+  // Cola de fotos por revisar límites; la primera con landmarks se muestra en el modal.
+  const [boundaryReview, setBoundaryReview] = useState<PhotoSlotId[]>([]);
+  // Altura de frente confirmada (normalizada glabela→mentón); la frontal tiene prioridad.
+  const [foreheadReference, setForeheadReference] = useState<{ ratio: number; slot: PhotoSlotId } | null>(null);
   const [hoveredZone, setHoveredZone] = useState<string | null>(null);
   const [workspace, setWorkspace] = useState<'capture' | 'simulate'>('capture');
   const [editorGroup, setEditorGroup] = useState<'annotations' | 'appearance'>('annotations');
@@ -376,6 +379,20 @@ export default function FaceSimLab() {
   const slot = photos[view];
   activePhotoRef.current = slot?.canvas;
   const currentForeheadPreview = foreheadPreview?.canvas === slot?.canvas ? foreheadPreview : null;
+  const reviewId = boundaryReview.find(id => photos[id]?.landmarks);
+  const reviewSlot = reviewId ? photos[reviewId] : undefined;
+  const reviewReference = useMemo(() => {
+    if (!reviewSlot?.landmarks || !foreheadReference || foreheadReference.slot === reviewId) return null;
+    return foreheadPointFromRatio(reviewSlot.detectedLandmarks ?? reviewSlot.landmarks, foreheadReference.ratio, reviewSlot.aspect);
+  }, [reviewSlot, reviewId, foreheadReference]);
+  const rememberForehead = (target: PhotoSlotId, source: Slot, point: P2) => {
+    const ratio = foreheadRatio(source.detectedLandmarks ?? source.landmarks ?? [], point, source.aspect);
+    if (!ratio) return;
+    setForeheadReference(current => !current || target === 'frontal' || current.slot !== 'frontal' ? { ratio, slot: target } : current);
+    // Las demás fotos aún sin revisar vuelven a la cola con la altura trasladada como alternativa.
+    if (target === 'frontal') setBoundaryReview(queue => [...queue, ...PHOTO_SLOTS.map(v => v.id)
+      .filter(id => id !== target && !queue.includes(id) && photos[id]?.landmarks && !photos[id]?.foreheadReviewed)]);
+  };
   const currentSkinReview = skinReview?.canvas === slot?.canvas && skinReview?.landmarks === slot?.landmarks ? skinReview : null;
   const personalActive = !!personal;
   const personalProjection = personalActive && personal.view === view && personal.canvas === slot?.canvas ? personal.projection : undefined;
@@ -981,8 +998,8 @@ export default function FaceSimLab() {
           ...(accepted ? { registration: auto, registrationFlip: flipX, registrationSource: 'auto' as const } : { registration: undefined }),
         },
       } : p));
-      if (target === 'frontal' && activePhotoRef.current === c) setBoundaryReview(true);
-      setStatus(`Rostro detectado en ${label}. Revisa la miniatura y confirma la captura.`
+      if (uploadRequestRef.current[target] === requestId) setBoundaryReview(queue => [...queue.filter(id => id !== target), target]);
+      setStatus(`Rostro detectado en ${label}. Revisa el límite de la frente propuesto y confirma la captura.`
         + ` Contorno: ${detected.contourAdjusted ?? 0} referencias ajustadas por borde visible; revisa mentón y sienes en «Editar contorno».` + personalNote);
     } catch (error) {
       if (requestId !== uploadRequestRef.current[target]) return;
@@ -1002,6 +1019,8 @@ export default function FaceSimLab() {
     personalRequestRef.current++;
     setBuildingPersonal(false);
     setPendingPhotos(p => ({ ...p, [id]: false }));
+    setBoundaryReview(queue => queue.filter(q => q !== id));
+    setForeheadReference(current => current?.slot === id ? null : current);
     setPhotos(p => {
       const next = { ...p };
       delete next[id];
@@ -1210,15 +1229,16 @@ export default function FaceSimLab() {
     setDraft({ kind: toolPhoto, pts: [n] });
     e.currentTarget.setPointerCapture(e.pointerId);
   };
-  const applyLandmarks = (landmarks: Landmark[], triangles: number[], contourAdjusted = slot?.contourAdjusted, foreheadReviewed = slot?.foreheadReviewed) => {
-    if (!slot) return;
+  const applyLandmarks = (landmarks: Landmark[], triangles: number[], contourAdjusted = slot?.contourAdjusted, foreheadReviewed = slot?.foreheadReviewed, target: PhotoSlotId = view) => {
+    const source = photos[target];
+    if (!source) return;
     const nextFrame = frameFromLandmarks(landmarks);
-    const registration = autoRegistration(view, nextFrame, aspect, flipX);
+    const registration = target === 'extra_a' || target === 'extra_b' ? null : autoRegistration(target, nextFrame, source.aspect, flipX);
     personalRequestRef.current++;
     setBuildingPersonal(false);
     setPersonal(null); setModelKind('generico');
-    setPhotos(p => p[view]?.canvas === slot.canvas ? {
-      ...p, [view]: { ...p[view]!, landmarks, contourAdjusted, foreheadReviewed, frame: nextFrame, regionMap: buildFaceRegionMap(landmarks, triangles, aspect, genericFaceAtlas.positions),
+    setPhotos(p => p[target]?.canvas === source.canvas ? {
+      ...p, [target]: { ...p[target]!, landmarks, contourAdjusted, foreheadReviewed, frame: nextFrame, regionMap: buildFaceRegionMap(landmarks, triangles, source.aspect, genericFaceAtlas.positions),
         modelAnchors: undefined, registration: isRegistrationAccepted(registration) ? registration : undefined,
         registrationFlip: flipX, registrationSource: 'auto' },
     } : p);
@@ -1243,6 +1263,7 @@ export default function FaceSimLab() {
       const landmarks = extendVisibleForehead(source.landmarks!, point, source.aspect, triangles);
       if (!landmarks) { setStatus('No se aplicó el límite frontal: desplazamiento excesivo, referencias insuficientes o malla inválida. Elige un punto más próximo sobre piel visible.'); return; }
       applyLandmarks(landmarks, triangles, source.contourAdjusted, true);
+      rememberForehead(view, source, point);
       setForeheadPreview(null); setPickingForehead(false);
       setStatus('Banda frontal ampliada hasta el límite revisado de piel visible. Ceja y ojos se conservan; recalcula la superficie. No reconstruye piel oculta bajo el cabello.');
     } catch (error) {
@@ -1620,10 +1641,14 @@ export default function FaceSimLab() {
           : 'Elige una superficie y una herramienta. El registro es común; la dosis no controla el efecto visual.'}</p>
         <p className="text-xs text-slate-600" role="status">{status}</p>
       </header>
-      {boundaryReview && slot?.landmarks && <Suspense fallback={<p role="status">Abriendo revisión de límites…</p>}>
-        <FaceBoundaryReview key={`${view}-${slot.previewUrl?.length}`} canvas={slot.canvas} landmarks={slot.landmarks}
-          triangles={genericFaceAtlas.triangles} onClose={() => setBoundaryReview(false)}
-          onApply={(landmarks, reviewed) => applyLandmarks(landmarks, [...genericFaceAtlas.triangles], slot.contourAdjusted, reviewed)} />
+      {reviewId && reviewSlot?.landmarks && <Suspense fallback={<p role="status">Abriendo revisión de límites…</p>}>
+        <FaceBoundaryReview key={`${reviewId}-${reviewSlot.previewUrl?.length}`} canvas={reviewSlot.canvas} landmarks={reviewSlot.landmarks}
+          title={PHOTO_SLOTS.find(v => v.id === reviewId)?.label} reference={reviewReference}
+          triangles={genericFaceAtlas.triangles} onClose={() => setBoundaryReview(queue => queue.filter(id => id !== reviewId))}
+          onApply={(landmarks, reviewed, point) => {
+            applyLandmarks(landmarks, [...genericFaceAtlas.triangles], reviewSlot.contourAdjusted, reviewed, reviewId);
+            if (point) rememberForehead(reviewId, reviewSlot, point);
+          }} />
       </Suspense>}
       {(workspace === 'capture' || editorGroup === 'annotations') && <aside aria-label={workspace === 'capture' ? 'Revisión de capturas' : 'Herramientas de marcación'} className={`min-w-0 space-y-4 rounded-2xl border p-3 shadow-sm lg:self-start ${workspace === 'simulate' ? 'border-white/10 bg-slate-950 text-slate-100' : 'border-slate-200 bg-white'}`}>
         {workspace === 'simulate' && <div className="space-y-3">
@@ -1789,11 +1814,12 @@ export default function FaceSimLab() {
             {buildingPersonal ? 'Calculando…' : `Calcular superficie con ${readyPhotos.length} foto(s)`}
           </button>
         </div>
-        {slot?.landmarks && <button type="button" onClick={() => setBoundaryReview(true)}
+        {slot?.landmarks && <button type="button" onClick={() => setBoundaryReview(queue => [view, ...queue.filter(id => id !== view)])}
           className="admin-focus-ring w-full rounded-xl border border-sky-200 bg-sky-50 px-3 py-2 text-sm font-semibold">Revisar frente, sienes y mentón</button>}
         {slot?.landmarks && <details className="space-y-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs">
           <summary className="cursor-pointer font-semibold">Frente y línea del cabello · revisar cobertura</summary>
-          <p>{slot.foreheadReviewed ? 'Límite superior revisado manualmente.' : 'MediaPipe no segmenta el cabello y puede recortar la frente. No presupongas que toda la frente está reconstruida.'}</p>
+          <p>{slot.foreheadReviewed ? 'Límite superior revisado manualmente.' : 'Se propone el nacimiento del cabello como fin de la piel visible; confírmalo en «Revisar frente». No presupongas que toda la frente está reconstruida.'}</p>
+          {foreheadReference && <p>Altura de referencia confirmada en {PHOTO_SLOTS.find(v => v.id === foreheadReference.slot)?.label}; se ofrece en las demás vistas cuando su borde no es claro.</p>}
           <p>Amplía solo sobre piel realmente visible. Si el cabello o el encuadre la ocultan, usa otra captura con la frente descubierta; el modelo no puede certificar esa zona ni un plano de tratamiento.</p>
           <button type="button" disabled={buildingPersonal || hasPendingPhotos} onClick={suggestForehead} className="rounded border border-amber-400 px-2 py-1">Proponer borde visible</button>
           <button type="button" disabled={buildingPersonal || hasPendingPhotos} aria-pressed={pickingForehead} onClick={() => {

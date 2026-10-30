@@ -66,7 +66,32 @@ export function extendVisibleForehead(landmarks: Landmark[], target: P2, aspect:
   return preservesTriangles(landmarks, next, triangles) ? next : null;
 }
 
-/** Propone un borde oscuro compatible con cabello. Requiere revisión; no es segmentación capilar. */
+/** Altura del límite frontal normalizada por glabela→mentón; permite trasladarla entre vistas. */
+export function foreheadRatio(landmarks: Landmark[], point: P2, aspect: number): number | null {
+  const brow = landmarks[9], top = landmarks[10], chin = landmarks[152];
+  if (!brow || !top || !chin || !(aspect > 0)) return null;
+  const scale = Math.hypot((chin.x - brow.x) * aspect, chin.y - brow.y);
+  const ax = (top.x - brow.x) * aspect, ay = top.y - brow.y, length = Math.hypot(ax, ay);
+  if (scale < 1e-4 || length < 1e-5) return null;
+  const ratio = ((point.x - brow.x) * aspect * ax + (point.y - brow.y) * ay) / length / scale;
+  return Number.isFinite(ratio) && ratio > 0 ? ratio : null;
+}
+
+export function foreheadPointFromRatio(landmarks: Landmark[], ratio: number, aspect: number): P2 | null {
+  const brow = landmarks[9], top = landmarks[10], chin = landmarks[152];
+  if (!brow || !top || !chin || !(aspect > 0) || !(ratio > 0)) return null;
+  const scale = Math.hypot((chin.x - brow.x) * aspect, chin.y - brow.y);
+  const ax = (top.x - brow.x) * aspect, ay = top.y - brow.y, length = Math.hypot(ax, ay);
+  if (scale < 1e-4 || length < 1e-5) return null;
+  const point = { x: brow.x + ax / length * ratio * scale / aspect, y: brow.y + ay / length * ratio * scale };
+  return point.x >= 0 && point.x <= 1 && point.y >= 0 && point.y <= 1 ? point : null;
+}
+
+/**
+ * Detecta el nacimiento del cabello como fin de la piel visible: modela el color de la piel del
+ * propio paciente (frente baja y mejillas) y recorre rayos hacia arriba hasta salir de ese color.
+ * Funciona con cabello claro y fondo; si no hay salida coherente, recurre al contraste oscuro.
+ */
 export function proposeForeheadBoundary(
   landmarks: Landmark[], image: { width: number; height: number; data: Uint8ClampedArray },
 ): { point: P2 | null; reason: string } {
@@ -79,6 +104,48 @@ export function proposeForeheadBoundary(
   const length = Math.hypot(axis.x, axis.y), faceHeight = Math.hypot((top.x - chin.x) * width, (top.y - chin.y) * height);
   if (!(length > 1) || !(faceHeight > 30)) return { point: null, reason: 'No hay referencias suficientes para proponer el límite de la frente.' };
   axis.x /= length; axis.y /= length;
+  const ycc = (x: number, y: number) => {
+    if (x < 2 || y < 2 || x >= width - 2 || y >= height - 2) return null;
+    let r = 0, g = 0, b = 0;
+    for (let oy = -1; oy <= 1; oy++) for (let ox = -1; ox <= 1; ox++) {
+      const i = ((Math.round(y) + oy) * width + Math.round(x) + ox) * 4;
+      r += data[i] / 9; g += data[i + 1] / 9; b += data[i + 2] / 9;
+    }
+    const l = 0.299 * r + 0.587 * g + 0.114 * b;
+    return [l, 0.564 * (b - l), 0.713 * (r - l)];
+  };
+  const samples = [
+    ...[0.25, 0.45, 0.65].flatMap(t => [-0.12, 0, 0.12].map(o => ({
+      x: (brow.x + (top.x - brow.x) * t) * width + axis.y * o * faceHeight, y: (brow.y + (top.y - brow.y) * t) * height - axis.x * o * faceHeight }))),
+    ...[50, 280, 205, 425].map(i => ({ x: landmarks[i].x * width, y: landmarks[i].y * height })),
+  ].map(p => ycc(p.x, p.y)).filter((v): v is number[] => !!v);
+  const median = (values: number[]) => [...values].sort((a, b) => a - b)[Math.floor(values.length / 2)];
+  if (samples.length >= 8) {
+    const center = [0, 1, 2].map(c => median(samples.map(s => s[c])));
+    const spread = [0, 1, 2].map(c => median(samples.map(s => Math.abs(s[c] - center[c]))));
+    const tolerance = [Math.max(45, spread[0] * 4), Math.max(9, spread[1] * 4), Math.max(9, spread[2] * 4)];
+    const isSkin = (v: number[]) => v.every((value, c) => Math.abs(value - center[c]) <= tolerance[c]);
+    const run = Math.max(3, faceHeight * 0.02);
+    const distances = [-0.1, -0.05, 0, 0.05, 0.1].map(offset => {
+      const x = top.x * width + axis.y * offset * faceHeight, y = top.y * height - axis.x * offset * faceHeight;
+      const back = Math.round(faceHeight * 0.06);
+      const start = ycc(x - axis.x * back, y - axis.y * back);
+      if (!start || !isSkin(start)) return null;
+      let outside = 0;
+      for (let d = -back; d < faceHeight * 0.35; d++) {
+        const value = ycc(x + axis.x * d, y + axis.y * d);
+        if (!value) return outside ? d - outside : null;
+        outside = isSkin(value) ? 0 : outside + 1;
+        if (outside >= run) return d - outside + 1;
+      }
+      return null;
+    }).filter((d): d is number => d !== null).sort((a, b) => a - b);
+    if (distances.length >= 2 && distances.at(-1)! - distances[0] <= faceHeight * 0.08) {
+      const d = Math.max(0, distances[Math.floor(distances.length / 2)] - 1);
+      return { point: { x: top.x + axis.x * d / width, y: top.y + axis.y * d / height },
+        reason: `Nacimiento del cabello candidato: fin de la piel visible en ${distances.length} de 5 trazos. Confirma que el punto quede sobre piel, justo antes del cabello.` };
+    }
+  }
   const luma = (x: number, y: number) => {
     if (x < 1 || y < 1 || x >= width - 1 || y >= height - 1) return null;
     const i = (Math.round(y) * width + Math.round(x)) * 4;

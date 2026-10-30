@@ -225,6 +225,38 @@ test('no calcula capturas sin revisar; la confirmación no permite fusionar prop
   assert.equal(viewers(app.render()).length, 0);
 });
 
+test('cada foto abre su revisión; la frente confirmada en frontal se ofrece en las demás vistas', () => {
+  const app = lab(); app.render();
+  const fixture = JSON.parse(readFileSync(new URL('./fixtures/face-sim-mediapipe-synthetic.json', import.meta.url), 'utf8'));
+  const landmarks = fixture.landmarks.map(([x, y, z]) => ({ x, y, z }));
+  const make = () => ({ ...photo(), canvas: { width: 600, height: 800 }, landmarks, detectedLandmarks: landmarks, aspect: fixture.aspect, frame: engine.frameFromLandmarks(landmarks) });
+  app.photos({ frontal: make(), izquierda: make(), extra_a: make() });
+  app.set('boundaryReview', ['frontal']);
+  const modal = () => findAll(app.render(), n => n.props?.onApply && n.props?.onClose && n.props?.triangles)[0];
+  assert.equal(modal().props.title, 'Frontal');
+  assert.equal(modal().props.reference, null);
+  const top = landmarks[10], brow = landmarks[9], chin = landmarks[152];
+  const dx = (top.x - brow.x) * fixture.aspect, dy = top.y - brow.y, length = Math.hypot(dx, dy);
+  const h = Math.hypot((top.x - chin.x) * fixture.aspect, top.y - chin.y);
+  const point = { x: top.x + dx / length * h * 0.1 / fixture.aspect, y: top.y + dy / length * h * 0.1 };
+  const extended = faceContour.extendVisibleForehead(landmarks, point, fixture.aspect, genericFaceAtlas.triangles);
+  modal().props.onApply(extended, true, point);
+  modal().props.onClose();
+  assert.equal(app.states[0].frontal.foreheadReviewed, true);
+  assert.equal(app.states[0].izquierda.foreheadReviewed, undefined, 'no se confirma otra vista en silencio');
+  assert.deepEqual([...app.state('boundaryReview')], ['izquierda', 'extra_a']);
+  const next = modal();
+  assert.equal(next.props.title, 'Ángulo A');
+  assert.ok(Math.hypot(next.props.reference.x - point.x, next.props.reference.y - point.y) < 1e-9);
+  next.props.onApply(extended, true, point);
+  next.props.onClose();
+  assert.equal(app.states[0].izquierda.foreheadReviewed, true);
+  assert.equal(app.state('foreheadReference').slot, 'frontal', 'la frontal sigue como referencia');
+  assert.equal(modal().props.title, 'Foto 4');
+  modal().props.onClose();
+  assert.equal(modal(), undefined);
+});
+
 test('ampliar frente exige revisar piel visible y no convierte el clic en tratamiento', async () => {
   const app = lab(); app.render();
   const fixture = JSON.parse(readFileSync(new URL('./fixtures/face-sim-mediapipe-synthetic.json', import.meta.url), 'utf8'));

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { FaceLandmarker } from '@mediapipe/tasks-vision';
 import data from './fixtures/face-sim-mediapipe-synthetic.json' with { type: 'json' };
-import { extendVisibleForehead, proposeForeheadBoundary } from '../src/lab/faceSim/faceContour.ts';
+import { extendVisibleForehead, foreheadPointFromRatio, foreheadRatio, proposeForeheadBoundary } from '../src/lab/faceSim/faceContour.ts';
 import { buildPersonalSurface, projectPersonal, trianglesFromEdges } from '../src/lab/faceSim/engine.ts';
 
 const triangles = trianglesFromEdges(FaceLandmarker.FACE_LANDMARKS_TESSELATION);
@@ -44,4 +44,29 @@ test('un borde capilar oscuro solo genera propuesta; sin borde no inventa frente
   assert.ok(Math.abs(result.point.y * height - cutoff) < 8);
   data.fill(128);
   assert.equal(proposeForeheadBoundary(fixture.landmarks, { width, height, data }).point, null);
+});
+test('detecta directamente cabello claro (más brillante que la piel) como fin de piel visible', () => {
+  const width = 500, height = 600;
+  const data = new Uint8ClampedArray(width * height * 4);
+  const top = fixture.landmarks[10], chin = fixture.landmarks[152];
+  const cutoff = Math.round((top.y - (chin.y - top.y) * 0.1) * height);
+  for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
+    const shade = (x * 7 + y * 13) % 9;
+    data.set(y < cutoff ? [215 + shade, 185 + shade, 95, 255] : [190 + shade, 145 + shade, 130 + shade, 255], (y * width + x) * 4);
+  }
+  const result = proposeForeheadBoundary(fixture.landmarks, { width, height, data });
+  assert.ok(result.point);
+  assert.match(result.reason, /cabello candidato/);
+  assert.ok(Math.abs(result.point.y * height - cutoff) < 6);
+});
+test('la altura frontal confirmada se traslada entre vistas con distinta escala y encuadre', () => {
+  const point = target(0.1);
+  const ratio = foreheadRatio(fixture.landmarks, point, fixture.aspect);
+  assert.ok(ratio > 0);
+  assert.ok(Math.hypot(...['x', 'y'].map(k => foreheadPointFromRatio(fixture.landmarks, ratio, fixture.aspect)[k] - point[k])) < 1e-9);
+  const moved = fixture.landmarks.map(p => ({ x: 0.2 + (p.x - 0.5) * 0.7, y: 0.25 + (p.y - 0.5) * 0.7, z: p.z }));
+  const transferred = foreheadPointFromRatio(moved, ratio, fixture.aspect);
+  assert.ok(Math.abs(transferred.x - (0.2 + (point.x - 0.5) * 0.7)) < 1e-9);
+  assert.ok(Math.abs(transferred.y - (0.25 + (point.y - 0.5) * 0.7)) < 1e-9);
+  assert.equal(foreheadPointFromRatio(fixture.landmarks, -1, fixture.aspect), null);
 });
