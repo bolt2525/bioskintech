@@ -326,7 +326,7 @@ const segDist = (p: P2, a: P2, b: P2, k: number) => {
 };
 
 export default function FaceSimLab() {
-  const glRef = useRef<HTMLCanvasElement>(null);
+  const [photoCanvas, setPhotoCanvas] = useState<HTMLCanvasElement | null>(null);
   const rendererRef = useRef<Renderer | null>(null);
   const dragRef = useRef<string | null>(null);
   const uploadRequestRef = useRef<Partial<Record<PhotoSlotId, number>>>({});
@@ -866,14 +866,16 @@ export default function FaceSimLab() {
   }, [workspace, workMode, modelKind, splitAnnotations, bindings, previewModes, preview, calibrating]);
 
   // Renderer por foto activa
+  const photoSource = slot?.canvas;
   useEffect(() => {
-    rendererRef.current?.dispose(); rendererRef.current = null;
-    if (!slot || !glRef.current) return;
-    try { rendererRef.current = createRenderer(glRef.current, slot.canvas); } catch (e) { setStatus(`WebGL: ${(e as Error).message}`); return; }
-    if (!rendererRef.current) setStatus('Este navegador no soporta WebGL.');
+    if (!photoSource || !photoCanvas) return;
+    let renderer: Renderer | null;
+    try { renderer = createRenderer(photoCanvas, photoSource); } catch (e) { setStatus(`WebGL: ${(e as Error).message}`); return; }
+    rendererRef.current = renderer;
+    if (!renderer) setStatus('Este navegador no soporta WebGL.');
     setRenderTick(t => t + 1);
-  }, [slot?.canvas]); // eslint-disable-line react-hooks/exhaustive-deps
-  useEffect(() => () => rendererRef.current?.dispose(), []);
+    return () => { renderer?.dispose(); if (rendererRef.current === renderer) rendererRef.current = null; };
+  }, [photoSource, photoCanvas]);
   // Render en tiempo real
   useEffect(() => {
     if (!rendererRef.current) return;
@@ -1690,7 +1692,7 @@ export default function FaceSimLab() {
     } catch (error) { setStatus(`No se pudo importar: ${error instanceof Error ? error.message : 'JSON o geometría inválidos'}. Las marcas anteriores se conservan.`); }
   };
   const exportPng = () => {
-    const c = glRef.current; if (!c) return;
+    const c = photoCanvas; if (!c) return;
     const a = document.createElement('a'); a.href = c.toDataURL('image/png'); a.download = `simulacion-referencial-${view}.png`; a.click();
   };
   const exportJson = () => {
@@ -1719,6 +1721,7 @@ export default function FaceSimLab() {
   const chooseMarkTab = (next: typeof markTab) => {
     setMarkTab(next);
     if (next === 'revisar') {
+      comparePreview(true);
       setShowMarks(false); setShowTraces(false); setShowReferences(false);
       setDraft(null); setSelectedId(null); setTool3d('navigate'); setPhotoInteraction('select');
       setCancellationToken(value => value + 1);
@@ -1796,9 +1799,8 @@ export default function FaceSimLab() {
         if (paths.length) coverageLines.push({ id: `coverage:${id}`, points: paths[0], segments: paths, color: SIM_MODES[item.mode].color, thickness: 1 });
       }
     }
-    // Visor dividido: SIEMPRE la cabeza GLB completa sin deformar como referencia.
-    // Vista única: Antes = cabeza completa; Después/calibración = cara del atlas deformable.
-    const splitHead = original && splitAnnotations && workspace === 'simulate' && !calibrating;
+    // Antes conserva la cabeza completa; Después usa el atlas deformable también en vista dividida.
+    const splitHead = original && splitAnnotations && workspace === 'simulate' && !calibrating && !preview.after;
     const fullHead = splitHead || original && workspace === 'simulate' && !calibrating && !preview.after;
     const ready = fullHead || (original ? !!genericPreviewGlb && (calibrating || genericPreviewAfter === preview.after) : !!personal);
     return <section key={source} aria-label={original ? 'Modelo genérico 3D' : 'Foto personal en 3D'}
@@ -2031,7 +2033,13 @@ export default function FaceSimLab() {
                 </label>}
                 <p className="text-[11px] leading-relaxed text-stone-500">Los filtros se aplican sobre la máscara personal y la foto en «Después». Marcar se pausa mientras lo ves.</p>
               </PanelSection>
-              <PanelSection title="Filtros por inyectable" icon={Sparkles}><EffectMixer value={preview} onChange={setPreview} /></PanelSection>
+              <PanelSection title="Filtros por inyectable" icon={Sparkles}>
+                <p role="status" className="text-[11px] leading-relaxed text-stone-300">
+                  {preview.after ? 'Después · filtros activos sobre los puntos registrados.' : 'Antes · imagen original. Ajustar un filtro abre Después automáticamente.'}
+                </p>
+                {!Object.keys(previewModes).length && <p className="text-[11px] text-amber-300">Registra puntos de inyectable para ver efectos; las figuras sin puntos no generan simulación.</p>}
+                <EffectMixer value={preview} onChange={next => { comparePreview(true); setPreview({ ...next, after: true }); }} />
+              </PanelSection>
               <PanelSection title="Visibilidad de revisión" icon={Eye}>
                 <CheckChip label="Mostrar puntos registrados" icon={Crosshair} checked={showMarks} onChange={setShowMarks}>Puntos</CheckChip>
                 <CheckChip label="Mostrar trazos y notas" icon={Brush} checked={showTraces} onChange={setShowTraces}>Trazos y notas</CheckChip>
@@ -2534,7 +2542,7 @@ export default function FaceSimLab() {
             }} onPointerLeave={() => { setHoveredZone(null); setSnapTarget(null); }} onPointerUp={onUp}
             onPointerCancel={() => { setDraft(null); dragRef.current = null; photoMoveRef.current = null; setPhotoMovePreview(null); }} onContextMenu={e => e.preventDefault()}>
             {!anatomyDisplay.overlay && photoLayerOverlay}
-            <canvas ref={glRef} className="relative h-full w-full" aria-label="Simulación del rostro"
+            <canvas ref={setPhotoCanvas} className="relative h-full w-full" aria-label="Simulación del rostro"
               style={{ opacity: photoUsesPreview ? 0 : photoSkinOpacity }} />
             {(!preview.after || workspace === 'capture') && slot?.previewUrl && <img src={slot.previewUrl} alt="" aria-hidden="true"
               style={{ opacity: photoSkinOpacity }}

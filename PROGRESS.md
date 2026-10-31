@@ -1,5 +1,7 @@
 # Progreso de BioSkinTech App
 
+- ✅ 2026-10-30 Inyectables: efectos y WebGL corregidos.
+- QA: 40 pruebas, build y once comprobaciones de navegador aprobadas; cuatro categorías verificadas en máscara, genérico dividido y foto sintéticos.
 - ✅ 2026-10-30 Nariz: perfil dorsal continuo.
 - ✅ 2026-10-30 Lab3D: paneles y desplazamiento.
 - ✅ 2026-10-30 Morfología: reverso reutilizable.

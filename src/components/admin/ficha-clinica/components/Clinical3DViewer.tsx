@@ -3382,6 +3382,8 @@ const ThreeEngine: React.FC<AnnotationInteractionProps & {
       });
       rendererRef.current?.renderLists.dispose();
       rendererRef.current?.dispose();
+      rendererRef.current?.forceContextLoss();
+      rendererRef.current = null;
     };
   }, []);
 

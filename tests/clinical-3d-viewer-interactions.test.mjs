@@ -10,7 +10,7 @@ const require = createRequire(import.meta.url);
 const source = readFileSync(new URL('../src/components/admin/ficha-clinica/components/Clinical3DViewer.tsx', import.meta.url), 'utf8');
 const instrumented = source.replace('// 1. Initialize scene once', `
   globalThis.engineRefs = { faceMeshRef, cameraRef, controlsRef, editablePointsGroupRef, handlesGroupRef,
-    freehandGroupRef, brushPreviewGroupRef, annotationLabelsGroupRef, cancelInteractionRef, callbacks, clipPlane, referenceVisuals };
+    freehandGroupRef, brushPreviewGroupRef, annotationLabelsGroupRef, cancelInteractionRef, callbacks, clipPlane, referenceVisuals, rendererRef };
   // 1. Initialize scene once
 `) + '\nexports.helpers = { screenAnnotationSnap, projectNearbySurface, projectedShapeSegments, projectedShapeOutline, annotationSurfaceHit, shouldCancelAnnotation, ThreeEngine };';
 const code = ts.transpileModule(instrumented, {
@@ -72,10 +72,12 @@ function load() {
     domElement = dom;
     shadowMap = {};
     renderLists = { dispose() {} };
+    contextsReleased = 0;
     setSize() {}
     setPixelRatio() {}
     render(scene, cam) { scene.updateMatrixWorld(); cam.updateMatrixWorld(); }
     dispose() {}
+    forceContextLoss() { this.contextsReleased++; }
   }
   class Controls {
     target = new THREE.Vector3();
@@ -142,6 +144,14 @@ function engine(changes = {}) {
   app.refs.cameraRef.current.updateMatrixWorld();
   return app;
 }
+
+test('desmontar libera el contexto WebGL y retira la referencia al renderer', () => {
+  const app = engine(), renderer = app.refs.rendererRef.current;
+  assert.equal(renderer.contextsReleased, 0);
+  app.cleanup();
+  assert.equal(renderer.contextsReleased, 1);
+  assert.equal(app.refs.rendererRef.current, null);
+});
 
 test('imán de 12 CSS px constante con zoom, ortográfica/perspectiva y extremos antes que segmentos', () => {
   const { screenAnnotationSnap } = load();
