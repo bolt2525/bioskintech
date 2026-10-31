@@ -149,6 +149,27 @@ function applyAnnotationDepth(group: THREE.Object3D | null, occlude: boolean, de
 
 export type ClinicalCameraPreset = 'default' | 'face' | 'face-surface' | 'body' | 'scalp';
 
+export interface ClinicalCameraSync {
+  pose?: {
+    source: symbol;
+    position: [number, number, number];
+    target: [number, number, number];
+    zoom: number;
+    verticalSpan?: number;
+    quaternion?: [number, number, number, number];
+  };
+}
+
+function applyComparisonCamera(camera: ClinicalCamera, pose: NonNullable<ClinicalCameraSync['pose']>, aspect: number) {
+  camera.position.fromArray(pose.position); camera.zoom = pose.zoom;
+  if (pose.quaternion) camera.quaternion.fromArray(pose.quaternion);
+  if (camera instanceof THREE.OrthographicCamera && pose.verticalSpan) {
+    camera.top = pose.verticalSpan / 2; camera.bottom = -camera.top;
+    camera.right = camera.top * aspect; camera.left = -camera.right;
+  }
+  camera.updateProjectionMatrix();
+}
+
 export interface ScalpHairVisualization {
   scale: ScalpScale;
   stage: string;
@@ -717,6 +738,7 @@ interface Clinical3DViewerProps extends AnnotationInteractionProps {
   onModelMetrics?: (metrics: ClinicalModelMetrics) => void;
   /** Encuadre inicial optimizado para la región clínica */
   cameraPreset?: ClinicalCameraPreset;
+  cameraSync?: ClinicalCameraSync;
   /** Modo solo lectura (sin clicks) */
   readOnly?: boolean;
   occludeAnnotations?: boolean;
@@ -834,6 +856,7 @@ const ThreeEngine: React.FC<AnnotationInteractionProps & {
   clipping?: ClinicalClipping | null;
   showMarkerLabels?: boolean;
   cameraPreset?: ClinicalCameraPreset;
+  cameraSync?: ClinicalCameraSync;
   scalpHair?: ScalpHairVisualization | null;
   sceneSettings?: Partial<ClinicalSceneSettings>;
   onModelMetrics?: (metrics: ClinicalModelMetrics) => void;
@@ -861,6 +884,7 @@ const ThreeEngine: React.FC<AnnotationInteractionProps & {
   showMarkerLabels = true,
   pointMarkerScale = 1.0,
   cameraPreset = 'default',
+  cameraSync,
   scalpHair = null,
   sceneSettings = {},
   onModelMetrics,
@@ -871,6 +895,7 @@ const ThreeEngine: React.FC<AnnotationInteractionProps & {
   const photoBoundsRef = useRef<THREE.Box3 | null>(null);
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
   const controlsRef = useRef<OrbitControls | null>(null);
+  const cameraLoadingRef = useRef(true);
   const ambientLightRef = useRef<THREE.AmbientLight | null>(null);
   const keyLightRef = useRef<THREE.DirectionalLight | null>(null);
   const fillLightRef = useRef<THREE.DirectionalLight | null>(null);
@@ -1213,7 +1238,7 @@ const ThreeEngine: React.FC<AnnotationInteractionProps & {
     activeTool, selectedElementId, pendingBrushColor, pendingBrushThickness,
     onFreehandLineComplete, onShapeComplete, onElementSelected, onFreehandLineUpdated, onSurfaceShapeUpdated, onGridStepChange, onSnapPointChange,
     haShapeConfig, freehandLines, surfaceShapes, incompletePointIds, highlightedPointIds, onEditablePointHovered, onBackgroundClick, onEstimatedSurfaceInteraction,
-    onModelMetrics, occludeAnnotations, surfaceConstraint, labInteraction, annotationSnap, editablePoints, showEditablePoints, referenceLines, annotationLabels, onAnnotationSnap,
+    onModelMetrics, occludeAnnotations, surfaceConstraint, labInteraction, annotationSnap, editablePoints, showEditablePoints, referenceLines, annotationLabels, onAnnotationSnap, cameraSync,
   });
   useEffect(() => {
     callbacks.current = {
@@ -1222,7 +1247,7 @@ const ThreeEngine: React.FC<AnnotationInteractionProps & {
       activeTool, selectedElementId, pendingBrushColor, pendingBrushThickness,
       onFreehandLineComplete, onShapeComplete, onElementSelected, onFreehandLineUpdated, onSurfaceShapeUpdated, onGridStepChange, onSnapPointChange,
       haShapeConfig, freehandLines, surfaceShapes, incompletePointIds, highlightedPointIds, onEditablePointHovered, onBackgroundClick, onEstimatedSurfaceInteraction,
-      onModelMetrics, occludeAnnotations, surfaceConstraint, labInteraction, annotationSnap, editablePoints, showEditablePoints, referenceLines, annotationLabels, onAnnotationSnap,
+      onModelMetrics, occludeAnnotations, surfaceConstraint, labInteraction, annotationSnap, editablePoints, showEditablePoints, referenceLines, annotationLabels, onAnnotationSnap, cameraSync,
     };
   });
 
@@ -1295,7 +1320,7 @@ const ThreeEngine: React.FC<AnnotationInteractionProps & {
 
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.enablePan = true;
-    controls.enableDamping = true;
+    controls.enableDamping = !cameraSync;
     controls.dampingFactor = 0.05;
     controls.minDistance = 1;
     controls.maxDistance = 100;
@@ -1306,6 +1331,30 @@ const ThreeEngine: React.FC<AnnotationInteractionProps & {
     controls.target.set(...initialCamera.target);
     controls.update();
     controlsRef.current = controls;
+    const cameraSource = Symbol('clinical-camera');
+    let incomingPose: ClinicalCameraSync['pose'];
+    let applyingPose = false;
+    let navigatingCamera = false;
+    const startCamera = () => { navigatingCamera = true; };
+    const endCamera = () => { navigatingCamera = false; };
+    const publishCamera = () => {
+      const sync = callbacks.current.cameraSync;
+      if (!sync || applyingPose || cameraLoadingRef.current || !faceMeshRef.current) return;
+      if (sync.pose && sync.pose.source !== cameraSource && !navigatingCamera) return;
+      const previous = sync.pose;
+      const quaternion = camera.quaternion.toArray();
+      const verticalSpan = camera instanceof THREE.OrthographicCamera ? camera.top - camera.bottom : undefined;
+      if (previous?.source === cameraSource && previous.zoom === camera.zoom && previous.verticalSpan === verticalSpan
+        && previous.position.every((value, i) => value === camera.position.getComponent(i))
+        && previous.target.every((value, i) => value === controls.target.getComponent(i))
+        && previous.quaternion?.every((value, i) => value === quaternion[i])) return;
+      sync.pose = { source: cameraSource, position: camera.position.toArray(), target: controls.target.toArray(), zoom: camera.zoom,
+        verticalSpan, quaternion };
+      incomingPose = sync.pose;
+    };
+    controls.addEventListener('change', publishCamera);
+    controls.addEventListener('start', startCamera);
+    controls.addEventListener('end', endCamera);
 
     // Lighting
     const ambientLight = new THREE.AmbientLight(0xf0f5ff, DEFAULT_SCENE_SETTINGS.ambientIntensity);
@@ -3131,7 +3180,22 @@ const ThreeEngine: React.FC<AnnotationInteractionProps & {
           label.scale.set(units * 26 * label.userData.aspect, units * 26, 1);
         });
       }
-      if (controlsRef.current) controlsRef.current.update();
+      const sync = callbacks.current.cameraSync, pose = sync?.pose;
+      controls.enableDamping = !sync;
+      if (!cameraLoadingRef.current && pose && pose !== incomingPose && pose.source !== cameraSource) {
+        applyingPose = true;
+        applyComparisonCamera(camera, pose, mountRef.current!.clientWidth / mountRef.current!.clientHeight);
+        controls.target.fromArray(pose.target);
+        const damping = controls.enableDamping;
+        controls.enableDamping = false; controls.update(); controls.enableDamping = damping;
+        applyComparisonCamera(camera, pose, mountRef.current!.clientWidth / mountRef.current!.clientHeight);
+        if (!pose.quaternion) camera.lookAt(controls.target);
+        incomingPose = pose; applyingPose = false;
+      }
+      if (controlsRef.current && (!sync?.pose || sync.pose.source === cameraSource || navigatingCamera)) controlsRef.current.update();
+      if (sync?.pose?.source === cameraSource) publishCamera();
+      if (sync) camera.updateMatrixWorld(true);
+      if (sync && !sync.pose && faceMeshRef.current) publishCamera();
       if (gridStep > 0 && callbacks.current.activeTool !== 'ha-grid') resetGridDrawing();
       if (rendererRef.current && sceneRef.current && cameraRef.current) {
         const pulse = (Math.sin(performance.now() * 0.0035) + 1) / 2;
@@ -3337,7 +3401,9 @@ const ThreeEngine: React.FC<AnnotationInteractionProps & {
       const h = mountRef.current.clientHeight;
       if (w === 0 || h === 0) return;
       if (cameraRef.current instanceof THREE.OrthographicCamera) {
-        if (photoBoundsRef.current) updatePhotoFrustum(cameraRef.current, photoBoundsRef.current, w / h);
+        const pose = callbacks.current.cameraSync?.pose;
+        if (pose) applyComparisonCamera(cameraRef.current, pose, w / h);
+        else if (photoBoundsRef.current) updatePhotoFrustum(cameraRef.current, photoBoundsRef.current, w / h);
       } else cameraRef.current.aspect = w / h;
       cameraRef.current.updateProjectionMatrix();
       rendererRef.current.setSize(w, h);
@@ -3369,6 +3435,9 @@ const ThreeEngine: React.FC<AnnotationInteractionProps & {
       if (mountRef.current && rendererRef.current) {
         try { mountRef.current.removeChild(rendererRef.current.domElement); } catch { /* element already detached */ }
       }
+      controls.removeEventListener('change', publishCamera);
+      controls.removeEventListener('start', startCamera);
+      controls.removeEventListener('end', endCamera);
       controlsRef.current?.dispose();
       sceneRef.current?.traverse((object: any) => {
         object.geometry?.dispose();
@@ -3543,7 +3612,18 @@ const ThreeEngine: React.FC<AnnotationInteractionProps & {
         controlsRef.current.update();
       }
 
+      const comparisonPose = callbacks.current.cameraSync?.pose;
+      if (comparisonPose && cameraRef.current && controlsRef.current) {
+        applyComparisonCamera(cameraRef.current, comparisonPose,
+          (mountRef.current?.clientWidth || 1) / (mountRef.current?.clientHeight || 1));
+        controlsRef.current.target.fromArray(comparisonPose.target);
+        controlsRef.current.update();
+        applyComparisonCamera(cameraRef.current, comparisonPose,
+          (mountRef.current?.clientWidth || 1) / (mountRef.current?.clientHeight || 1));
+        if (!comparisonPose.quaternion) cameraRef.current.lookAt(controlsRef.current.target);
+      }
       setModelVersion(v => v + 1);
+      cameraLoadingRef.current = false;
       callbacks.current.onLoaded();
     };
 
@@ -3554,6 +3634,7 @@ const ThreeEngine: React.FC<AnnotationInteractionProps & {
     };
 
     try {
+      cameraLoadingRef.current = true;
       if (modelSource.type === 'buffer') {
         if (modelSource.data && (modelSource.data instanceof ArrayBuffer || typeof modelSource.data === 'string')) {
           loader.parse(modelSource.data, '', handleLoadedModel, handleLoadError);
@@ -4363,6 +4444,7 @@ export default function Clinical3DViewer({
   sceneSettings = EMPTY_SCENE_SETTINGS,
   onModelMetrics,
   cameraPreset = 'default',
+  cameraSync,
   readOnly = false,
   occludeAnnotations = false,
   skipConfirmation = false,
@@ -4517,6 +4599,7 @@ export default function Clinical3DViewer({
             pointMarkerScale={pointMarkerScale}
             showMarkerLabels={showMarkerLabels}
             cameraPreset={cameraPreset}
+            cameraSync={cameraSync}
             scalpHair={scalpHair}
             sceneSettings={sceneSettings}
             onModelMetrics={onModelMetrics}

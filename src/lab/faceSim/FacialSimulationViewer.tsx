@@ -11,7 +11,7 @@ import type { PhotoSurfacePatch } from './multiViewHead';
 import type { AnatomicalReference } from './anatomicalReference';
 import { ANATOMY_PLANES, buildCanonicalReferenceUVs, loadDefaultLayers, registerLayers, type AnatomyPlane } from './defaultLayers';
 import { anatomicalZoneAt } from './anatomicalZones';
-import { AnatomyLayerControls, chooseAnatomyDisplay, initialAnatomyDisplay, type AnatomyDisplayState } from './anatomyDisplay';
+import { AnatomyLayerControls, chooseAnatomyDisplay, depthPeelDisplay, initialAnatomyDisplay } from './anatomyDisplay';
 import { buildReferenceGeometry } from './referenceGeometry';
 import { refineDisplaySurface } from './displaySurface';
 import { buildMaskBacking, INITIAL_REVEAL, revealPlane, revealStage, type MaskReveal, type ReferenceKind } from './maskAnatomy';
@@ -21,7 +21,7 @@ import { applySkinRegionRelief, type SkinReviewRegion } from './skinRegionReview
 import { editorPanel } from './MarkingPanels';
 import {
   buildCutPlane, buildSimulationLayers, buildSimulationReferenceSurface, createSimulationMesh, deformPositions, meshBounds,
-  NEUTRAL_SIMULATION, SIMULATION_CONTROLS, SIMULATION_GROUPS, SIMULATION_LAYERS, vertexNormals,
+  NEUTRAL_SIMULATION, SIMULATION_CONTROLS, SIMULATION_GROUPS, SIMULATION_LAYERS, SIMULATION_NOTICE, vertexNormals,
   type LayerId, type SimulationCut, type SimulationMesh, type SimulationParameters,
 } from './simulation';
 const SkinSignalPanel = lazy(() => import('./SkinSignalPanel'));
@@ -30,15 +30,9 @@ const AnatomicalReferencePanel = lazy(() => import('./AnatomicalReferencePanel')
 export interface FacialSimulationViewerProps {
   surface?: PersonalSurface;
   photo?: HTMLCanvasElement;
-  showMesh?: boolean;
-  plane?: RegionPlane;
-  onMeshChange?: (visible: boolean) => void;
-  onPlaneChange?: (plane: RegionPlane) => void;
   hair?: EstimatedHairSettings;
   hairPatches?: readonly PhotoHairPatch[];
   photoPatches?: readonly PhotoSurfacePatch[];
-  anatomyDisplay?: AnatomyDisplayState;
-  onAnatomyDisplayChange?: (value: AnatomyDisplayState) => void;
 }
 
 type View = 'front' | 'left' | 'right' | 'orbit';
@@ -65,6 +59,7 @@ interface ViewerState {
   anatomy: AnatomyPlane;
   referenceLayers: ReferenceSettings;
   overlay: boolean;
+  instantLayers: boolean;
   reveal: MaskReveal;
   selection: string | null;
   marks: readonly string[];
@@ -322,7 +317,7 @@ function mountFacialSimulation(
       ? kind === stage.from || kind === 'vessels' && stage.from === 'muscle' ? slice ? [slice] : [] : []
       : freePlane && (current.cut.scope === 'all' || kind === 'skin') ? [freePlane] : [];
     // El desvelado por profundidad responde al slider sin retardo; fuera de él, cambiar de capa es un morph.
-    const instant = reduceMotion || Boolean(stage);
+    const instant = reduceMotion || Boolean(stage) || current.instantLayers;
     const k = instant ? 1 : 1 - Math.exp(-(animating ? Math.max(0, time - lastStep) : 16) / 90);
     lastStep = time;
     let busy = false;
@@ -553,7 +548,7 @@ function mountFacialSimulation(
       state = next;
       const parametersChanged = next.parameters !== lastParameters;
       if (parametersChanged) {
-        morphologyPositions = deformPositions(mesh.positions, mesh.anchors, next.parameters);
+        morphologyPositions = deformPositions(mesh.positions, mesh.anchors, next.parameters, mesh.indices);
         morphologyNormals = undefined;
       }
       const geometryChanged = parametersChanged || next.skinRegions !== lastSkinRegions;
@@ -576,7 +571,8 @@ function mountFacialSimulation(
         const liveCanvases = new Set(next.references.map(reference => reference.canvas));
         for (const [canvas, cached] of referenceTextures) if (!liveCanvases.has(canvas)) { cached.dispose(); referenceTextures.delete(canvas); }
         if (next.references.length) {
-          const positions = mesh.source === 'personal' ? morphologyPositions : deformPositions(mesh.anchors, mesh.anchors, next.parameters);
+          const positions = mesh.source === 'personal' ? morphologyPositions
+            : deformPositions(mesh.anchors, mesh.anchors, next.parameters, atlas.triangles);
           const observedIndices = mesh.source === 'personal' ? mesh.indices.slice(0, mesh.observedIndexCount ?? mesh.indices.length) : Uint32Array.from(atlas.triangles);
           const sourceReference = mesh.source === 'personal' ? buildSimulationReferenceSurface(sourceMesh, next.parameters) : null;
           next.references.forEach(reference => {
@@ -699,7 +695,8 @@ function mountFacialSimulation(
         }
         const geometry = afterBacking.geometry;
         const original = geometry.userData.originalPositions as Float32Array;
-        (geometry.getAttribute('position').array as Float32Array).set(deformPositions(original, mesh.anchors, next.parameters));
+        (geometry.getAttribute('position').array as Float32Array).set(deformPositions(original, mesh.anchors, next.parameters,
+          geometry.index?.array));
         geometry.getAttribute('position').needsUpdate = true;
         geometry.computeVertexNormals(); geometry.computeBoundingSphere();
       }
@@ -713,7 +710,7 @@ function mountFacialSimulation(
           const ids = atlas.triangles.slice(cell.triangle * 3, cell.triangle * 3 + 3);
           return triangles?.has(triangleKey(ids[0], ids[1], ids[2])) ?? false;
         });
-        const deformed = deformPositions(mesh.anchors, mesh.anchors, next.parameters);
+        const deformed = deformPositions(mesh.anchors, mesh.anchors, next.parameters, atlas.triangles);
         const reference = next.references.find(item => item.kind === next.anatomy);
         const referenceMesh = referenceGroup.children.find(object => object.userData.kind === next.anatomy);
         const plane = referenceMesh instanceof THREE.Mesh
@@ -822,7 +819,7 @@ function mountFacialSimulation(
 }
 
 /** API de integración: <FacialSimulationViewer surface={surface} photo={photo} /> */
-export function FacialSimulationViewer({ surface, photo, showMesh, plane, onMeshChange, onPlaneChange, hair = DEFAULT_HAIR, hairPatches, photoPatches, anatomyDisplay, onAnatomyDisplayChange }: FacialSimulationViewerProps) {
+export function FacialSimulationViewer({ surface, photo, hair = DEFAULT_HAIR, hairPatches, photoPatches }: FacialSimulationViewerProps) {
   const id = useId(), host = useRef<HTMLDivElement>(null), runtime = useRef<ViewerRuntime | null>(null);
   const inspector = useRef<HTMLDivElement>(null);
   const editor = useRef<HTMLElement>(null);
@@ -837,17 +834,15 @@ export function FacialSimulationViewer({ surface, photo, showMesh, plane, onMesh
   const [skinReviewVersion, setSkinReviewVersion] = useState(0);
   const [parameters, setParameters] = useState<SimulationParameters>({ ...NEUTRAL_SIMULATION });
   const [symmetryDirection, setSymmetryDirection] = useState<1 | -1>(1);
-  const [localDisplay, setLocalDisplay] = useState(initialAnatomyDisplay);
-  const lastEmittedDisplay = useRef<AnatomyDisplayState>();
-  const display = anatomyDisplay ?? localDisplay;
-  const changeDisplay = useCallback((value: AnatomyDisplayState) => {
-    lastEmittedDisplay.current = value;
-    if (anatomyDisplay === undefined) setLocalDisplay(value);
-    onAnatomyDisplayChange?.(value);
-  }, [anatomyDisplay, onAnatomyDisplayChange]);
+  const [localDisplay, changeDisplay] = useState(initialAnatomyDisplay);
+  const skinDisplay = useMemo(initialAnatomyDisplay, []);
+  const display = tool === 'morphology' || tool === 'skin' ? skinDisplay : localDisplay;
   const { anatomy, references: referenceLayers, overlay } = display;
   const layers = useMemo<LayerSettings>(() => ({ skin: display.skin }), [display.skin]);
   const [cut, setCut] = useState<SimulationCut>({ ...INITIAL_CUT });
+  const [depthRange, setDepthRange] = useState<{ from: AnatomyPlane; to: AnatomyPlane; position: number }>({
+    from: 'skin', to: 'bone', position: 0,
+  });
   const [view, setView] = useState<View>('orbit');
   const [navigation, setNavigation] = useState<'orbit' | 'pan'>('orbit');
   const [comparison, setComparison] = useState<Comparison>('after');
@@ -866,11 +861,6 @@ export function FacialSimulationViewer({ surface, photo, showMesh, plane, onMesh
   const [customReference, setCustomReference] = useState<{ uvs: Float32Array; reference: AnatomicalReference }>();
   const [defaultReferences, setDefaultReferences] = useState<{ uvs: Float32Array; attempt: number; references: AnatomicalReference[] }>();
   const [reveal, setReveal] = useState<MaskReveal>({ ...INITIAL_REVEAL });
-  useEffect(() => {
-    if (anatomyDisplay && anatomyDisplay !== lastEmittedDisplay.current) {
-      setReveal({ ...INITIAL_REVEAL }); setCut({ ...INITIAL_CUT }); setSelection(null);
-    }
-  }, [anatomyDisplay]);
   const [selection, setSelection] = useState<string | null>(null);
   const [marks, setMarks] = useState<string[]>([]);
   const [referenceError, setReferenceError] = useState<string | null>(null);
@@ -934,7 +924,7 @@ export function FacialSimulationViewer({ surface, photo, showMesh, plane, onMesh
     });
     return () => cancelAnimationFrame(frame);
   }, [photo, signalLandmarks, cosmetics]);
-  const activePlane = plane ?? localPlane, meshVisible = showMesh ?? localMesh;
+  const activePlane = localPlane, meshVisible = localMesh && (tool === 'layers' || tool === 'cut');
   const [preparedState, setPreparedState] = useState<{ source: typeof surface; value: PreparedSimulation }>();
   const prepared = preparedState && preparedState.source === surface ? preparedState.value : EMPTY_PREPARED;
   useEffect(() => {
@@ -965,10 +955,14 @@ export function FacialSimulationViewer({ surface, photo, showMesh, plane, onMesh
     blendIndices: patch.blendIndices && prepared.refinement!.indicesFor(patch.blendIndices),
     alpha: patch.alpha && prepared.refinement!.attribute(patch.alpha, 1),
   })), [prepared, photoPatches]);
-  const state = useMemo<ViewerState>(() => ({ parameters, layers, cut, view, comparison, navigation, showMesh: meshVisible, plane: activePlane, hair,
-    hairPatches: displayHair ?? undefined, photoPatches: displayPhotos ?? undefined, skinTexture, skinRegions, references: displayReferences, anatomy,
-    referenceLayers, overlay, reveal, selection, marks }),
-    [parameters, layers, cut, view, comparison, navigation, meshVisible, activePlane, hair, displayHair, displayPhotos, skinTexture, skinRegions, displayReferences, anatomy, referenceLayers, overlay, reveal, selection, marks]);
+  const activeCut = tool === 'morphology' || tool === 'skin' ? INITIAL_CUT : cut;
+  const activeReveal = tool === 'morphology' || tool === 'skin' ? INITIAL_REVEAL : reveal;
+  const activeSkinTexture = tool === 'skin' ? skinTexture : undefined;
+  const activeSkinRegions = tool === 'skin' ? skinRegions : EMPTY_SKIN_REGIONS;
+  const state = useMemo<ViewerState>(() => ({ parameters, layers, cut: activeCut, view, comparison, navigation, showMesh: meshVisible, plane: activePlane, hair,
+    hairPatches: displayHair ?? undefined, photoPatches: displayPhotos ?? undefined, skinTexture: activeSkinTexture, skinRegions: activeSkinRegions, references: displayReferences, anatomy,
+    referenceLayers, overlay, instantLayers: tool === 'cut', reveal: activeReveal, selection, marks }),
+    [parameters, layers, activeCut, view, comparison, navigation, meshVisible, activePlane, hair, displayHair, displayPhotos, activeSkinTexture, activeSkinRegions, displayReferences, anatomy, referenceLayers, overlay, tool, activeReveal, selection, marks]);
 
   useEffect(() => {
     setError(null); setReady(false);
@@ -999,15 +993,16 @@ export function FacialSimulationViewer({ surface, photo, showMesh, plane, onMesh
     setCut({ ...INITIAL_CUT }); setView('front'); setComparison('after');
     setNavigation('orbit'); runtime.current?.reframe();
     setReveal({ ...INITIAL_REVEAL }); setSelection(null); setMarks([]);
-    if (onPlaneChange) onPlaneChange('superficial'); else setLocalPlane('superficial');
+    setLocalPlane('superficial'); setLocalMesh(false);
+    setDepthRange({ from: 'skin', to: 'bone', position: 0 });
     setHoveredZone(null);
     if (error) setAttempt(value => value + 1);
   };
   const failure = prepared.error || error;
   const chooseAnatomy = (kind: AnatomyPlane) => {
     changeDisplay(chooseAnatomyDisplay(display, kind));
+    setComparison('after');
     setSelection(null); setReveal({ ...INITIAL_REVEAL }); setCut({ ...INITIAL_CUT });
-    if (onMeshChange) onMeshChange(true); else setLocalMesh(true);
   };
   const zones = anatomy === 'skin' ? [...new Set(regionCells.map(cell => cell.label))]
     : references.find(reference => reference.kind === anatomy)?.zones?.map(zone => zone.label) ?? [];
@@ -1046,7 +1041,12 @@ export function FacialSimulationViewer({ surface, photo, showMesh, plane, onMesh
           <nav aria-label="Sección de simulación" className="grid grid-cols-2 gap-1 lg:grid-cols-1">
             {([['morphology', 'Morfología'], ['skin', 'Piel'], ['layers', 'Capas'], ['cut', 'Corte']] as const).map(([key, label]) =>
               <button type="button" key={key} aria-pressed={tool === key} aria-controls={`${id}-tool-${key}`}
-                className={`${buttonClass} min-h-10 text-left`} onClick={() => { setTool(key); if (key === 'skin') setSkinOpened(true); inspector.current?.scrollTo({ top: 0 }); }}>{label}</button>)}
+                className={`${buttonClass} min-h-10 text-left`} onClick={() => {
+                  setTool(key);
+                  if (key === 'skin') setSkinOpened(true);
+                  if (key === 'layers' || key === 'cut') setComparison('after');
+                  inspector.current?.scrollTo({ top: 0 });
+                }}>{label}</button>)}
           </nav>
           <div hidden={tool !== 'morphology'} className="mt-3 space-y-2 border-t border-white/10 pt-3">
             <h3 className="text-[11px] font-bold uppercase tracking-wider text-gold">Región morfológica</h3>
@@ -1106,9 +1106,11 @@ export function FacialSimulationViewer({ surface, photo, showMesh, plane, onMesh
                 <label key={control.key} className="block text-xs" htmlFor={`${id}-${control.key}`}>
                   <span className="flex justify-between gap-2"><span>{control.label}</span><output>{Math.round(parameters[control.key] * 100)} %</output></span>
                   <input id={`${id}-${control.key}`} type="range" min="-1" max="1" step="0.01" value={parameters[control.key]}
+                    aria-describedby={control.hint ? `${id}-${control.key}-hint` : undefined}
                     aria-valuetext={`${Math.round(parameters[control.key] * 100)} por ciento de intensidad visual`}
                     onChange={event => setParameters(current => ({ ...current, [control.key]: Number(event.target.value) }))}
                     className="mt-1 block w-full accent-gold focus-visible:outline-gold" />
+                    {control.hint ? <span id={`${id}-${control.key}-hint`} className="mt-1 block text-[11px] text-stone-400">{control.hint}</span> : null}
                 </label>
               ))}
               {group === 'Nariz' ? <div className="space-y-2 border-t border-slate-700 pt-2">
@@ -1140,6 +1142,7 @@ export function FacialSimulationViewer({ surface, photo, showMesh, plane, onMesh
               </div> : null}
             </fieldset>
           ))}
+          <p className="text-[11px] text-amber-200">{SIMULATION_NOTICE}</p>
           </div>
           <div id={`${id}-tool-skin`} hidden={tool !== 'skin'} className="space-y-3">
               {skinOpened && photo && surface ? <Suspense fallback={<p role="status" className="text-xs text-gold">Preparando revisión por zonas…</p>}>
@@ -1173,12 +1176,13 @@ export function FacialSimulationViewer({ surface, photo, showMesh, plane, onMesh
           </div>
           <div id={`${id}-tool-layers`} hidden={tool !== 'layers'} className="space-y-3">
             <AnatomyLayerControls value={display} showMesh={meshVisible}
-              onMeshChange={visible => { if (onMeshChange) onMeshChange(visible); else setLocalMesh(visible); }}
+              onMeshChange={setLocalMesh}
               onChange={value => {
-                changeDisplay(value); setSelection(null);
+                changeDisplay(value); setSelection(null); setComparison('after');
                 if (value.anatomy !== anatomy || value.skin !== display.skin && value.references !== display.references
                   || value.overlay !== overlay || value.skin.visible !== display.skin.visible
                   || value.references.muscle.visible !== referenceLayers.muscle.visible
+                  || value.references.vessels.visible !== referenceLayers.vessels.visible
                   || value.references.bone.visible !== referenceLayers.bone.visible) {
                   setReveal({ ...INITIAL_REVEAL }); setCut({ ...INITIAL_CUT });
                 }
@@ -1189,7 +1193,7 @@ export function FacialSimulationViewer({ surface, photo, showMesh, plane, onMesh
             <fieldset className="space-y-2 rounded-lg border border-slate-700 p-2">
               <legend className="px-1 text-xs">Zonas de referencia · resaltado ilustrativo</legend>
               <label className="block text-xs">Inspeccionar
-                <select className={`${selectClass} mt-1 w-full`} value={anatomy} onChange={event => { changeDisplay({ ...display, anatomy: event.target.value as AnatomyPlane }); setSelection(null); }}>
+                <select className={`${selectClass} mt-1 w-full`} value={anatomy} onChange={event => chooseAnatomy(event.target.value as AnatomyPlane)}>
                   {ANATOMY_PLANES.map(item => <option key={item.id} value={item.id}>{item.label}</option>)}
                 </select>
               </label>
@@ -1220,13 +1224,46 @@ export function FacialSimulationViewer({ surface, photo, showMesh, plane, onMesh
             </details>}
           </div>
           <div id={`${id}-tool-cut`} hidden={tool !== 'cut'}>
+            <fieldset className="mb-3 space-y-3 rounded-lg border border-white/15 p-2">
+              <legend className="px-1 text-xs text-gold">Recorrido entre capas</legend>
+              <div className="grid grid-cols-2 gap-2">
+                {(['from', 'to'] as const).map(key => <label key={key} className="block text-xs">
+                  {key === 'from' ? 'Capa inicial' : 'Capa final'}
+                  <select name={`${id}-depth-${key}`} aria-label={key === 'from' ? 'Capa inicial' : 'Capa final'}
+                    className={`${selectClass} mt-1 w-full`} value={depthRange[key]}
+                    onChange={event => {
+                      const kind = event.target.value as AnatomyPlane;
+                      const next = { ...depthRange, [key]: kind, position: 0 };
+                      const other = key === 'from' ? 'to' : 'from';
+                      if (next[other] === kind) next[other] = depthRange[key];
+                      setDepthRange(next);
+                      setReveal({ ...INITIAL_REVEAL }); setSelection(null); setComparison('after');
+                      changeDisplay(depthPeelDisplay(display, 0, next.from, next.to));
+                    }}>
+                    {ANATOMY_PLANES.map(layer => <option key={layer.id} value={layer.id}>{layer.label}</option>)}
+                  </select>
+                </label>)}
+              </div>
+              <label className="block text-xs">Avance de capa inicial a final · {Math.round(depthRange.position * 100)} %
+                <input name={`${id}-depth-progress`} aria-label="Recorrido entre capas" type="range" min="0" max="1" step="0.005"
+                  value={depthRange.position} onChange={event => {
+                    const position = Number(event.target.value);
+                    setDepthRange(current => ({ ...current, position }));
+                    setReveal({ ...INITIAL_REVEAL }); setSelection(null); setComparison('after');
+                    changeDisplay(depthPeelDisplay(display, position, depthRange.from, depthRange.to));
+                  }} className="mt-1 block w-full accent-gold focus-visible:outline-gold" />
+              </label>
+              <p className="text-[11px] text-stone-400">Revela las referencias intermedias en ambos sentidos. Conserva el plano de corte libre; las arterias se muestran con contexto muscular.</p>
+            </fieldset>
             <fieldset className="mb-3 space-y-3 rounded-lg border border-slate-700 p-2">
               <legend className="px-1 text-xs">Descubrir referencias desde la punta nasal</legend>
               <label className="block text-xs">Modo de corte
                 <select className={`${selectClass} mt-1 w-full`} value={reveal.mode} disabled={!references.some(item => item.kind === 'muscle') || !references.some(item => item.kind === 'bone')}
                   onChange={event => {
                     setReveal(current => ({ ...current, mode: event.target.value as MaskReveal['mode'], progress: 0 }));
-                    setCut({ ...INITIAL_CUT }); changeDisplay({ ...display, skin: initialAnatomyDisplay().skin, overlay: false, anatomy: 'muscle' }); setSelection(null);
+                    setCut({ ...INITIAL_CUT });
+                    changeDisplay({ ...chooseAnatomyDisplay(display, 'muscle'), skin: initialAnatomyDisplay().skin });
+                    setSelection(null); setComparison('after');
                   }}>
                   <option value="none">Sin desvelado</option><option value="progressive">Progresivo: piel → músculo → hueso</option><option value="compare">Comparar dos capas</option>
                 </select>

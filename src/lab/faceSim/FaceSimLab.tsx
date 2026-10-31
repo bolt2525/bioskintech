@@ -1,8 +1,8 @@
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Download, ImagePlus, Trash2, Wand2, Undo2, FileJson, ScanFace, Box, Image as ImageIcon, Move3d, MousePointer2, Crosshair, Brush, Spline, Slash, ArrowUpRight, Circle, Square, Fan, Grid3x3, Leaf, Layers, Scissors, Columns2, Syringe, ListChecks, Eye, Sparkles, UserRound, Gauge, Magnet, Type, Ruler, type LucideIcon } from 'lucide-react';
 import injectablesCatalog from '../../components/admin/ficha-clinica/data/injectables.json';
 import Clinical3DViewer, {
-  type AnatomicalSurfaceOverlay, type DrawingTool, type FreehandLine, type Marker3D, type SurfaceShape,
+  type AnatomicalSurfaceOverlay, type ClinicalCameraSync, type DrawingTool, type FreehandLine, type Marker3D, type SurfaceShape,
 } from '../../components/admin/ficha-clinica/components/Clinical3DViewer';
 import {
   AUTO_ZONE, FACE_OVAL, LANDMARK_ANCHORS, MAX_EFFECTS, REGISTRATION_ANCHORS, SIM_MODES, autoRegistration, correctPoints, defaultFrame,
@@ -16,7 +16,7 @@ import { buildRegionCells, regionCellAt, regionCellPositions, regionPlanePositio
 import { DEFAULT_HAIR, buildPhotoHairPatches, type EstimatedHairSettings, type PhotoHairPatch } from './estimatedHair';
 import type { EstimatedHeadSurface } from './estimatedHead';
 import type { PhotoSurfacePatch } from './multiViewHead';
-import { assessFaceCapture, compareFaceGeometry } from './photoValidation';
+import { assessFaceCapture, classifyFacePose, compareFaceGeometry } from './photoValidation';
 import { DETECTION_RETRIES, detectionImage, refineLandmarksByCrop, restoreDetectionPoint } from './detection';
 import { Tooltip } from '../../components/ui/Tooltip';
 import type { SkinAppearanceVisualChannel, SkinAppearanceResult } from './skinAppearance';
@@ -86,6 +86,48 @@ interface Renderer {
   draw: (fx: ReturnType<typeof buildIllustrativeEffects>, aspect: number, split: number) => void;
   setPreview: (canvas: HTMLCanvasElement | null) => void;
   dispose: () => void;
+}
+
+export function CaptureComparison({ mode, split, before, after }: {
+  mode: 'slider' | 'doble'; split: number; before: ReactNode; after: ReactNode;
+}) {
+  return mode === 'doble'
+    ? <div aria-label="Comparación Antes y Después" className="grid min-w-0 gap-3 sm:grid-cols-2">
+      <div className="min-w-0"><p className="p-2 text-center text-xs font-semibold">Antes</p>{before}</div>
+      <div className="min-w-0"><p className="p-2 text-center text-xs font-semibold">Después</p>{after}</div>
+    </div>
+    : <div aria-label="Comparación con deslizador" className="relative min-w-0">
+      {after}
+      <div className="absolute inset-0" style={{ clipPath: `inset(0 ${100 - split * 100}% 0 0)` }}>{before}</div>
+      <div className="pointer-events-none absolute inset-y-0 border-l-2 border-white" style={{ left: `${split * 100}%` }} />
+      <div className="pointer-events-none absolute inset-x-3 top-3 flex justify-between text-xs font-bold">
+        <span className="rounded bg-slate-950/80 px-2 py-1 text-white">Antes</span><span className="rounded bg-slate-950/80 px-2 py-1 text-white">Después</span>
+      </div>
+    </div>;
+}
+
+function ComparisonPhoto({ source, prepared, after }: {
+  source: HTMLCanvasElement; prepared: HTMLCanvasElement | null; after: boolean;
+}) {
+  const ref = useRef<HTMLCanvasElement>(null);
+  const errorState = useState('');
+  const error = errorState[0], setError = errorState[1];
+  useEffect(() => {
+    if (!ref.current) return;
+    let renderer: Renderer | null = null;
+    try {
+      renderer = createRenderer(ref.current, source);
+      if (!renderer) throw new Error('WebGL no disponible para la comparación.');
+      renderer.setPreview(after ? prepared : null);
+      renderer.draw(buildIllustrativeEffects([], { ...DEFAULT_PREVIEW, after }, source.width / source.height), source.width / source.height, after ? 0 : 1);
+      setError('');
+    } catch (error) { setError(error instanceof Error ? error.message : 'No se pudo renderizar la comparación.'); }
+    return () => renderer?.dispose();
+  }, [source, prepared, after, setError]);
+  return <div style={{ aspectRatio: String(source.width / source.height) }} className="relative mx-auto max-h-[70vh] overflow-hidden rounded-xl">
+    <canvas ref={ref} aria-label={after ? 'Foto Después' : 'Foto Antes'} className="h-full w-full" />
+    {error && <p role="alert" className="absolute inset-0 bg-slate-950 p-4 text-sm text-white">{error}</p>}
+  </div>;
 }
 
 function createRenderer(canvas: HTMLCanvasElement, img: HTMLCanvasElement): Renderer | null {
@@ -295,6 +337,13 @@ interface Slot {
   registrationSource?: 'auto' | 'manual';
 }
 interface Snapshot { markers: Marker3D[]; lines: FreehandLine[]; shapes: SurfaceShape[]; meta: Record<string, Meta>; photoEls: PhotoEl[]; bindings: AnatomicalBindings; quickRecord: QuickRecordSettings }
+interface PreparedCapture {
+  file: File;
+  canvas: HTMLCanvasElement;
+  detected: Awaited<ReturnType<typeof detectFrame>>;
+  digest: string;
+  reason: string;
+}
 interface SkinReview {
   canvas: HTMLCanvasElement;
   width: number;
@@ -313,6 +362,25 @@ function pixelsUrl(pixels: Uint8ClampedArray, width: number, height: number): st
   return canvas.toDataURL('image/png');
 }
 
+async function captureImage(file: File): Promise<HTMLCanvasElement> {
+  const bitmap = await createImageBitmap(file);
+  try {
+    if (bitmap.width * bitmap.height > MAX_IMAGE_PIXELS) throw new Error('La imagen supera el límite de 40 megapíxeles.');
+    const scale = Math.min(1, MAX_SIDE / Math.max(bitmap.width, bitmap.height));
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.round(bitmap.width * scale); canvas.height = Math.round(bitmap.height * scale);
+    const context = canvas.getContext('2d');
+    if (!context) throw new Error('No se pudo preparar la imagen en este navegador.');
+    context.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+    return canvas;
+  } finally { bitmap.close(); }
+}
+
+async function captureDigest(file: File): Promise<string> {
+  const hash = await crypto.subtle.digest('SHA-256', await file.arrayBuffer());
+  return Array.from(new Uint8Array(hash), b => b.toString(16).padStart(2, '0')).join('');
+}
+
 function illustrativeSkinMask(map: FaceRegionMap, width: number, height: number): Uint8Array {
   const coverage = rasterizeFaceRegions(map, width, height, () => '#ffffff', triangle =>
     !map.triangles.slice(triangle * 3, triangle * 3 + 3).some(id => /ocular|labio|comisura|ceja/i.test(map.labels[id])));
@@ -326,6 +394,7 @@ const segDist = (p: P2, a: P2, b: P2, k: number) => {
 };
 
 export default function FaceSimLab() {
+  const comparisonCamera = useRef<ClinicalCameraSync>({});
   const [photoCanvas, setPhotoCanvas] = useState<HTMLCanvasElement | null>(null);
   const rendererRef = useRef<Renderer | null>(null);
   const dragRef = useRef<string | null>(null);
@@ -334,6 +403,10 @@ export default function FaceSimLab() {
   const detectionQueueRef = useRef<Promise<void>>(Promise.resolve());
   const [photos, setPhotos] = useState<Partial<Record<PhotoSlotId, Slot>>>({});
   const [pendingPhotos, setPendingPhotos] = useState<Partial<Record<PhotoSlotId, boolean>>>({});
+  const [batchBusy, setBatchBusy] = useState(false);
+  const [captureProgress, setCaptureProgress] = useState('');
+  const [unassignedCaptures, setUnassignedCaptures] = useState<PreparedCapture[]>([]);
+  const captureDigests = useRef<Partial<Record<PhotoSlotId, string>>>({});
   const [view, setView] = useState<ViewKind>('frontal');
   const [renderTick, setRenderTick] = useState(0);
   const [workMode, setWorkMode] = useState<WorkMode>('3d');
@@ -359,6 +432,7 @@ export default function FaceSimLab() {
   const [dose, setDose] = useState(0);
   const [preview, setPreview] = useState({ ...DEFAULT_PREVIEW, after: false });
   const [split, setSplit] = useState(0);
+  const [comparison, setComparison] = useState<'actual' | 'slider' | 'doble'>('actual');
   const [correct, setCorrect] = useState({ enabled: false, linear: true, mirror: true, tolerance: 0.02 });
   const [flipX, setFlipX] = useState(false);
   const [showMarks, setShowMarks] = useState(true);
@@ -437,6 +511,7 @@ export default function FaceSimLab() {
   const [skinRegion, setSkinRegion] = useState<'all' | 'tzone' | 'cheeks'>('all');
   const [appearanceGlb, setAppearanceGlb] = useState<{ personal: PersonalModel; buffer: ArrayBuffer } | null>(null);
   const [genericPreviewGlb, setGenericPreviewGlb] = useState<ArrayBuffer | null>(null);
+  const [genericBeforeGlb, setGenericBeforeGlb] = useState<ArrayBuffer | null>(null);
   const [genericPreviewAfter, setGenericPreviewAfter] = useState<boolean | null>(null);
   const [meshVisible, setMeshVisible] = useState(true);
   const [regionPlane, setRegionPlane] = useState<RegionPlane>('superficial');
@@ -745,7 +820,7 @@ export default function FaceSimLab() {
   }, [photos]);
   const incompatiblePhotos = photoChecks.blocking;
   const captureBlocked = unreviewedPhotos.length > 0 || incompatiblePhotos.length > 0;
-  const hasPendingPhotos = Object.values(pendingPhotos).some(Boolean);
+  const hasPendingPhotos = batchBusy || Object.values(pendingPhotos).some(Boolean);
   const captureSource = photos.frontal?.landmarks ? 'frontal' : photos[view]?.landmarks ? view : VIEWS.find(v => photos[v.id]?.landmarks)?.id;
   const curMeta = (): Meta => ({ mode, dose, zone, product: product.trim() || undefined });
 
@@ -843,7 +918,8 @@ export default function FaceSimLab() {
             }));
         });
         const rgb = Float32Array.from({ length: positions.length }, (_, i) => [0.65, 0.47, 0.37][i % 3]);
-        const result = previewSurface(positions, uvs, samples, preview, (right - left) / (top - bottom), rgb);
+        for (const after of comparison === 'actual' ? [preview.after] : [false, true]) {
+        const result = previewSurface(positions, uvs, samples, { ...preview, after }, (right - left) / (top - bottom), rgb);
         const geometry = new THREE.BufferGeometry();
         geometry.setAttribute('position', new THREE.BufferAttribute(result.positions, 3));
         geometry.setAttribute('color', new THREE.BufferAttribute(result.rgb!, 3));
@@ -855,15 +931,17 @@ export default function FaceSimLab() {
         try {
           const buffer = await new GLTFExporter().parseAsync(group, { binary: true });
           if (active && buffer instanceof ArrayBuffer) {
-            setGenericPreviewGlb(buffer); setGenericPreviewAfter(preview.after);
+            if (!after) setGenericBeforeGlb(buffer);
+            if (after === preview.after) { setGenericPreviewGlb(buffer); setGenericPreviewAfter(after); }
           }
         } finally { geometry.dispose(); material.dispose(); }
+        }
       } catch (error) {
         if (active) setStatus(`No se pudo preparar el preview genérico: ${error instanceof Error ? error.message : 'error WebGL'}.`);
       }
     })();
     return () => { active = false; };
-  }, [workspace, workMode, modelKind, splitAnnotations, bindings, previewModes, preview, calibrating]);
+  }, [workspace, workMode, modelKind, splitAnnotations, bindings, previewModes, preview, calibrating, comparison]);
 
   // Renderer por foto activa
   const photoSource = slot?.canvas;
@@ -1054,9 +1132,10 @@ export default function FaceSimLab() {
     } finally { if (request === hairRequest.current) setHairBusy(false); }
   };
 
-  const loadFile = async (file: File, target: PhotoSlotId) => {
+  const loadFile = async (file: File, target: PhotoSlotId, prepared?: PreparedCapture) => {
     if (!file.type.startsWith('image/')) { setStatus('El archivo debe ser una imagen.'); return; }
     if (file.size > MAX_IMAGE_BYTES) { setStatus('La imagen supera el límite de 20 MiB.'); return; }
+    if (photos[target] && !window.confirm(`Ya existe ${PHOTO_SLOTS.find(v => v.id === target)?.label}. ¿Reemplazarla? La foto anterior se retirará; el registro se conserva.`)) return;
     personalRequestRef.current++;
     setBuildingPersonal(false);
     const requestId = (uploadRequestRef.current[target] ?? 0) + 1;
@@ -1064,22 +1143,7 @@ export default function FaceSimLab() {
     const targetView = target === 'extra_a' || target === 'extra_b' ? 'frontal' : target;
     setPendingPhotos(p => ({ ...p, [target]: true }));
     try {
-      let bmp: ImageBitmap | null = null;
-      let c: HTMLCanvasElement;
-      try {
-        bmp = await createImageBitmap(file);
-        if (bmp.width * bmp.height > MAX_IMAGE_PIXELS) { setStatus('La imagen supera el límite de 40 megapíxeles.'); return; }
-        const k = Math.min(1, MAX_SIDE / Math.max(bmp.width, bmp.height));
-        c = document.createElement('canvas'); c.width = Math.round(bmp.width * k); c.height = Math.round(bmp.height * k);
-        const context = c.getContext('2d');
-        if (!context) { setStatus('No se pudo preparar la imagen en este navegador.'); return; }
-        context.drawImage(bmp, 0, 0, c.width, c.height);
-      } catch {
-        setStatus('No se pudo decodificar la imagen. Selecciona otra fotografía.');
-        return;
-      } finally {
-        bmp?.close();
-      }
+      const c = prepared?.canvas ?? await captureImage(file);
       if (requestId !== uploadRequestRef.current[target]) return;
       const replacedPersonal = !!personal;
       if (replacedPersonal) { setPersonal(null); setModelKind('generico'); }
@@ -1099,11 +1163,12 @@ export default function FaceSimLab() {
       try {
         if (requestId !== uploadRequestRef.current[target]) return;
         setStatus(`Detectando rostro en ${label}…`);
-        detected = await detectFrame(c);
+        detected = prepared?.detected ?? await detectFrame(c);
       } finally {
         release();
       }
       if (requestId !== uploadRequestRef.current[target]) return;
+      captureDigests.current[target] = prepared?.digest ?? await captureDigest(file);
       if (!detected.frame) {
         setPhotos(p => p[target]?.canvas === c ? { ...p, [target]: { ...p[target]!, detectionError: detected.reason } } : p);
         setStatus(`${detected.reason} Sin rostro detectado no se permite marcar ni proyectar sobre esta foto. Usa una foto nítida con el rostro descubierto.${personalNote}`);
@@ -1112,18 +1177,28 @@ export default function FaceSimLab() {
       const auto = target === 'extra_a' || target === 'extra_b' ? null : autoRegistration(target, detected.frame, c.width / c.height, flipX);
       const accepted = isRegistrationAccepted(auto);
       const previewUrl = c.toDataURL('image/jpeg', 0.6);
+      const triangles = await faceTriangles();
+      const proposal = proposeForeheadBoundary(detected.landmarks!, c.getContext('2d')!.getImageData(0, 0, c.width, c.height));
+      const proposed = proposal.point ? extendVisibleForehead(detected.landmarks!, proposal.point, c.width / c.height, triangles) : null;
+      const automaticContour = !!proposed && proposal.reliable === true && !detected.captureWarnings?.length;
+      const landmarks = automaticContour ? proposed! : detected.landmarks!;
       setPhotos(p => (p[target]?.canvas === c ? {
         ...p,
         [target]: {
-          ...p[target]!, frame: detected.frame!, landmarks: detected.landmarks, detectedLandmarks: detected.detectedLandmarks,
-          contourAdjusted: detected.contourAdjusted, regionMap: detected.regionMap, pose: detected.pose, modelAnchors: undefined,
+          ...p[target]!, frame: frameFromLandmarks(landmarks), landmarks, detectedLandmarks: detected.detectedLandmarks,
+          contourAdjusted: detected.contourAdjusted, regionMap: automaticContour ? buildFaceRegionMap(landmarks, triangles, c.width / c.height, genericFaceAtlas.positions) : detected.regionMap, pose: detected.pose, modelAnchors: undefined,
           captureWarnings: detected.captureWarnings, captureConfirmed: false,
+          foreheadReviewed: automaticContour,
           previewUrl,
           ...(accepted ? { registration: auto, registrationFlip: flipX, registrationSource: 'auto' as const } : { registration: undefined }),
         },
       } : p));
-      if (uploadRequestRef.current[target] === requestId) setBoundaryReview(queue => [...queue.filter(id => id !== target), target]);
-      setStatus(`Rostro detectado en ${label}. Revisa el límite de la frente propuesto y confirma la captura.`
+      if (automaticContour && proposal.point) rememberForehead(target, {
+        canvas: c, aspect: c.width / c.height, frame: detected.frame,
+        landmarks: detected.landmarks, detectedLandmarks: detected.detectedLandmarks,
+      }, proposal.point);
+      if (uploadRequestRef.current[target] === requestId) setBoundaryReview(queue => automaticContour ? queue.filter(id => id !== target) : [...queue.filter(id => id !== target), target]);
+      setStatus(`Rostro detectado en ${label}. ${automaticContour ? 'Contorno válido aceptado; puedes reeditarlo. Confirma manualmente la persona.' : 'Hay dudas: revisa el contorno y confirma la captura.'}`
         + ` Contorno: ${detected.contourAdjusted ?? 0} referencias ajustadas por borde visible; revisa mentón y sienes en «Editar contorno».` + personalNote);
     } catch (error) {
       if (requestId !== uploadRequestRef.current[target]) return;
@@ -1138,7 +1213,49 @@ export default function FaceSimLab() {
     }
   };
 
+  const loadCaptures = async (files: File[]) => {
+    if (files.length > 3) { setCaptureProgress('Selecciona como máximo 3 fotos; no se cargó ninguna.'); return; }
+    if (!files.length || batchBusy || hasPendingPhotos) return;
+    setBatchBusy(true);
+    const occupied = new Set(Object.keys(photos));
+    const digests = new Set([...Object.values(captureDigests.current), ...unassignedCaptures.map(c => c.digest)]);
+    const messages: string[] = [];
+    try {
+      for (const [index, file] of files.entries()) {
+        setCaptureProgress(`Preparando ${index + 1}/${files.length} · ${file.name}`);
+        try {
+          if (!file.type.startsWith('image/') || file.size > MAX_IMAGE_BYTES) throw new Error('Usa una imagen de hasta 20 MiB.');
+          const digest = await captureDigest(file);
+          if (digests.has(digest)) { messages.push(`${file.name}: foto repetida, omitida.`); continue; }
+          const canvas = await captureImage(file);
+          setCaptureProgress(`Detectando pose ${index + 1}/${files.length} · ${file.name}`);
+          const detected = await detectFrame(canvas);
+          const pose = detected.landmarks && !detected.captureWarnings?.some(w => w.includes('recuperada'))
+            ? classifyFacePose({ landmarks: detected.detectedLandmarks ?? detected.landmarks, aspect: canvas.width / canvas.height, pose: detected.pose })
+            : { view: null, reason: detected.reason || 'Detección recuperada: asigna la vista manualmente.' };
+          const candidate: PreparedCapture = { file, canvas, detected, digest, reason: pose.reason };
+          digests.add(digest);
+          if (pose.view && !occupied.has(pose.view)) {
+            occupied.add(pose.view);
+            await loadFile(file, pose.view, candidate);
+            messages.push(`${file.name}: ${pose.reason}`);
+          } else {
+            candidate.reason = pose.view ? `${pose.reason} Ya hay una foto de esta vista/mismo lado. No se reemplazó.` : pose.reason;
+            setUnassignedCaptures(current => [...current, candidate]);
+            messages.push(`${file.name}: pendiente de asignación manual.`);
+          }
+        } catch (error) {
+          messages.push(`${file.name}: ${error instanceof Error ? error.message : 'No se pudo analizar la imagen.'}`);
+        }
+      }
+    } finally {
+      setBatchBusy(false);
+      setCaptureProgress(`${messages.join(' ')} ${!occupied.has('frontal') ? 'Sugerencia: añade una frontal con la frente descubierta.' : ''}`);
+    }
+  };
+
   const removePhoto = (id: PhotoSlotId) => {
+    delete captureDigests.current[id];
     uploadRequestRef.current[id] = (uploadRequestRef.current[id] ?? 0) + 1;
     personalRequestRef.current++;
     setBuildingPersonal(false);
@@ -1705,6 +1822,7 @@ export default function FaceSimLab() {
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
   const beginEditing = () => {
+    setComparison('actual'); setSplit(0);
     setPreview(p => p.after ? { ...p, after: false } : p);
     setDraft(null); dragRef.current = null;
     setShowMarks(true); setShowTraces(true);
@@ -1712,6 +1830,7 @@ export default function FaceSimLab() {
     setStatus('Marcación y edición sobre Antes (geometría original). Después es solo inspección: así la posición visible coincide con el registro común.');
   };
   const comparePreview = (after: boolean) => {
+    if (!after) { setComparison('actual'); setSplit(0); }
     setPreview(p => ({ ...p, after })); setDraft(null); dragRef.current = null;
     if (after) {
       setTool3d('navigate'); setPhotoInteraction('select');
@@ -1758,7 +1877,8 @@ export default function FaceSimLab() {
   const highlightedIds = useMemo(() => selectedId ? [selectedId] : [], [selectedId]);
   const selectedRow = selectedId ? rows.find(r => r.id === selectedId) : undefined;
 
-  const renderViewer = (source: 'generico' | 'personal') => {
+  const renderViewer = (source: 'generico' | 'personal', comparing?: 'before' | 'after') => {
+    const after = comparing ? comparing === 'after' : preview.after;
     const original = source === 'generico';
     const annotations = original ? genericAnnotations : personalAnnotations;
     const visibleBindings = original ? bindingsOnLayer(bindings, genericLayer) : bindingsOnLayer(surfaceBindings, personalLayer);
@@ -1775,7 +1895,7 @@ export default function FaceSimLab() {
         : item.annotationText || 'Nota', color: item.strokeColor ?? SIM_MODES[item.mode].color }] : [];
     }) : [];
     const coverageLines: FreehandLine[] = [];
-    if (preview.after && preview.showCoverage) {
+    if (after && preview.showCoverage) {
       const height = Math.abs(genericFaceAtlas.positions[10 * 3 + 1] - genericFaceAtlas.positions[152 * 3 + 1]);
       const landmarks = Array.from({ length: 468 }, (_, i) => ({ x: genericFaceAtlas.positions[i * 3], y: genericFaceAtlas.positions[i * 3 + 1] }));
       for (const [id, binding] of Object.entries(bindings)) {
@@ -1800,9 +1920,9 @@ export default function FaceSimLab() {
       }
     }
     // Antes conserva la cabeza completa; Después usa el atlas deformable también en vista dividida.
-    const splitHead = original && splitAnnotations && workspace === 'simulate' && !calibrating && !preview.after;
-    const fullHead = splitHead || original && workspace === 'simulate' && !calibrating && !preview.after;
-    const ready = fullHead || (original ? !!genericPreviewGlb && (calibrating || genericPreviewAfter === preview.after) : !!personal);
+    const splitHead = !comparing && original && splitAnnotations && workspace === 'simulate' && !calibrating && !after;
+    const fullHead = !comparing && (splitHead || original && workspace === 'simulate' && !calibrating && !after);
+    const ready = fullHead || (original ? comparing === 'before' ? !!genericBeforeGlb : !!genericPreviewGlb && (calibrating || genericPreviewAfter === after) : !!personal);
     return <section key={source} aria-label={original ? 'Modelo genérico 3D' : 'Foto personal en 3D'}
       onPointerDownCapture={() => { if (splitAnnotations) setModelKind(source); }}
       onFocusCapture={() => { if (splitAnnotations) setModelKind(source); }}
@@ -1815,13 +1935,14 @@ export default function FaceSimLab() {
       </h2>
       {overlayMode === 'attention' && <p className="bg-amber-100 px-3 py-2 text-xs font-semibold text-amber-950">SIMULACIÓN · No detecta vasos ni certifica zonas seguras.</p>}
       {ready ? <Clinical3DViewer
-        key={`${source}-${preview.after && !calibrating && !splitHead ? 'after' : 'before'}-${splitHead ? 'split' : fullHead ? 'head' : 'atlas'}`}
+        cameraSync={comparing ? comparisonCamera.current : undefined}
+        key={`${source}-${after && !calibrating && !splitHead ? 'after' : 'before'}-${splitHead ? 'split' : fullHead ? 'head' : 'atlas'}`}
         markers={[]} freehandLines={[...(showTraces ? annotations.lines : []), ...coverageLines]} surfaceShapes={[]}
         editablePoints={editableBySource[source].filter(point => meta[point.id]?.annotationKind === 'text' ? showTraces : showMarks)}
         annotationLabels={labels}
         annotationSnap={annotationSnap} labInteraction cancellationToken={cancellationToken}
         pointMode="none" selectedPointId={selectedId ?? undefined}
-        onEditablePointClicked={id => { setSelectedId(id); beginEditing(); }}
+        onEditablePointClicked={id => { if (comparing) return; setSelectedId(id); beginEditing(); }}
         onEditablePointMoved={(id, point) => {
           if (original && !bindings[id] && markers.some(m => m.id === id)) {
             if (!isOutsideMask(point)) { blockedMark(); return; }
@@ -1832,7 +1953,7 @@ export default function FaceSimLab() {
           if (!address) { blockedMark(); return; }
           moveRegisteredPoint(id, address, source);
         }}
-        selectedPathology="filler" skipConfirmation readOnly={workMode !== '3d' || tool3d === 'navigate' || preview.after && !calibrating || workspace !== 'simulate' && !calibrating}
+        selectedPathology="filler" skipConfirmation readOnly={!!comparing || workMode !== '3d' || tool3d === 'navigate' || after && !calibrating || workspace !== 'simulate' && !calibrating}
         occludeAnnotations={!anatomyDisplay.overlay && anatomyDisplay.skin.visible && anatomyDisplay.skin.opacity >= 0.99
           && (!original || anatomyDisplay.anatomy !== 'skin')} showMarkerLabels={false}
         anatomicalOverlay={original ? annotationOverlays.generic : annotationOverlays.personal}
@@ -1843,10 +1964,10 @@ export default function FaceSimLab() {
         } : undefined}
         onEstimatedSurfaceInteraction={blockedMark}
         selectedElementId={selectedId}
-        onElementSelected={id => { setSelectedId(id); if (id) beginEditing(); }}
+        onElementSelected={id => { if (comparing) return; setSelectedId(id); if (id) beginEditing(); }}
         highlightedPointIds={highlightedIds}
         onMarkerPlaced={(m: Marker3D) => onMarker(m, source)}
-        activeTool={workspace !== 'simulate' || preview.after || workMode !== '3d' || tool3d === 'navigate' || tool3d === 'select' || tool3d === 'point' || tool3d === 'text' ? 'none' : tool3d === 'ruler' ? 'straight-line' : tool3d}
+        activeTool={comparing || workspace !== 'simulate' || after || workMode !== '3d' || tool3d === 'navigate' || tool3d === 'select' || tool3d === 'point' || tool3d === 'text' ? 'none' : tool3d === 'ruler' ? 'straight-line' : tool3d}
         pendingBrushColor={color} pendingBrushThickness={LINE_THICKNESS}
         onFreehandLineComplete={l => onLine(l, source)}
         onShapeComplete={s => onShape(s, source)}
@@ -1855,7 +1976,7 @@ export default function FaceSimLab() {
           if (current) onLine({ ...current, points, segments }, source, true);
         }}
         haShapeConfig={haConfig} cameraPreset={splitHead ? 'default' : fullHead ? 'face' : 'face-surface'}
-        modelData={original ? fullHead ? null : genericPreviewGlb : personal ? preview.after && appearanceGlb?.personal === personal ? appearanceGlb.buffer : personal.glb : null}
+        modelData={original ? fullHead ? null : comparing === 'before' ? genericBeforeGlb : genericPreviewGlb : personal ? after && appearanceGlb?.personal === personal ? appearanceGlb.buffer : personal.glb : null}
         pointMarkerScale={0.55} height={VIEWER_HEIGHT}
         interactionHint={tool3d === 'navigate' || workMode === 'foto' ? 'Arrastra para rotar'
           : calibrating && original ? `Referencia ${anchorName(slot?.modelAnchors?.length ?? 0)}`
@@ -1902,7 +2023,7 @@ export default function FaceSimLab() {
       <label className={`flex cursor-pointer flex-col items-center gap-1 rounded-lg border px-1 py-2 text-center text-[11px] font-semibold focus-within:ring-2 focus-within:ring-amber-400 ${view === v.id ? 'border-[#b8944d] bg-amber-50' : 'border-slate-200'} ${photos[v.id] ? 'text-slate-800' : 'text-slate-500'}`}>
         <ImagePlus className="h-4 w-4" aria-hidden="true" />
         {v.label}{pendingPhotos[v.id] ? ' …' : photos[v.id]?.landmarks ? ' ✓' : photos[v.id] ? ' !' : ''}
-        <input type="file" accept="image/*" aria-label={`Cargar ${v.label}`} className="sr-only"
+        <input type="file" accept="image/*" disabled={batchBusy} aria-label={`Cargar ${v.label}`} className="sr-only"
           onChange={e => { const f = e.target.files?.[0]; if (f) void loadFile(f, v.id); e.target.value = ''; }} />
       </label>
       {(photos[v.id] || pendingPhotos[v.id]) && (
@@ -2028,9 +2149,17 @@ export default function FaceSimLab() {
               <PanelSection title="Antes / después" icon={Eye}>
                 <div className="grid grid-cols-2 gap-1 rounded-xl bg-black/40 p-1">{([false, true] as const).map(after => <button key={String(after)} type="button" aria-pressed={preview.after === after}
                   onClick={() => comparePreview(after)} className="admin-focus-ring min-h-9 rounded-lg text-xs font-bold text-stone-400 aria-pressed:bg-stone-800 aria-pressed:text-gold">{after ? 'Después' : 'Antes'}</button>)}</div>
-                {workMode === 'foto' && <label className="flex items-center gap-2 text-[11px] text-stone-400"><Columns2 className="h-3.5 w-3.5" aria-hidden="true" />
-                  <input aria-label="Comparación dividida · solo foto" type="range" min={0} max={1} step={0.01} value={split} onChange={e => setSplit(Number(e.target.value))} className="flex-1 accent-gold" />
+                <div className="grid grid-cols-3 gap-1">
+                  {(['actual', 'slider', 'doble'] as const).map(value => <button key={value} type="button" aria-pressed={comparison === value}
+                    onClick={() => { setComparison(value); setSplit(value === 'slider' ? 0.5 : 0); if (value !== 'actual') comparePreview(true); }}
+                    className="admin-focus-ring min-h-9 rounded border border-white/10 px-1 text-[11px] aria-pressed:bg-stone-700">
+                    {value === 'actual' ? 'Vista actual' : value === 'slider' ? 'Deslizador' : 'Doble visor'}
+                  </button>)}
+                </div>
+                {comparison === 'slider' && <label className="flex items-center gap-2 text-[11px] text-stone-400">Antes
+                  <input aria-label="Comparación Antes / Después" type="range" min={0} max={1} step={0.01} value={split} onChange={e => setSplit(Number(e.target.value))} className="min-w-0 flex-1 accent-gold" />Después
                 </label>}
+                {comparison !== 'actual' && <p className="text-[11px] text-stone-400">Comparación limpia de efectos; dosis y registro intactos. Para editar vuelve a Vista actual. {workMode === '3d' ? 'Cámara sincronizada: giro, desplazamiento y zoom.' : 'Fotos alineadas sobre los mismos píxeles.'}</p>}
                 <p className="text-[11px] leading-relaxed text-stone-500">Los filtros se aplican sobre la máscara personal y la foto en «Después». Marcar se pausa mientras lo ves.</p>
               </PanelSection>
               <PanelSection title="Filtros por inyectable" icon={Sparkles}>
@@ -2067,6 +2196,31 @@ export default function FaceSimLab() {
         {workspace === 'capture' && <>
         <div>
           <span className="mb-1 block text-xs font-semibold uppercase text-slate-500">Fotos del paciente</span>
+          <label className="admin-focus-ring mb-2 flex cursor-pointer items-center justify-center gap-2 rounded-lg bg-slate-800 px-3 py-2 text-xs font-semibold text-white focus-within:ring-2 focus-within:ring-sky-400">
+            <ImagePlus className="h-4 w-4" aria-hidden="true" />{batchBusy ? 'Analizando capturas…' : 'Seleccionar hasta 3 fotos'}
+            <input type="file" multiple accept="image/*" disabled={hasPendingPhotos} aria-label="Seleccionar hasta 3 fotos" className="sr-only"
+              onChange={e => { const files = Array.from(e.target.files ?? []); e.target.value = ''; void loadCaptures(files); }} />
+          </label>
+          <p className="mb-2 text-xs text-slate-600">Se clasifican por pose: frontal y laterales A/B. Sin pose fiable podrás asignar la vista.</p>
+          {captureProgress && <p role="status" aria-live="polite" className="mb-2 break-words text-xs text-slate-700">{captureProgress}</p>}
+          {unassignedCaptures.map(candidate => <div key={candidate.digest} className="mb-2 rounded-lg border border-amber-200 bg-amber-50 p-2 text-xs">
+            <p className="break-words font-semibold">{candidate.file.name}</p><p>{candidate.reason}</p>
+            <label className="mt-1 block">Asignar sin reemplazar
+              <select aria-label={`Asignar vista · ${candidate.file.name}`} value="" disabled={hasPendingPhotos}
+                className="admin-focus-ring mt-1 w-full rounded border bg-white p-2"
+                onChange={e => {
+                  const target = e.target.value as PhotoSlotId;
+                  if (!target || photos[target]) return;
+                  void loadFile(candidate.file, target, candidate);
+                  setUnassignedCaptures(current => current.filter(c => c.digest !== candidate.digest));
+                }}>
+                <option value="">Elegir vista…</option>
+                {PHOTO_SLOTS.map(v => <option key={v.id} value={v.id} disabled={!!photos[v.id]}>{v.label}{photos[v.id] ? ' · ocupada' : ''}</option>)}
+              </select>
+            </label>
+            <button type="button" onClick={() => setUnassignedCaptures(current => current.filter(c => c.digest !== candidate.digest))}
+              className="admin-focus-ring mt-1 rounded border px-2 py-1">Descartar {candidate.file.name}</button>
+          </div>)}
           <div className="grid grid-cols-3 gap-1">
             {VIEWS.map(photoInput)}
           </div>
@@ -2105,7 +2259,7 @@ export default function FaceSimLab() {
           className="admin-focus-ring w-full rounded-xl border border-sky-200 bg-sky-50 px-3 py-2 text-sm font-semibold">Revisar frente, sienes y mentón</button>}
         {slot?.landmarks && <details className="space-y-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs">
           <summary className="cursor-pointer font-semibold">Frente y línea del cabello · revisar cobertura</summary>
-          <p>{slot.foreheadReviewed ? 'Límite superior revisado manualmente.' : 'Se propone el nacimiento del cabello como fin de la piel visible; confírmalo en «Revisar frente». No presupongas que toda la frente está reconstruida.'}</p>
+          <p>{slot.foreheadReviewed ? 'Contorno validado. Puedes reeditar los límites en cualquier momento; esto no confirma identidad.' : 'Se propone el nacimiento del cabello como fin de la piel visible; confírmalo en «Revisar frente». No presupongas que toda la frente está reconstruida.'}</p>
           {foreheadReference && <p>Altura de referencia confirmada en {PHOTO_SLOTS.find(v => v.id === foreheadReference.slot)?.label}; se ofrece en las demás vistas cuando su borde no es claro.</p>}
           <p>Amplía solo sobre piel realmente visible. Si el cabello o el encuadre la ocultan, usa otra captura con la frente descubierta; el modelo no puede certificar esa zona ni un plano de tratamiento.</p>
           <button type="button" disabled={buildingPersonal || hasPendingPhotos} onClick={suggestForehead} className="rounded border border-amber-400 px-2 py-1">Proponer borde visible</button>
@@ -2440,8 +2594,6 @@ export default function FaceSimLab() {
               surface={modelKind === 'personal' ? personal?.renderSurface : undefined}
               photo={modelKind === 'personal' ? personal?.canvas : undefined}
               photoPatches={modelKind === 'personal' ? personal?.photoPatches : undefined}
-              showMesh={showRegions} plane={regionPlane} onPlaneChange={setRegionPlane} onMeshChange={toggleMesh}
-              anatomyDisplay={anatomyDisplay} onAnatomyDisplayChange={setAnatomyDisplay}
               hair={hair} hairPatches={modelKind === 'personal' ? hairPatches : undefined}
             />}
           </Suspense>
@@ -2521,11 +2673,14 @@ export default function FaceSimLab() {
             : <span className={`${hudChip} text-stone-400`}><Gauge className="h-3.5 w-3.5" aria-hidden="true" />0 {SIM_MODES[mode].unit}</span>}
         </div>}
       <div className={`grid min-w-0 content-start gap-4 ${workspace === 'simulate' && workMode === '3d' && splitAnnotations ? 'lg:grid-cols-2' : ''}`}>
-        {workspace === 'simulate' && workMode === '3d' && (splitAnnotations
+        {workspace === 'simulate' && editorGroup === 'annotations' && markTab === 'revisar' && comparison !== 'actual' && <CaptureComparison mode={comparison} split={split}
+          before={workMode === '3d' ? renderViewer(modelKind, 'before') : slot ? <ComparisonPhoto source={slot.canvas} prepared={preparedPhoto} after={false} /> : <p role="status">Carga una foto en Capturas.</p>}
+          after={workMode === '3d' ? renderViewer(modelKind, 'after') : slot ? <ComparisonPhoto source={slot.canvas} prepared={preparedPhoto} after /> : <p role="status">Carga una foto en Capturas.</p>} />}
+        {workspace === 'simulate' && workMode === '3d' && !(markTab === 'revisar' && comparison !== 'actual') && (splitAnnotations
           ? <>{renderViewer('generico')}{renderViewer('personal')}</>
           : renderViewer(modelKind))}
         {workspace === 'capture' && calibrating && renderViewer('generico')}
-        <section className={`min-w-0 overflow-hidden rounded-2xl border border-slate-200 bg-slate-900 p-3 ${workspace === 'simulate' && workMode !== 'foto' ? 'hidden' : ''}`}>
+        <section className={`min-w-0 overflow-hidden rounded-2xl border border-slate-200 bg-slate-900 p-3 ${workspace === 'simulate' && (workMode !== 'foto' || markTab === 'revisar' && comparison !== 'actual') ? 'hidden' : ''}`}>
           <h2 className="mb-2 text-center text-sm font-semibold text-slate-200">Foto referencial {VIEWS.find(v => v.id === view)?.label.toLowerCase()} · registro compartido</h2>
           {overlayMode === 'attention' && <p className="mb-2 rounded bg-amber-100 px-3 py-2 text-xs font-semibold text-amber-950">SIMULACIÓN · No detecta vasos ni certifica zonas seguras.</p>}
           {!hasImage && <div className="flex h-[360px] items-center justify-center text-center text-sm text-slate-400">Carga la foto de la vista «{VIEWS.find(v => v.id === view)?.label}» para ver la simulación</div>}

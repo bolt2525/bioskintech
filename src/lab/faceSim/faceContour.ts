@@ -58,8 +58,9 @@ export function extendVisibleForehead(landmarks: Landmark[], target: P2, aspect:
   if (band < height * 0.025 || Math.hypot(dx, dy) > height * 0.35 || dx * axis.x + dy * axis.y < 0
     || Math.abs(dx * axis.y - dy * axis.x) > height * 0.07) return null;
   const next = landmarks.map(p => {
-    const t = Math.max(0, Math.min(1, (projection(p) - browLimit) / band));
-    const weight = t * t * (3 - 2 * t);
+    // Estiramiento afín por encima de cejas. El smoothstep saturado comprimía
+    // triángulos casi de canto en perfiles y rechazaba extensiones axiales válidas.
+    const weight = Math.max(0, (projection(p) - browLimit) / band);
     return { ...p, x: p.x + dx / aspect * weight, y: p.y + dy * weight };
   });
   if (next.some(p => p.x < 0 || p.x > 1 || p.y < 0 || p.y > 1)) return null;
@@ -94,7 +95,7 @@ export function foreheadPointFromRatio(landmarks: Landmark[], ratio: number, asp
  */
 export function proposeForeheadBoundary(
   landmarks: Landmark[], image: { width: number; height: number; data: Uint8ClampedArray },
-): { point: P2 | null; reason: string } {
+): { point: P2 | null; reason: string; reliable?: boolean } {
   const { width, height, data } = image;
   if (landmarks.length < 468 || data.length !== width * height * 4 || width < 32 || height < 32) {
     throw new Error('No se puede proponer el límite frontal: imagen o referencias inválidas.');
@@ -143,6 +144,7 @@ export function proposeForeheadBoundary(
     if (distances.length >= 2 && distances.at(-1)! - distances[0] <= faceHeight * 0.08) {
       const d = Math.max(0, distances[Math.floor(distances.length / 2)] - 1);
       return { point: { x: top.x + axis.x * d / width, y: top.y + axis.y * d / height },
+        reliable: distances.length >= 3 && d > 0,
         reason: `Nacimiento del cabello candidato: fin de la piel visible en ${distances.length} de 5 trazos. Confirma que el punto quede sobre piel, justo antes del cabello.` };
     }
   }

@@ -76,9 +76,24 @@ const viewDistance = (v: DepthView) => (i: number, j: number) => {
   return Math.hypot((p.x - q.x) * v.aspect, p.y - q.y, (p.z - q.z) * v.aspect);
 };
 /** Giro con signo: positivo si la hemicara de 234 queda más cerca de la cámara (z menor). */
-function viewYaw(v: DepthView) {
+export function viewYaw(v: DepthView) {
   const p = v.landmarks[234], q = v.landmarks[454];
-  return Math.atan2((q.z - p.z) * v.aspect, Math.abs(q.x - p.x) * v.aspect);
+  return Math.atan2((q.z - p.z) * v.aspect, Math.hypot((q.x - p.x) * v.aspect, q.y - p.y));
+}
+
+/** Clasificación conservadora por geometría observada; nunca por nombre/orden del archivo. */
+export function classifyFacePose(v: DepthView): { view: 'frontal' | 'izquierda' | 'derecha' | null; reason: string } {
+  if (!validView(v)) return { view: null, reason: 'Sin detector fiable: asigna la vista manualmente; no se generará geometría.' };
+  const a = v.landmarks[234], b = v.landmarks[454];
+  if (Math.hypot((a.x - b.x) * v.aspect, a.y - b.y, (a.z - b.z) * v.aspect) < 1e-4) {
+    return { view: null, reason: 'Referencias de pose colapsadas; asigna la vista manualmente.' };
+  }
+  const yaw = viewYaw(v);
+  if (!Number.isFinite(yaw)) return { view: null, reason: 'Pose indeterminada; asigna la vista manualmente.' };
+  const degrees = Math.abs(yaw) * 180 / Math.PI;
+  if (degrees <= 15) return { view: 'frontal', reason: 'Frontal por pose facial.' };
+  if (degrees < 30) return { view: null, reason: 'Giro intermedio: confirma manualmente frontal o lateral.' };
+  return { view: yaw > 0 ? 'izquierda' : 'derecha', reason: `Lateral ${yaw > 0 ? 'A' : 'B'} por pose (${Math.round(degrees)}°). El lado oculto es estimado.` };
 }
 
 /** Compara proporciones 3D invariantes a giro/escala. Compatibilidad NO significa misma identidad. */

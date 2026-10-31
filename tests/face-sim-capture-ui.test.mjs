@@ -30,7 +30,7 @@ const source = readFileSync(new URL('../src/lab/faceSim/FaceSimLab.tsx', import.
 const code = ts.transpileModule(source, {
   compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX, target: ts.ScriptTarget.ES2022 },
 }).outputText;
-const stateNames = [...source.matchAll(/const \[(\w+),[^\]]+\] = useState/g)].map(match => match[1]);
+const stateNames = [...source.slice(source.indexOf('export default function FaceSimLab')).matchAll(/const \[(\w+),[^\]]+\] = useState/g)].map(match => match[1]);
 const localCache = new Map();
 function loadLocal(file) {
   if (localCache.has(file)) return localCache.get(file);
@@ -146,8 +146,8 @@ function lab() {
       states[stateNames.indexOf('genericPreviewAfter')] = states[stateNames.indexOf('preview')]?.after ?? true;
       stateCursor = 0; refCursor = 0; return expand(exports.default());
     },
-    photos(photos) { states[0] = photos; },
-    pending(pending) { states[1] = pending; },
+    photos(photos) { states[stateNames.indexOf('photos')] = photos; },
+    pending(pending) { states[stateNames.indexOf('pendingPhotos')] = pending; },
   };
 }
 
@@ -242,15 +242,15 @@ test('cada foto abre su revisión; la frente confirmada en frontal se ofrece en 
   const extended = faceContour.extendVisibleForehead(landmarks, point, fixture.aspect, genericFaceAtlas.triangles);
   modal().props.onApply(extended, true, point);
   modal().props.onClose();
-  assert.equal(app.states[0].frontal.foreheadReviewed, true);
-  assert.equal(app.states[0].izquierda.foreheadReviewed, undefined, 'no se confirma otra vista en silencio');
+  assert.equal(app.state('photos').frontal.foreheadReviewed, true);
+  assert.equal(app.state('photos').izquierda.foreheadReviewed, undefined, 'no se confirma otra vista en silencio');
   assert.deepEqual([...app.state('boundaryReview')], ['izquierda', 'extra_a']);
   const next = modal();
   assert.equal(next.props.title, 'Ángulo A');
   assert.ok(Math.hypot(next.props.reference.x - point.x, next.props.reference.y - point.y) < 1e-9);
   next.props.onApply(extended, true, point);
   next.props.onClose();
-  assert.equal(app.states[0].izquierda.foreheadReviewed, true);
+  assert.equal(app.state('photos').izquierda.foreheadReviewed, true);
   assert.equal(app.state('foreheadReference').slot, 'frontal', 'la frontal sigue como referencia');
   assert.equal(modal().props.title, 'Foto 4');
   modal().props.onClose();
@@ -278,8 +278,8 @@ test('ampliar frente exige revisar piel visible y no convierte el clic en tratam
   button(app.render(), 'Aplicar frente revisada').props.onClick();
   await new Promise(resolve => setImmediate(resolve));
   tree = app.render();
-  assert.equal(app.states[0].frontal.foreheadReviewed, true);
-  assert.ok(Math.abs(app.states[0].frontal.landmarks[10].y - target.y) < 1e-12);
+  assert.equal(app.state('photos').frontal.foreheadReviewed, true);
+  assert.ok(Math.abs(app.state('photos').frontal.landmarks[10].y - target.y) < 1e-12);
   assert.equal(app.state('markers').length, 0);
   assert.match(text(tree), /Banda frontal ampliada/);
 });
@@ -378,8 +378,9 @@ test('marcaciones compartidas sobreviven a modo, reconstrucción y retirada de f
 test('captura progresiva: tres entradas principales y dos opcionales, sin exigir cinco fotos', () => {
   const app = lab(), tree = app.render();
   const inputs = findAll(tree, n => n.type === 'input' && n.props.type === 'file');
-  assert.equal(inputs.length, 5);
-  assert.ok(inputs.every(n => n.props['aria-label'].startsWith('Cargar ')));
+  assert.equal(inputs.length, 6);
+  assert.equal(inputs.filter(n => n.props.multiple).length, 1);
+  assert.ok(inputs.filter(n => !n.props.multiple).every(n => n.props['aria-label'].startsWith('Cargar ')));
   assert.equal(calculate(tree).props.disabled, true);
   const optional = findAll(tree, n => n.type === 'details' && text(n).includes('Añadir fotos 4 y 5'))[0];
   assert.equal(findAll(optional, n => n.type === 'input' && n.props.type === 'file').length, 2);
@@ -390,6 +391,52 @@ test('captura progresiva: tres entradas principales y dos opcionales, sin exigir
     assert.equal(text(calculate(current)), `Calcular superficie con ${count} foto(s)`);
     assert.match(text(current), new RegExp(`${count} de 5 fotos cargadas`));
   }
+});
+
+test('selector múltiple rechaza más de tres archivos con progreso explícito sin cambiar fotos', async () => {
+  const app = lab(); app.render();
+  const input = findAll(app.render(), n => n.type === 'input' && n.props.multiple)[0];
+  input.props.onChange({ target: { files: [{}, {}, {}, {}], value: 'selección' } });
+  await new Promise(resolve => setImmediate(resolve));
+  assert.match(app.state('captureProgress'), /como máximo 3/);
+  assert.deepEqual(Object.keys(app.state('photos')), []);
+  assert.equal(app.state('batchBusy'), false);
+});
+
+test('comparación slider y doble reutilizan Antes original y Después; el registro y las dosis no cambian', () => {
+  const app = lab(); openEditor(app);
+  app.set('markTab', 'revisar');
+  app.set('genericBeforeGlb', new ArrayBuffer(8));
+  const record = { 'test-point': { mode: 'toxina', dose: 7, zone: 'Frente' } };
+  app.set('meta', record);
+  button(app.render(), 'Doble visor').props.onClick();
+  let tree = app.render();
+  let component = findAll(tree, n => n.props?.mode === 'doble' && n.props?.before && n.props?.after)[0];
+  assert.ok(component);
+  const pair = component.type(component.props);
+  const models = viewers(pair);
+  assert.equal(models.length, 2);
+  assert.equal(models[0].props.modelData, app.state('genericBeforeGlb'));
+  assert.equal(models[1].props.modelData, app.state('genericPreviewGlb'));
+  assert.ok(models.every(n => n.props.readOnly && n.props.activeTool === 'none'));
+  assert.equal(models[0].props.cameraSync, models[1].props.cameraSync, 'cámara compartida solo entre visores comparativos');
+  const sharedCamera = models[0].props.cameraSync;
+  button(tree, 'Deslizador').props.onClick();
+  tree = app.render();
+  const slider = findAll(tree, n => n.props?.['aria-label'] === 'Comparación Antes / Después')[0];
+  slider.props.onChange({ target: { value: '0.75' } });
+  tree = app.render();
+  component = findAll(tree, n => n.props?.mode === 'slider' && n.props?.before)[0];
+  assert.ok(findAll(component.type(component.props), n => n.props?.style?.clipPath === 'inset(0 25% 0 0)').length);
+  assert.equal(app.state('meta'), record);
+  assert.equal(app.state('meta')['test-point'].dose, 7);
+  button(tree, 'Vista actual').props.onClick();
+  assert.equal(app.state('comparison'), 'actual');
+  assert.equal(viewers(app.render()).length, 1);
+  assert.equal(viewers(app.render())[0].props.cameraSync, undefined, 'visor normal no comparte cámara');
+  button(app.render(), 'Doble visor').props.onClick();
+  const reopened = findAll(app.render(), n => n.props?.mode === 'doble' && n.props?.before)[0];
+  assert.equal(viewers(reopened.type(reopened.props))[0].props.cameraSync, sharedCamera, 'conserva el objeto al cambiar formato');
 });
 
 test('la detección pendiente bloquea el cálculo hasta incluir todas las referencias cargadas', () => {
@@ -495,7 +542,7 @@ test('cabeza estimada se transmite completa a Simular sin reemplazar la superfic
   assert.equal(genericSimulator.props.photo, undefined, 'no aplica fotos sin registro a la cabeza genérica');
 });
 
-test('ocultar malla y seleccionar planos se sincroniza entre modelo, foto y Simular', () => {
+test('Inyectables conserva malla y planos propios sin compartir estado con morfología', () => {
   const app = lab(); openEditor(app); app.set('meshVisible', true); let tree = app.render();
   const original = viewers(tree)[0].props.anatomicalOverlay.positions.slice();
   tree = openCapture(app);
@@ -515,15 +562,17 @@ test('ocultar malla y seleccionar planos se sincroniza entre modelo, foto y Simu
   assert.match(text(app.render()), /Mentón · Derecha del paciente/);
   openAppearance(app);
   const simulator = () => findAll(app.render(), n => n.props && Object.hasOwn(n.props, 'surface') && Object.hasOwn(n.props, 'photo'))[0];
-  assert.equal(simulator().props.showMesh, false);
-  assert.equal(simulator().props.plane, 'deep');
-  simulator().props.onMeshChange(true);
-  assert.equal(simulator().props.showMesh, true);
+  for (const prop of ['showMesh', 'plane', 'onMeshChange', 'onPlaneChange', 'anatomyDisplay', 'onAnatomyDisplayChange']) {
+    assert.equal(Object.hasOwn(simulator().props, prop), false, `${prop} no se comparte con morfología`);
+  }
   findAll(openCapture(app), n => n.props?.['aria-label'] === 'Capa de referencia')[0].props.onChange({ target: { value: 'none' } });
   openAppearance(app);
-  assert.equal(simulator().props.showMesh, false);
-  simulator().props.onMeshChange(true);
-  assert.equal(simulator().props.showMesh, true, 'Mostrar mallado restaura la referencia si estaba en Sin capa');
+  openEditor(app);
+  button(app.render(), 'Marcaciones e inyectables').props.onClick();
+  const controls = findAll(app.render(), n => typeof n.props?.onMeshChange === 'function')[0];
+  assert.ok(controls, 'Inyectables mantiene su control propio');
+  controls.props.onMeshChange(true);
+  assert.equal(findAll(app.render(), n => typeof n.props?.onMeshChange === 'function')[0].props.showMesh, true);
 });
 
 test('elegir Genérico cancela el cálculo pendiente y no permite una selección personal tardía', async () => {

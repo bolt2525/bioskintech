@@ -61,7 +61,10 @@ export function refineLandmarksByCrop(
   if (!context) return null;
   context.imageSmoothingQuality = 'high';
   context.drawImage(image, left, top, width, height, 0, 0, canvas.width, canvas.height);
-  const found = landmarker.detect(canvas).faceLandmarks[0];
+  const result = landmarker.detect(canvas);
+  // El recorte no debe sustituir una detección única por el primer rostro de varios.
+  if (result.faceLandmarks.length !== 1) return null;
+  const found = result.faceLandmarks[0];
   if (!found || found.length < 468) return null;
   const refined = found.map(p => ({
     x: (p.x * width + left) / image.width, y: (p.y * height + top) / image.height, z: p.z * width / image.width,

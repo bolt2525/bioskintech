@@ -10,7 +10,7 @@ const require = createRequire(import.meta.url);
 const source = readFileSync(new URL('../src/components/admin/ficha-clinica/components/Clinical3DViewer.tsx', import.meta.url), 'utf8');
 const instrumented = source.replace('// 1. Initialize scene once', `
   globalThis.engineRefs = { faceMeshRef, cameraRef, controlsRef, editablePointsGroupRef, handlesGroupRef,
-    freehandGroupRef, brushPreviewGroupRef, annotationLabelsGroupRef, cancelInteractionRef, callbacks, clipPlane, referenceVisuals, rendererRef };
+    freehandGroupRef, brushPreviewGroupRef, annotationLabelsGroupRef, cancelInteractionRef, callbacks, clipPlane, referenceVisuals, rendererRef, cameraLoadingRef };
   // 1. Initialize scene once
 `) + '\nexports.helpers = { screenAnnotationSnap, projectNearbySurface, projectedShapeSegments, projectedShapeOutline, annotationSurfaceHit, shouldCancelAnnotation, ThreeEngine };';
 const code = ts.transpileModule(instrumented, {
@@ -79,10 +79,15 @@ function load() {
     dispose() {}
     forceContextLoss() { this.contextsReleased++; }
   }
-  class Controls {
+  class Controls extends THREE.EventDispatcher {
+    constructor(camera) { super(); this.camera = camera; }
     target = new THREE.Vector3();
     enabled = true;
-    update() {}
+    enableDamping = true;
+    update() {
+      const value = JSON.stringify([this.camera.position.toArray(), this.target.toArray(), this.camera.zoom]);
+      if (value !== this.lastPose) { this.lastPose = value; this.dispatchEvent({ type: 'change' }); }
+    }
     dispose() {}
   }
   class Element {
@@ -129,6 +134,10 @@ function load() {
     return effects;
   };
   return { ...sandbox.exports.helpers, dom, window, document, Element, sandbox, render,
+    frame() {
+      const pending = [...animationFrames.entries()];
+      for (const [id, callback] of pending) { animationFrames.delete(id); callback(); }
+    },
     get effects() { return effects; }, get refs() { return sandbox.engineRefs; } };
 }
 
@@ -138,6 +147,7 @@ function engine(changes = {}) {
   const init = app.effects.find(({ effect }) => effect.toString().includes('new THREE.Scene()'));
   app.cleanup = init.effect();
   app.refs.faceMeshRef.current = plane();
+  app.refs.cameraLoadingRef.current = false;
   app.refs.cameraRef.current.left = -4;
   app.refs.cameraRef.current.right = 4;
   app.refs.cameraRef.current.updateProjectionMatrix();
@@ -151,6 +161,42 @@ test('desmontar libera el contexto WebGL y retira la referencia al renderer', ()
   app.cleanup();
   assert.equal(renderer.contextsReleased, 1);
   assert.equal(app.refs.rendererRef.current, null);
+});
+
+test('comparación: cámara compartida copia giro, desplazamiento y zoom sin eco ni tocar geometría', () => {
+  const sync = {};
+  const first = engine({ cameraSync: sync }), second = engine({ cameraSync: sync });
+  const original = second.refs.faceMeshRef.current.geometry.attributes.position.array.slice();
+  first.refs.cameraRef.current.position.set(2, 3, 9);
+  first.refs.cameraRef.current.zoom = 1.7;
+  first.refs.controlsRef.current.target.set(0.3, -0.2, 0.1);
+  first.refs.controlsRef.current.update();
+  const published = sync.pose;
+  second.frame();
+  assert.deepEqual(second.refs.cameraRef.current.position.toArray(), [2, 3, 9]);
+  assert.deepEqual(second.refs.controlsRef.current.target.toArray(), [0.3, -0.2, 0.1]);
+  assert.equal(second.refs.cameraRef.current.zoom, 1.7);
+  assert.equal(second.refs.cameraRef.current.top - second.refs.cameraRef.current.bottom, published.verticalSpan);
+  assert.equal(sync.pose, published, 'sin publicación de eco al recibir cámara');
+  assert.deepEqual(second.refs.faceMeshRef.current.geometry.attributes.position.array, original);
+  second.refs.cameraLoadingRef.current = true;
+  second.refs.cameraRef.current.position.set(0, 0, 12);
+  second.refs.controlsRef.current.update();
+  assert.equal(sync.pose, published, 'la carga no sobrescribe el encuadre compartido');
+  second.refs.cameraLoadingRef.current = false;
+  const resized = { ...published, verticalSpan: 8 };
+  sync.pose = resized;
+  second.frame();
+  assert.equal(second.refs.cameraRef.current.top - second.refs.cameraRef.current.bottom, 8);
+  assert.equal(second.refs.cameraRef.current.right / second.refs.cameraRef.current.top, 800 / 600);
+  assert.equal(sync.pose, resized);
+  second.refs.cameraLoadingRef.current = false;
+  second.refs.controlsRef.current.dispatchEvent({ type: 'start' });
+  second.refs.cameraRef.current.position.set(-2, 1, 8);
+  second.refs.controlsRef.current.update();
+  first.frame();
+  assert.deepEqual(first.refs.cameraRef.current.position.toArray(), [-2, 1, 8], 'ambos sentidos');
+  first.cleanup(); second.cleanup();
 });
 
 test('imán de 12 CSS px constante con zoom, ortográfica/perspectiva y extremos antes que segmentos', () => {

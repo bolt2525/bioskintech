@@ -38,10 +38,14 @@ export default function FaceBoundaryReview({ canvas, landmarks, triangles, title
     const source = canvas.getContext('2d');
     if (!source) { setError('No se pudo leer la imagen; conserva el contorno o vuelve a cargarla.'); return; }
     const proposal = proposeForeheadBoundary(landmarks, source.getImageData(0, 0, canvas.width, canvas.height));
-    if (proposal.point) { setForehead(proposal.point); setSource('auto'); setError(''); return; }
+    if (proposal.point) {
+      setForehead(proposal.point); setSource('auto');
+      setConfirmed(!!extendVisibleForehead(landmarks, proposal.point, aspect, triangles));
+      setError(proposal.reason); return;
+    }
     if (reference) { setForehead(reference); setSource('reference'); setError('Sin borde capilar claro en esta foto: se propone la altura confirmada en otra vista. Verifícala.'); return; }
     setError('Sin borde superior claro. Toca el límite de la frente sobre la foto o conserva el límite detectado.');
-  }, [canvas, landmarks, reference]);
+  }, [canvas, landmarks, reference, aspect, triangles]);
   const update = (target: P2) => {
     setConfirmed(false);
     if (selected === 10) { setForehead(target); setSource('manual'); setError(''); return; }
@@ -53,7 +57,7 @@ export default function FaceBoundaryReview({ canvas, landmarks, triangles, title
     if (!shown) { setError('El borde propuesto de la frente deforma la malla. Mueve el límite o conserva el original.'); return; }
     onApply(shown, true, forehead); onClose();
   };
-  const sourceLabel = { auto: 'Propuesta automática: nacimiento del cabello detectado', reference: 'Altura trasladada desde otra vista', manual: 'Límite ajustado manualmente', none: 'Sin ampliar la frente' }[source];
+  const sourceLabel = { auto: 'Propuesta automática: límite de piel candidato', reference: 'Altura trasladada desde otra vista', manual: 'Límite ajustado manualmente', none: 'Sin ampliar la frente' }[source];
   return <dialog ref={dialog} onCancel={onClose} aria-labelledby="boundary-title"
     className="w-[min(94vw,820px)] max-h-[92dvh] overflow-y-auto overscroll-contain rounded-2xl bg-white p-4 text-slate-800 shadow-xl backdrop:bg-slate-950/70">
     <div className="mb-3 flex items-center justify-between gap-3">

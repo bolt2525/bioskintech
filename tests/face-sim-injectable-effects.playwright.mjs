@@ -101,11 +101,30 @@ try {
     name: 'piel-sintetica.png', mimeType: 'image/png', buffer: Buffer.from(png.split(',')[1], 'base64'),
   });
   const dialog = page.getByRole('dialog');
+  await page.waitForFunction(() => {
+    const confirmation = document.querySelector('input[aria-label="Confirmar captura Frontal"]');
+    const upload = document.querySelector('input[aria-label="Cargar Frontal"]');
+    return confirmation && !upload?.closest('label')?.textContent.includes('…')
+      && document.body.textContent.includes('Rostro detectado en Frontal.');
+  });
+  assert.equal(await page.getByLabel('Confirmar captura Frontal', { exact: true }).isChecked(), false,
+    'autoaceptar contorno no acepta identidad');
+  await page.waitForFunction(() => document.querySelector('dialog[open]')
+    || document.body.textContent.includes('Contorno válido aceptado'));
+  // Una captura ambigua puede abrir revisión automáticamente; una válida no.
+  // En ambos casos se ejercita explícitamente la reedición posterior a la subida.
+  if (await dialog.isVisible()) {
+    await dialog.getByRole('button', { name: 'Confirmar límites', exact: true }).waitFor();
+    await dialog.getByRole('button', { name: 'Cerrar revisión', exact: true }).click();
+    await dialog.waitFor({ state: 'hidden' });
+  }
+  await page.getByRole('button', { name: 'Revisar frente, sienes y mentón', exact: true }).click();
   await dialog.waitFor();
   await dialog.getByRole('button', { name: 'Conservar detección original', exact: true }).click();
   await dialog.getByRole('checkbox').check();
   await dialog.getByRole('button', { name: 'Confirmar límites', exact: true }).click();
   await page.getByLabel('Confirmar captura Frontal', { exact: true }).check();
+  results.push('Revisión manual reabierta tras subida; contorno e identidad se confirman por separado');
   await spaces.getByRole('button', { name: 'Simular y marcar', exact: true }).click();
   await page.getByRole('toolbar', { name: 'Marcar', exact: true }).getByRole('button', { name: 'Personal', exact: true }).click();
   const personal = page.getByRole('region', { name: 'Foto personal en 3D', exact: true });

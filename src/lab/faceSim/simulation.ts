@@ -3,6 +3,7 @@ import type { PersonalSurface, Vec3 } from './engine';
 
 /** Intensidades visuales adimensionales, no medidas ni predicciones clínicas. */
 export interface SimulationParameters {
+  noseRadix: number;
   noseBridge: number;
   noseTip: number;
   noseRotation: number;
@@ -25,7 +26,7 @@ export interface SimulationParameters {
 }
 
 export const NEUTRAL_SIMULATION: Readonly<SimulationParameters> = Object.freeze({
-  noseBridge: 0, noseTip: 0, noseRotation: 0, noseWidth: 0, noseSymmetry: 0,
+  noseRadix: 0, noseBridge: 0, noseTip: 0, noseRotation: 0, noseWidth: 0, noseSymmetry: 0,
   chinProjection: 0, chinHeight: 0, chinWidth: 0, jawWidth: 0,
   noseHump: 0, noseTipWidth: 0, lipUpper: 0, lipLower: 0, lipProjection: 0, lipCorners: 0,
   cheekbone: 0, cheekVolume: 0, buccal: 0,
@@ -34,14 +35,15 @@ export const NEUTRAL_SIMULATION: Readonly<SimulationParameters> = Object.freeze(
 export type SimulationGroup = 'Nariz' | 'Labios' | 'Pómulos y mejillas' | 'Mentón y mandíbula';
 export const SIMULATION_GROUPS: ReadonlyArray<SimulationGroup> = ['Nariz', 'Labios', 'Pómulos y mejillas', 'Mentón y mandíbula'];
 export const SIMULATION_CONTROLS: ReadonlyArray<{
-  key: keyof SimulationParameters; label: string; group: SimulationGroup;
+  key: keyof SimulationParameters; label: string; group: SimulationGroup; hint?: string;
 }> = [
-  { key: 'noseBridge', label: 'Dorso · proyección', group: 'Nariz' },
-  { key: 'noseHump', label: 'Dorso · giba (− rebaja)', group: 'Nariz' },
-  { key: 'noseTip', label: 'Punta · proyección', group: 'Nariz' },
-  { key: 'noseRotation', label: 'Punta · rotación', group: 'Nariz' },
-  { key: 'noseTipWidth', label: 'Punta · anchura', group: 'Nariz' },
-  { key: 'noseWidth', label: 'Alas · anchura', group: 'Nariz' },
+  { key: 'noseRadix', label: 'Raíz · relieve', group: 'Nariz', hint: '− retrae / + adelanta la raíz entre los ojos, sin moverlos.' },
+  { key: 'noseBridge', label: 'Dorso · proyección', group: 'Nariz', hint: '− retrae / + adelanta el dorso y acompaña la raíz; transición suave hacia la punta.' },
+  { key: 'noseHump', label: 'Dorso · giba (− rebaja)', group: 'Nariz', hint: '− rebaja / + realza solo la giba central; no hunde ni proyecta toda la nariz.' },
+  { key: 'noseTip', label: 'Punta · proyección', group: 'Nariz', hint: '− acerca / + aleja la punta del rostro, sin elevarla.' },
+  { key: 'noseRotation', label: 'Punta · rotación', group: 'Nariz', hint: '− baja / + eleva la punta alrededor de un pivote posterior; no es proyección.' },
+  { key: 'noseTipWidth', label: 'Punta · anchura', group: 'Nariz', hint: '− estrecha / + ensancha la punta, no las alas.' },
+  { key: 'noseWidth', label: 'Alas · anchura', group: 'Nariz', hint: '− aproxima / + separa las alas, no la raíz.' },
   { key: 'lipUpper', label: 'Labio superior · volumen', group: 'Labios' },
   { key: 'lipLower', label: 'Labio inferior · volumen', group: 'Labios' },
   { key: 'lipProjection', label: 'Labios · proyección', group: 'Labios' },
@@ -54,6 +56,8 @@ export const SIMULATION_CONTROLS: ReadonlyArray<{
   { key: 'chinWidth', label: 'Mentón · anchura', group: 'Mentón y mandíbula' },
   { key: 'jawWidth', label: 'Mandíbula · anchura', group: 'Mentón y mandíbula' },
 ];
+
+export const SIMULATION_NOTICE = 'Simulación ilustrativa educativa: no representa medidas ni predice resultados clínicos. Las combinaciones se moderan si comprometen la superficie.';
 
 export type LayerId = 'skin';
 export const SIMULATION_LAYERS: ReadonlyArray<{
@@ -238,17 +242,22 @@ export function localInfluence(p: Vec3, center: Vec3, radius: Vec3): number {
 
 /** Correspondencias topológicas del atlas, no búsqueda de vecinos en una nariz ya asimétrica. */
 const atlasMirrors = (() => {
-  const pairs: { a: number; b: number; distance: number }[] = [];
-  for (let a = 0; a < 468; a++) for (let b = 0; b < 468; b++) {
-    const p = point(atlasData.positions, a), q = point(atlasData.positions, b);
-    if (p.x < -0.025 && q.x > 0.025) pairs.push({ a, b,
-      distance: (p.x + q.x) ** 2 + (p.y - q.y) ** 2 + (p.z - q.z) ** 2 });
-  }
-  const result = Array.from({ length: 468 }, (_, i) => i), used = new Set<number>();
-  for (const { a, b } of pairs.sort((a, b) => a.distance - b.distance)) {
-    if (used.has(a) || used.has(b)) continue;
-    result[a] = b; result[b] = a; used.add(a); used.add(b);
-  }
+  // Pares mesh468 del soporte nasal. La búsqueda geométrica intercambiaba
+  // vecinos de las narinas (238→461 en lugar de 458) e invertía su superficie.
+  // No inferirlos por triangulación: algunos cuadriláteros tienen diagonales distintas.
+  const pairs = [
+    [3, 248], [20, 250], [44, 274], [45, 275], [47, 277], [48, 278], [49, 279],
+    [51, 281], [59, 289], [60, 290], [64, 294], [75, 305], [79, 309], [97, 326],
+    [98, 327], [99, 328], [100, 329], [102, 331], [114, 343], [115, 344],
+    [121, 350], [122, 351], [125, 354], [126, 355], [128, 357], [129, 358],
+    [131, 360], [134, 363], [141, 370], [142, 371], [166, 392], [174, 399],
+    [188, 412], [189, 413], [193, 417], [196, 419], [198, 420], [203, 423],
+    [209, 429], [217, 437], [218, 438], [219, 439], [220, 440], [235, 455],
+    [236, 456], [237, 457], [238, 458], [239, 459], [240, 460], [241, 461],
+    [242, 462], [244, 464], [245, 465],
+  ];
+  const result = Array.from({ length: 468 }, (_, i) => i);
+  for (const [a, b] of pairs) { result[a] = b; result[b] = a; }
   return result;
 })();
 const smooth = (t: number) => { const x = clamp(t, 0, 1); return x * x * (3 - 2 * x); };
@@ -277,16 +286,21 @@ function nasalSymmetryDeltas(anchors: ArrayLike<number>, signed: number) {
  * Segunda pasada: los landmarks ya quedaron espejados; ahora el relieve denso del lado destino
  * se reemplaza por el del hemimallado origen reflejado (no interpolado desde 468 anclas).
  * Solo cambia la profundidad canónica: XY/UV quedan intactos y no aparecen costuras ni pliegues.
- * El peso (máscara × lado) es C1 y vale ~½ en la línea media, donde origen y destino ya coinciden.
+ * El peso es C1 y se anula en la línea media; la identidad fija los bordes sin vecinos.
  */
 function copyNasalHalf(
   result: Float32Array, dense: Uint8Array, mask: Float32Array, side: Float32Array,
-  frame: FacialCoordinateFrame, strength: number, h: number,
+  frame: FacialCoordinateFrame, strength: number, h: number, normals?: Float32Array,
 ) {
   const n = result.length / 3, r = h * 0.04, canonical = new Float32Array(result.length);
+  const canonicalNormals = normals ? new Float32Array(normals.length) : null;
   for (let i = 0; i < n; i++) {
     const c = toCanonicalPosition(point(result, i), frame);
     canonical.set([c.x, c.y, c.z], i * 3);
+    if (normals) {
+      const normal = point(normals, i);
+      canonicalNormals!.set([dot(normal, frame.right), dot(normal, frame.up), dot(normal, frame.forward)], i * 3);
+    }
   }
   // Rejilla 2D en el plano frontal canónico: la profundidad del destino no debe sesgar la búsqueda.
   const grid = new Map<string, number[]>(), key = (x: number, y: number) => `${Math.floor(x / r)},${Math.floor(y / r)}`;
@@ -297,32 +311,79 @@ function copyNasalHalf(
   for (let i = 0; i < n; i++) {
     if (!dense[i] || side[i] <= 0.5 || !mask[i]) continue;
     const x = -canonical[i * 3], y = canonical[i * 3 + 1], z = canonical[i * 3 + 2];
-    let weight = 0, depth = 0;
+    // Un peso de identidad evita saltos al entrar/salir del soporte de vecinos.
+    let weight = 4 / (r * r), depth = z * weight;
     const gx = Math.floor(x / r), gy = Math.floor(y / r);
     for (let a = -1; a <= 1; a++) for (let b = -1; b <= 1; b++) {
       for (const j of grid.get(`${gx + a},${gy + b}`) ?? []) {
+        if (canonicalNormals) {
+          const source = point(canonicalNormals, j), target = point(canonicalNormals, i);
+          if (-source.x * target.x + source.y * target.y + source.z * target.z < 0.5) continue;
+        }
         const d = Math.hypot(canonical[j * 3] - x, canonical[j * 3 + 1] - y);
-        // Compuerta amplia en Z: separa dorso/alas de la cara inferior (narinas) sin depender del defecto.
-        if (d >= r || Math.abs(canonical[j * 3 + 2] - z) > r * 2) continue;
-        const w = (1 - d / r) ** 4 / Math.max(d * d, r * r * 1e-8);
+        // No saltar entre hojas de la narina/dorso que comparten XY.
+        // Caída continua en profundidad: el umbral binario anterior creaba escalones.
+        const dz = Math.abs(canonical[j * 3 + 2] - z);
+        if (d >= r || dz >= r * 0.8) continue;
+        const w = (1 - d / r) ** 4 / Math.max(d * d, r * r * 1e-8)
+          * smooth((r * 0.8 - dz) / (r * 0.3));
         weight += w; depth += canonical[j * 3 + 2] * w;
       }
     }
     if (!weight) continue;
-    const t = strength * mask[i] * side[i];
+    const t = strength * mask[i] * smooth((side[i] - 0.5) / 0.25);
     const next = fromCanonicalPosition({ x: -x, y, z: z + (depth / weight - z) * t }, frame);
     result.set([next.x, next.y, next.z], i * 3);
+  }
+}
+
+/**
+ * Límite analítico, sin iterar ni recalcular la deformación. El área orientada de
+ * cada triángulo durante original→resultado es un polinomio cuadrático en t.
+ * Acotar antes de su primera raíz conserva al menos 10% del área proyectada.
+ * No repara triángulos degenerados que ya existían en la captura.
+ */
+function preserveTriangleOrientation(original: ArrayLike<number>, result: Float32Array, indices: ArrayLike<number>) {
+  let strength = 1;
+  for (let k = 0; k < indices.length; k += 3) {
+    const ids = [indices[k], indices[k + 1], indices[k + 2]];
+    if (ids.every(i => result[i * 3] === original[i * 3] && result[i * 3 + 1] === original[i * 3 + 1]
+      && result[i * 3 + 2] === original[i * 3 + 2])) continue;
+    const [a, b, c] = ids.map(i => point(original, i));
+    const ab = sub(b, a), ac = sub(c, a), n = cross(ab, ac), area2 = dot(n, n);
+    if (area2 < 1e-20) continue;
+    const [da, db, dc] = ids.map(i => sub(point(result, i), point(original, i)));
+    const dab = sub(db, da), dac = sub(dc, da);
+    const linear = (dot(n, cross(dab, ac)) + dot(n, cross(ab, dac))) / area2;
+    const quadratic = dot(n, cross(dab, dac)) / area2;
+    const roots: number[] = [];
+    if (Math.abs(quadratic) < 1e-12) {
+      if (linear < 0) roots.push(-0.9 / linear);
+    } else {
+      const discriminant = linear * linear - 3.6 * quadratic;
+      if (discriminant >= 0) {
+        const sqrt = Math.sqrt(discriminant);
+        roots.push((-linear - sqrt) / (2 * quadratic), (-linear + sqrt) / (2 * quadratic));
+      }
+    }
+    for (const root of roots) if (root > 0 && root <= strength) strength = root * 0.98;
+  }
+  if (strength < 1) for (let i = 0; i < result.length; i++) {
+    result[i] = original[i] + (result[i] - original[i]) * strength;
   }
 }
 
 /** Evalúa siempre contra el original. +Z es anterior, +Y superior en PersonalSurface/atlas. */
 export function deformPositions(
   original: ArrayLike<number>, anchors: ArrayLike<number>, input: Partial<SimulationParameters>,
+  /** Topología de original (no de anchors); necesaria para proteger superficies densas propias. */
+  indices?: ArrayLike<number>,
 ): Float32Array {
   if (anchors.length < 468 * 3) throw new Error('Faltan anclas mesh468.');
   meshBounds(original);
   const params = sanitizeSimulation(input);
   if (Object.values(params).every(value => value === 0)) return Float32Array.from(original);
+  const topology = indices ?? (original.length === atlasData.surface.positions.length ? atlasData.surface.triangles : undefined);
   const { height: h, axis, average } = facialFrame(anchors);
   type Field = {
     center: Vec3; radius: Vec3; delta: (p: Vec3) => Vec3; protectedCenters: Vec3[];
@@ -341,37 +402,44 @@ export function deformPositions(
     fields.push({ center: average(ids), radius: { x: radius[0] * h, y: radius[1] * h, z: radius[2] * h }, delta,
       protectedCenters: protect.map(id => point(anchors, id)), protectNasal });
   };
-  // Recorrido visual ampliado; no son milímetros ni rangos quirúrgicos.
+  // Magnitudes acotadas por subzona; no son milímetros ni rangos quirúrgicos.
   const tip = average([1, 4]);
-  if (params.noseBridge || params.noseHump) {
-    const radix = average([6, 197, 195]), hump = average([197, 195]);
-    const nasalBottom = Math.min(tip.y - h * 0.08, hump.y - h * 0.24);
-    const nasalTop = Math.max(radix.y + h * 0.08, hump.y + h * 0.24);
-    const bridgeWeight = (p: Vec3) => smooth((p.y - (tip.y - h * 0.08)) / (h * 0.14))
-      * smooth(((radix.y + h * 0.08) - p.y) / (h * 0.18))
-      * smooth((h * 0.14 - Math.abs(p.x - axis)) / (h * 0.08));
+  const radix = average([168]), upperBridge = average([6]), supratip = average([5]);
+  // C2 tanto en los extremos longitudinales como en el borde lateral.
+  const ramp = (t: number) => { const x = clamp(t, 0, 1); return x ** 3 * (10 + x * (-15 + 6 * x)); };
+  const nasalLateral = (p: Vec3) => ramp((h * 0.14 - Math.abs(p.x - axis)) / (h * 0.10));
+  const dorsalEnvelope = (p: Vec3) => ramp((p.y - (tip.y - h * 0.04)) / (h * 0.20))
+    * ramp((radix.y + h * 0.22 - p.y) / (h * 0.22))
+    * nasalLateral(p)
+    * ramp((p.z - (upperBridge.z - h * 0.22)) / (h * 0.12));
+  if (params.noseRadix || params.noseBridge || params.noseHump) {
+    // La giba termina exactamente en 5/6: raíz, suprapunta, punta y alas quedan fuera.
+    const humpSpan = Math.max(upperBridge.y - supratip.y, h * 0.02);
     fields.push({
       center: tip, radius: { x: h, y: h, z: h },
       delta: p => {
-        const t = (p.y - hump.y) / (h * 0.24);
-        const humpWeight = Math.abs(t) < 1 ? (1 - t * t) ** 2 : 0;
+        const t = clamp((p.y - supratip.y) / humpSpan, 0, 1);
+        const humpWeight = 64 * (t * (1 - t)) ** 3;
+        const radixWeight = ramp((p.y - supratip.y) / Math.max(radix.y - supratip.y, h * 0.08))
+          * ramp((radix.y + h * 0.18 - p.y) / (h * 0.18));
         return {
           x: 0, y: 0,
-          z: h * (params.noseBridge * 0.09 * bridgeWeight(p) + params.noseHump * 0.055 * humpWeight),
+          // Giba ≤0.8% de altura facial y además ≤7% del tramo 5→6.
+          z: h * (params.noseBridge * 0.035 + params.noseRadix * 0.015 * radixWeight)
+            + params.noseHump * Math.min(h * 0.008, humpSpan * 0.07) * humpWeight,
         };
       },
       protectedCenters: [], protectNasal: true,
-      influence: p => Math.abs(p.x - axis) < h * 0.14
-        && p.y > nasalBottom && p.y < nasalTop ? 1 : 0,
+      influence: dorsalEnvelope,
     });
   }
+  const angle = params.noseRotation * 0.18, sin = Math.sin(angle), cos = Math.cos(angle);
   if (params.noseTip || params.noseRotation) add([1, 4], [0.18, 0.22, 0.28], p => {
-    const angle = params.noseRotation * 0.45;
     // Pivot posterior a la punta, no giro global de la nariz.
-    const y = p.y - tip.y, z = p.z - (tip.z - h * 0.10);
+    const y = p.y - tip.y, z = p.z - (tip.z - h * 0.065);
     return {
-      x: 0, y: y * (Math.cos(angle) - 1) + z * Math.sin(angle),
-      z: params.noseTip * h * 0.085 - y * Math.sin(angle) + z * (Math.cos(angle) - 1),
+      x: 0, y: y * (cos - 1) + z * sin,
+      z: params.noseTip * h * 0.04 - y * sin + z * (cos - 1),
     };
   }, [], true);
   if (params.noseTipWidth) add([1, 4], [0.09, 0.08, 0.12], p => ({ x: params.noseTipWidth * (p.x - tip.x) * 0.65, y: 0, z: 0 }), [], true);
@@ -469,7 +537,14 @@ export function deformPositions(
       }
     }
   }
-  if (nasal) copyNasalHalf(result, dense, vertexMask, vertexSide, nasal.frame, Math.abs(params.noseSymmetry), h);
+  if (nasal && dense.some(value => value !== 0)) {
+    copyNasalHalf(result, dense, vertexMask, vertexSide, nasal.frame, Math.abs(params.noseSymmetry), h,
+      topology ? vertexNormals(original, topology) : undefined);
+  }
+  if (topology && (params.noseRadix || params.noseBridge || params.noseHump || params.noseTip
+    || params.noseRotation || params.noseTipWidth || params.noseWidth || params.noseSymmetry)) {
+    preserveTriangleOrientation(original, result, topology);
+  }
   return result;
 }
 
@@ -495,7 +570,7 @@ export function buildSimulationLayers(mesh: SimulationMesh, input: Partial<Simul
   // ponytail: piel sin generador ni caché multicapa → imágenes anatómicas en su módulo.
   return [{
     id: 'skin',
-    positions: deformPositions(mesh.positions, mesh.anchors, input),
+    positions: deformPositions(mesh.positions, mesh.anchors, input, mesh.indices),
     indices: mesh.indices.slice(),
   }];
 }
@@ -505,9 +580,9 @@ export function buildSimulationReferenceSurface(
   mesh: SimulationMesh, input: Partial<SimulationParameters>,
 ): { positions: Float32Array; indices: Uint32Array } {
   return mesh.source === 'generic'
-    ? { positions: deformPositions(mesh.anchors, mesh.anchors, input), indices: Uint32Array.from(atlasData.triangles) }
+    ? { positions: deformPositions(mesh.anchors, mesh.anchors, input, atlasData.triangles), indices: Uint32Array.from(atlasData.triangles) }
     : {
-      positions: deformPositions(mesh.positions, mesh.anchors, input),
+      positions: deformPositions(mesh.positions, mesh.anchors, input, mesh.indices),
       indices: mesh.indices.slice(0, mesh.observedIndexCount ?? mesh.indices.length),
     };
 }

@@ -130,6 +130,8 @@ test('editor: región independiente, navegación explícita y restauración loca
 test('editor: imágenes independientes, opacidad no forzada y dos modos de corte', () => {
   const app = editor();
   let tree = app.render();
+  find(tree, node => node.type === 'button' && text(node) === 'Capas')[0].props.onClick();
+  tree = app.render();
   const label = prefix => find(tree, node => node.type === 'label' && text(node).startsWith(prefix))[0];
   const control = (prefix, type) => prefix === 'Opacidad Piel'
     ? find(tree, node => node.props?.['aria-label'] === 'Opacidad: Piel')[0]
@@ -142,6 +144,8 @@ test('editor: imágenes independientes, opacidad no forzada y dos modos de corte
   tree = app.render();
   assert.equal(control('Opacidad Piel', 'input').props.value, 0.25);
   assert.equal(control('Superponer anatomía', 'input').props.checked, true);
+  find(tree, node => node.type === 'button' && text(node) === 'Corte')[0].props.onClick();
+  tree = app.render();
   control('Modo de corte', 'select').props.onChange({ target: { value: 'progressive' } });
   tree = app.render();
   assert.equal(control('Opacidad Piel', 'input').props.value, 1, 'el desvelado parte de una piel íntegra');
@@ -168,4 +172,32 @@ test('corte en profundidad pela piel → músculo → vascular → óseo con cap
   const mid = at(1 / 6);
   assert.ok(mid.skin.opacity > 0 && mid.references.muscle.opacity > 0 && mid.references.muscle.visible, 'transición cruzada');
   assert.throws(() => at(Number.NaN));
+});
+
+test('recorrido configurable: extremos, reverso, arterias y controles conservan corte espacial', () => {
+  const start = displayAPI.initialAnatomyDisplay();
+  for (const from of displayAPI.DEPTH_STOPS) for (const to of displayAPI.DEPTH_STOPS) {
+    if (from === to) {
+      assert.throws(() => displayAPI.depthPeelDisplay(start, 0.5, from, to));
+      continue;
+    }
+    assert.equal(displayAPI.depthPeelDisplay(start, 0, from, to).anatomy, from);
+    assert.equal(displayAPI.depthPeelDisplay(start, 1, from, to).anatomy, to);
+    const middle = displayAPI.depthPeelDisplay(start, 0.5, from, to);
+    assert.ok([middle.skin, ...Object.values(middle.references)].every(layer =>
+      layer.opacity >= 0 && layer.opacity <= 1));
+  }
+  const app = editor();
+  let tree = app.render();
+  const button = label => find(tree, n => n.type === 'button' && text(n) === label)[0];
+  button('Corte').props.onClick(); tree = app.render();
+  const label = prefix => find(tree, n => n.type === 'label' && text(n).startsWith(prefix))[0];
+  find(label('Aplicar a'), n => n.type === 'select')[0].props.onChange({ target: { value: 'all' } });
+  tree = app.render();
+  find(label('Posición'), n => n.type === 'input')[0].props.onChange({ target: { value: '0.32' } });
+  tree = app.render();
+  find(tree, n => n.props?.['aria-label'] === 'Recorrido entre capas')[0].props.onChange({ target: { value: '0.6' } });
+  tree = app.render();
+  assert.equal(find(label('Aplicar a'), n => n.type === 'select')[0].props.value, 'all');
+  assert.equal(find(label('Posición'), n => n.type === 'input')[0].props.value, 0.32);
 });

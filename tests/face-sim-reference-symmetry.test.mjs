@@ -226,7 +226,8 @@ function editor({ runEffects = false, loadLayers } = {}) {
   let cursor = 0, effectCursor = 0, refCursor = 0, pending = [], renderState;
   const exports = {};
   vm.runInNewContext(compile('FacialSimulationViewer.tsx'), {
-    exports, console, Error, window: { matchMedia: () => ({ matches: false }) }, require: name => {
+    exports, console, Error, requestAnimationFrame: () => 1, cancelAnimationFrame() {},
+    window: { matchMedia: () => ({ matches: false }) }, require: name => {
       if (name === 'react') return { ...React, useId: () => 'editor',
         useRef: initial => {
           const i = refCursor++;
@@ -253,6 +254,7 @@ function editor({ runEffects = false, loadLayers } = {}) {
       if (name === './faceRegions') return { buildFaceRegionMap: () => ({}), buildFaceTriangleRegions: () => [] };
       if (name === './regionMesh') return { buildRegionCells: () => [] };
       if (name === './estimatedHair') return { DEFAULT_HAIR: { enabled: false } };
+      if (name === './MarkingPanels') return { editorPanel: 'editor-panel' };
       if (name === './skinSignalTexture') return {};
       if (name === './defaultLayers' && loadLayers) return { ...load('defaultLayers.ts'), loadDefaultLayers: loadLayers };
       if (name.startsWith('three/')) return {};
@@ -279,9 +281,12 @@ test('visor sin surface: carga referencias reales para Músculo y muestra prepar
     calls++;
     return DEFAULT_LAYER_SOURCES.map(source => ({ source, canvas: {}, landmarks: null }));
   } });
-  const value = chooseAnatomyDisplay(initialAnatomyDisplay(), 'muscle');
-  const props = { anatomyDisplay: value };
+  const props = {};
   let tree = app.render(props);
+  find(tree, n => n.type === 'button' && text(n) === 'Capas')[0].props.onClick();
+  tree = app.render(props);
+  find(tree, n => n.type === 'button' && text(n) === 'Músculo')[0].props.onClick();
+  tree = app.render(props);
   assert.equal(calls, 1, 'carga aun sin foto ni surface');
   assert.match(text(tree), /Preparando referencias ilustrativas sobre el modelo genérico/);
   assert.doesNotMatch(text(tree), /Carga una foto con referencias faciales para acoplar/);
@@ -298,6 +303,8 @@ test('visor sin surface: carga referencias reales para Músculo y muestra prepar
   assert.doesNotMatch(text(tree), /Preparando referencias ilustrativas/);
 
   const failed = editor({ runEffects: true, loadLayers: async () => { throw new Error('Ilustración local no disponible'); } });
+  const first = failed.render(props);
+  find(first, n => n.type === 'button' && text(n) === 'Capas')[0].props.onClick();
   failed.render(props); await new Promise(resolve => setImmediate(resolve));
   const errorTree = failed.render(props);
   assert.ok(find(errorTree, n => n.props?.role === 'alert' && text(n).includes('Ilustración local no disponible')).length);
@@ -311,6 +318,8 @@ test('transición genérico→personal descarta referencias/UV previos antes de 
   let calls = 0;
   const app = editor({ runEffects: true, loadLayers: () => ++calls === 1 ? Promise.resolve(loaded)
     : new Promise(resolve => { resolvePersonal = resolve; }) });
+  const first = app.render();
+  find(first, n => n.type === 'button' && text(n) === 'Capas')[0].props.onClick();
   app.render(); await new Promise(resolve => setImmediate(resolve)); app.render();
   const genericReferences = app.state.references;
   const uvs = buildCanonicalReferenceUVs(atlas.positions);
@@ -328,7 +337,9 @@ test('transición genérico→personal descarta referencias/UV previos antes de 
   const base = sim.createSimulationMesh(surface);
   const refined = load('displaySurface.ts').refineDisplaySurface(base.positions, base.indices);
   const personal = sim.buildSimulationReferenceSurface({ ...base, positions: refined.positions, indices: refined.indices }, {});
-  for (const reference of app.state.references) assert.ok(buildReferenceGeometry(personal.positions, personal.indices, reference).indices.length);
+  for (const reference of app.state.references) assert.ok(buildReferenceGeometry(personal.positions, personal.indices, {
+    ...reference, uvs: refined.attribute(reference.uvs, 2),
+  }).indices.length);
 });
 
 test('controles compartidos accesibles: emiten cambios sin mutar props, mesh y disabled', () => {
@@ -344,36 +355,49 @@ test('controles compartidos accesibles: emiten cambios sin mutar props, mesh y d
   assert.deepEqual(meshes, [true]);
 });
 
-test('visor controlado real: quick, opacidad, custom, corte y reset notifican sin fuente local paralela', () => {
-  const app = editor(), changes = [];
-  let value = initialAnatomyDisplay();
-  const props = () => ({ anatomyDisplay: value, onAnatomyDisplayChange: next => changes.push(next),
+test('visor independiente: capas no se heredan, selección restaura opacidad y morfología vuelve a piel', () => {
+  const app = editor();
+  const external = chooseAnatomyDisplay(initialAnatomyDisplay(), 'bone');
+  const props = () => ({ anatomyDisplay: external, showMesh: true,
     surface: { uvs: new Float32Array(936) } });
   let tree = app.render(props());
   const button = label => find(tree, n => n.type === 'button' && text(n) === label)[0];
   const opacity = () => find(tree, n => n.props?.['aria-label'] === 'Opacidad: Piel')[0];
+  assert.equal(app.state.anatomy, 'skin');
+  assert.equal(app.state.showMesh, false);
+  button('Capas').props.onClick(); tree = app.render(props());
   assert.equal(find(tree, n => n.props?.['aria-label'] === 'Capa rápida').length, 1);
   button('Óseo').props.onClick();
-  assert.equal(changes.at(-1).anatomy, 'bone');
   tree = app.render(props());
-  assert.equal(opacity().props.value, 1, 'sin nuevo valor del padre no cambia la UI controlada');
-  value = changes.at(-1); tree = app.render(props());
+  assert.equal(app.state.anatomy, 'bone');
+  assert.equal(app.state.showMesh, false, 'seleccionar capa no activa malla');
+  tree = app.render(props());
   assert.equal(opacity().props.value, 0);
   opacity().props.onChange({ target: { value: '0.41' } });
-  value = changes.at(-1); tree = app.render(props());
+  tree = app.render(props());
   assert.equal(opacity().props.value, 0.41);
-  const custom = find(tree, n => n.props?.surfaceUVs && n.props?.onChange)[0];
-  custom.props.onChange({ kind: 'muscle' });
-  assert.equal(changes.at(-1).anatomy, 'muscle');
-  assert.equal(changes.at(-1).skin.opacity, 0.15);
-  value = changes.at(-1); tree = app.render(props());
+  button('Músculo').props.onClick(); tree = app.render(props());
+  assert.equal(app.state.referenceLayers.vessels.visible, true);
+  const muscleOpacity = find(tree, n => n.props?.['aria-label'] === 'Opacidad: Músculo')[0];
+  muscleOpacity.props.onChange({ target: { value: '0' } }); tree = app.render(props());
+  button('Músculo').props.onClick(); tree = app.render(props());
+  assert.ok(app.state.referenceLayers.muscle.opacity > 0);
+  button('Corte').props.onClick(); tree = app.render(props());
   const cut = find(tree, n => n.type === 'label' && text(n).startsWith('Modo de corte'))[0];
   find(cut, n => n.type === 'select')[0].props.onChange({ target: { value: 'progressive' } });
-  assert.equal(changes.at(-1).overlay, false);
-  assert.equal(changes.at(-1).skin.opacity, 1);
-  value = changes.at(-1); tree = app.render(props());
+  tree = app.render(props());
+  assert.equal(app.state.overlay, false);
+  assert.equal(app.state.layers.skin.opacity, 1);
+  button('Morfología').props.onClick(); tree = app.render(props());
+  assert.equal(app.state.anatomy, 'skin');
+  assert.equal(app.state.layers.skin.opacity, 1);
+  assert.equal(app.state.cut.scope, 'none');
+  assert.equal(app.state.reveal.mode, 'none');
+  assert.equal(app.state.referenceLayers.muscle.visible, false);
+  assert.equal(external.anatomy, 'bone', 'estado externo intacto');
   button('Restablecer todo').props.onClick();
-  assert.deepEqual(clone(changes.at(-1)), clone(initialAnatomyDisplay()));
+  tree = app.render(props());
+  assert.equal(app.state.anatomy, 'skin');
 });
 
 test('visor standalone: simetría reversible sin tocar otros controles ni UV; dirección separada 0..1', () => {

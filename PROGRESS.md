@@ -1,5 +1,13 @@
 # Progreso de BioSkinTech App
 
+- ✅ 2026-10-31 Capturas: carga múltiple y revisión.
+- ✅ 2026-10-31 Nariz: campos locales; raíz independiente.
+- ✅ 2026-10-31 Inyectables: deslizador y doble visor.
+- ✅ 2026-10-31 Morfología: piel y estados independientes.
+- ✅ 2026-10-31 Capas: arterias; mallado opcional.
+- ✅ 2026-10-31 Corte: recorrido entre capas.
+- QA: 140 pruebas focales y navegación/morfología 17/17 aprobadas; capas 7/7 en navegador. Pendiente fluidez de máscara personal en GPU física.
+- QA final: capturas/comparación 10/10, histórico inyectables/cicatriz 14/14; cámaras sincronizadas, build y lint focal aprobados. Detector y producción no verificados.
 - ✅ 2026-10-30 Hidratación: suavizado y luminosidad.
 - ✅ 2026-10-30 Cicatrices: atenuación por zona validada.
 - QA: 22 pruebas, 13 comprobaciones navegador, lint y build aprobados; ciclo de cicatriz completo sobre textura 3D, con restauración del original.
