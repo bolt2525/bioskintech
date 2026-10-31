@@ -1980,6 +1980,8 @@ export default function FaceSimLab() {
                     className="admin-focus-ring min-h-10 w-24 rounded-lg border border-white/10 bg-stone-900 px-2 text-sm text-stone-100" />{SIM_MODES[mode].unit}
                 </label>}
               </PanelSection>
+              <details className="rounded-xl border border-white/10 bg-black/20 p-2">
+                <summary className="admin-focus-ring min-h-8 cursor-pointer text-xs font-semibold text-gold">Notas y ayuda de dibujo</summary>
               <PanelSection title="Anotación gráfica" icon={Type}>
                 <label className="block text-[11px] text-stone-400">Texto para nuevas notas
                   <input aria-label="Texto para nuevas notas" value={annotationText} maxLength={120} onChange={e => setAnnotationText(e.target.value)}
@@ -1990,6 +1992,7 @@ export default function FaceSimLab() {
               <p className="rounded-xl border border-gold/20 bg-gold/5 p-2.5 text-[11px] leading-relaxed text-stone-300">
                 Elige una herramienta en la barra <b className="text-gold">Marcar</b> sobre el visor y haz clic en el rostro. Cada punto pide su volumen.
               </p>
+              </details>
             </div>
             <div role="tabpanel" id="marcacion-panel-capas" aria-labelledby="marcacion-tab-capas" hidden={markTab !== 'capas'} className="space-y-3">
               <PanelSection title="Capa anatómica" icon={Layers}>

@@ -324,18 +324,47 @@ export function deformPositions(
   const params = sanitizeSimulation(input);
   if (Object.values(params).every(value => value === 0)) return Float32Array.from(original);
   const { height: h, axis, average } = facialFrame(anchors);
-  type Field = { center: Vec3; radius: Vec3; delta: (p: Vec3) => Vec3; protectedCenters: Vec3[] };
+  type Field = {
+    center: Vec3; radius: Vec3; delta: (p: Vec3) => Vec3; protectedCenters: Vec3[];
+    influence?: (p: Vec3) => number;
+    protectNasal?: boolean;
+  };
   const fields: Field[] = [];
   const jawAnchors = [152, 175, 199, 172, 136, 150, 149, 176, 148, 397, 365, 379, 378, 400, 377];
   const softAnchors = [0, 13, 14, 17, 61, 291, 117, 50, 346, 280, 205, 187, 425, 411, 214, 192, 434, 416];
-  const add = (ids: number[], radius: [number, number, number], delta: Field['delta'], protect: number[] = []) => {
+  const eyeAnchors = [33, 263, 159, 386, 145, 374];
+  const nasalProtectedAnchors = [...eyeAnchors, 0, 13, 14, 17, 61, 291];
+  const add = (
+    ids: number[], radius: [number, number, number], delta: Field['delta'],
+    protect: number[] = [], protectNasal = false,
+  ) => {
     fields.push({ center: average(ids), radius: { x: radius[0] * h, y: radius[1] * h, z: radius[2] * h }, delta,
-      protectedCenters: protect.map(id => point(anchors, id)) });
+      protectedCenters: protect.map(id => point(anchors, id)), protectNasal });
   };
   // Recorrido visual ampliado; no son milímetros ni rangos quirúrgicos.
-  if (params.noseBridge) add([6, 197, 195], [0.12, 0.24, 0.20], () => ({ x: 0, y: 0, z: params.noseBridge * h * 0.09 }));
-  if (params.noseHump) add([197, 195], [0.075, 0.10, 0.12], () => ({ x: 0, y: 0, z: params.noseHump * h * 0.055 }));
   const tip = average([1, 4]);
+  if (params.noseBridge || params.noseHump) {
+    const radix = average([6, 197, 195]), hump = average([197, 195]);
+    const nasalBottom = Math.min(tip.y - h * 0.08, hump.y - h * 0.24);
+    const nasalTop = Math.max(radix.y + h * 0.08, hump.y + h * 0.24);
+    const bridgeWeight = (p: Vec3) => smooth((p.y - (tip.y - h * 0.08)) / (h * 0.14))
+      * smooth(((radix.y + h * 0.08) - p.y) / (h * 0.18))
+      * smooth((h * 0.14 - Math.abs(p.x - axis)) / (h * 0.08));
+    fields.push({
+      center: tip, radius: { x: h, y: h, z: h },
+      delta: p => {
+        const t = (p.y - hump.y) / (h * 0.24);
+        const humpWeight = Math.abs(t) < 1 ? (1 - t * t) ** 2 : 0;
+        return {
+          x: 0, y: 0,
+          z: h * (params.noseBridge * 0.09 * bridgeWeight(p) + params.noseHump * 0.055 * humpWeight),
+        };
+      },
+      protectedCenters: [], protectNasal: true,
+      influence: p => Math.abs(p.x - axis) < h * 0.14
+        && p.y > nasalBottom && p.y < nasalTop ? 1 : 0,
+    });
+  }
   if (params.noseTip || params.noseRotation) add([1, 4], [0.18, 0.22, 0.28], p => {
     const angle = params.noseRotation * 0.45;
     // Pivot posterior a la punta, no giro global de la nariz.
@@ -344,11 +373,11 @@ export function deformPositions(
       x: 0, y: y * (Math.cos(angle) - 1) + z * Math.sin(angle),
       z: params.noseTip * h * 0.085 - y * Math.sin(angle) + z * (Math.cos(angle) - 1),
     };
-  });
-  if (params.noseTipWidth) add([1, 4], [0.09, 0.08, 0.12], p => ({ x: params.noseTipWidth * (p.x - tip.x) * 0.65, y: 0, z: 0 }));
+  }, [], true);
+  if (params.noseTipWidth) add([1, 4], [0.09, 0.08, 0.12], p => ({ x: params.noseTipWidth * (p.x - tip.x) * 0.65, y: 0, z: 0 }), [], true);
   if (params.noseWidth) for (const id of [98, 327]) add([id], [0.13, 0.14, 0.18], p => ({
     x: params.noseWidth * (p.x - axis) * 0.45, y: 0, z: 0,
-  }));
+  }), [], true);
   const mouth = average([13, 14]);
   if (params.lipUpper) add([0, 13], [0.17, 0.055, 0.10], p => ({
     x: 0, y: params.lipUpper * h * 0.012 * Math.tanh((p.y - mouth.y) / (h * 0.012)), z: params.lipUpper * h * 0.03,
@@ -388,15 +417,34 @@ export function deformPositions(
   }
   const vertexMask = new Float32Array(nasal ? count : 0), vertexSide = new Float32Array(vertexMask.length);
   const dense = new Uint8Array(vertexMask.length);
+  const nasalProtectedCenters = nasalProtectedAnchors.map(id => point(anchors, id));
+  const nasalProtectionRadius = { x: h * 0.055, y: h * 0.055, z: h * 0.09 };
   for (let i = 0; i < original.length / 3; i++) {
     const p = point(original, i);
+    let nasalProtection: number | undefined;
     for (const field of fields) {
-      let w = localInfluence(p, field.center, field.radius);
+      let w = field.influence ? field.influence(p) : localInfluence(p, field.center, field.radius);
       if (!w) continue;
       // Máscara espacial suave: sirve también para vértices densos, no sólo mesh468.
-      for (const center of field.protectedCenters) {
-        w *= 1 - localInfluence(p, center, { x: h * 0.055, y: h * 0.055, z: h * 0.09 });
+      if (field.protectNasal) {
+        if (nasalProtection === undefined) {
+          nasalProtection = 1;
+          for (const center of nasalProtectedCenters) {
+            const dx = (p.x - center.x) / nasalProtectionRadius.x;
+            const dy = (p.y - center.y) / nasalProtectionRadius.y;
+            const dz = (p.z - center.z) / nasalProtectionRadius.z;
+            if (Math.abs(dx) >= 1 || Math.abs(dy) >= 1 || Math.abs(dz) >= 1) continue;
+            const distance = Math.hypot(dx, dy, dz);
+            if (distance < 1) nasalProtection *= 1 - (1 - distance) ** 4 * (4 * distance + 1);
+          }
+        }
+        w *= nasalProtection;
+      } else {
+        for (const center of field.protectedCenters) {
+          w *= 1 - localInfluence(p, center, nasalProtectionRadius);
+        }
       }
+      if (!w) continue;
       const d = field.delta(p);
       result[i * 3] += d.x * w; result[i * 3 + 1] += d.y * w; result[i * 3 + 2] += d.z * w;
     }

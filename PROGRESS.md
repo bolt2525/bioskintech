@@ -1,5 +1,10 @@
 # Progreso de BioSkinTech App
 
+- ✅ 2026-10-30 Nariz: perfil dorsal continuo.
+- ✅ 2026-10-30 Lab3D: paneles y desplazamiento.
+- ✅ 2026-10-30 Morfología: reverso reutilizable.
+- ✅ 2026-10-30 Lab3D: QA navegador 17/17.
+- Pendiente: latencia de simetría nasal y medición en GPU física; SwiftShader mantiene picos en máscara personal.
 - ✅ 2026-10-30 Piel: revisión manual por zonas.
 - ✅ 2026-10-30 Lab3D: build y 58 pruebas.
 - ✅ 2026-10-30 Morfología: carga y buffers reutilizables.

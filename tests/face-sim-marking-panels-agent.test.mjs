@@ -178,6 +178,25 @@ test('listado: agrupado por vial, patrón plegable, una li por fila y plano en p
   assert.equal(find(tree, n => n.type === 'li').length, rows.length);
 });
 
+test('listado: selección no expande inspector; edición explícita conserva lista y filtros', () => {
+  const inspector = React.createElement('div', { 'data-selection-editor': true }, 'Inspector');
+  const ui = mount('PointLedger', { ...ledgerProps, selectedId: rows[0].id, header: inspector });
+  let tree = ui.render();
+  const editorPane = () => find(tree, node => node.type === 'div' && find(node, n => n.props?.['data-selection-editor']).length
+    && node.props.hidden !== undefined)[0];
+  assert.equal(button(tree, 'Listado').props['aria-pressed'], true);
+  assert.equal(editorPane().props.hidden, true);
+  assert.equal(find(tree, node => node.type === 'details' && text(node).startsWith('Filtros de zona'))[0].props.open, undefined);
+  change(labeled(tree, 'Filtrar por zona'), rows[0].zone); tree = ui.render();
+  button(tree, 'Editar selección').props.onClick(); tree = ui.render();
+  assert.equal(editorPane().props.hidden, false);
+  assert.equal(find(tree, node => node.props?.['data-active'] === false)[0].props.hidden, true);
+  button(tree, 'Listado').props.onClick(); tree = ui.render();
+  assert.equal(labeled(tree, 'Filtrar por zona').props.value, rows[0].zone);
+  assert.equal(editorPane().props.hidden, true);
+  assert.equal(labeled(tree, 'Elementos marcados').props.className.includes('flex-1'), true);
+});
+
 test('lote: vacío no aplica a visibles; seleccionar entrada incluye puntas sin gráficos ni duplicados', () => {
   const applied = [], ui = mount('PointLedger', { ...ledgerProps, onPlane: (...args) => applied.push(args) });
   let tree = ui.render();

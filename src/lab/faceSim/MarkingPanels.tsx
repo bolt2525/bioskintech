@@ -516,6 +516,7 @@ export function PointLedger({ rows, selectedId, onSelect, onHover, onDose, onDel
   const [filter, setFilter] = useState<LedgerFilter>(ALL_ROWS);
   const [checked, setChecked] = useState<ReadonlySet<string>>(new Set());
   const [bulkPlane, setBulkPlane] = useState('');
+  const [panel, setPanel] = useState<'list' | 'edit'>('list');
   const visible = useMemo(() => filterRows(rows, filter), [rows, filter]);
   const zones = useMemo(() => [...new Set(rows.map(r => r.zone))].sort((a, b) => a.localeCompare(b, 'es')), [rows]);
   const picked = rows.filter(r => checked.has(r.id));
@@ -544,7 +545,16 @@ export function PointLedger({ rows, selectedId, onSelect, onHover, onDose, onDel
   const compact = 'admin-focus-ring min-h-9 w-full rounded-lg border border-white/10 bg-stone-900 px-2 text-xs text-stone-100';
   return (
     <section aria-label="Listado de puntos" className={`${editorPanel} flex h-full min-h-0 min-w-0 flex-col gap-2 p-3`}>
-      {header}
+      <div role="group" aria-label="Panel de marcas" className="flex shrink-0 gap-1 rounded-xl bg-black/40 p-1">
+        <button type="button" aria-pressed={panel === 'list'} onClick={() => setPanel('list')}
+          className="admin-focus-ring min-h-9 flex-1 rounded-lg px-2 text-xs font-bold aria-pressed:bg-gold/20 aria-pressed:text-gold">Listado</button>
+        <button type="button" aria-pressed={panel === 'edit'} disabled={!header} onClick={() => setPanel('edit')}
+          className="admin-focus-ring min-h-9 flex-1 rounded-lg px-2 text-xs font-bold disabled:opacity-40 aria-pressed:bg-gold/20 aria-pressed:text-gold">Editar selección</button>
+      </div>
+      <div hidden={panel !== 'edit'} className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+        {header || <p className="p-3 text-xs text-stone-400">Selecciona una marca en el visor o en el listado.</p>}
+      </div>
+      <div hidden={panel !== 'list'} className="min-h-0 flex-1 flex-col gap-2 data-[active=true]:flex" data-active={panel === 'list'}>
       <header className="flex flex-wrap items-center gap-2">
         <h2 className="flex-1 whitespace-nowrap text-xs font-black uppercase tracking-[0.16em]">Marcas <span className="text-gold tabular-nums">{visible.length}/{rows.length}</span></h2>
         <div role="group" aria-label="Filtrar por inyectable" className="flex gap-1">
@@ -555,7 +565,9 @@ export function PointLedger({ rows, selectedId, onSelect, onHover, onDose, onDel
           </button>)}
         </div>
       </header>
-      <div className="grid grid-cols-2 gap-1.5">
+      <details className="shrink-0 rounded-lg border border-white/10 p-2">
+        <summary className="admin-focus-ring cursor-pointer text-xs font-semibold text-stone-300">Filtros de zona, tercio y volumen</summary>
+      <div className="mt-2 grid grid-cols-2 gap-1.5">
         <select aria-label="Filtrar por zona" value={filter.zone} onChange={e => set('zone', e.target.value)} className={`${compact} col-span-2`}>
           <option value="all">Todas las zonas</option>{zones.map(z => <option key={z}>{z}</option>)}
         </select>
@@ -566,7 +578,10 @@ export function PointLedger({ rows, selectedId, onSelect, onHover, onDose, onDel
           <option value="all">Todo volumen</option><option value="with">Con volumen</option><option value="without">Sin volumen</option>
         </select>
       </div>
-      {rows.length > 0 && <div className="grid grid-cols-2 items-center gap-1.5 rounded-xl border border-white/5 bg-black/30 p-1.5">
+      </details>
+      {rows.length > 0 && <details className="shrink-0 rounded-xl border border-white/5 bg-black/30 p-2">
+        <summary className="admin-focus-ring cursor-pointer text-xs font-semibold text-stone-300">Selección y plano en lote · {picked.length}</summary>
+        <div className="mt-2 grid grid-cols-2 items-center gap-1.5">
         <label className="flex min-h-9 items-center gap-1.5 text-[11px] font-semibold text-stone-300">
           <input type="checkbox" aria-label="Seleccionar todos los puntos visibles" checked={visible.length > 0 && visiblePicked.length === visible.length}
             onChange={e => {
@@ -584,7 +599,9 @@ export function PointLedger({ rows, selectedId, onSelect, onHover, onDose, onDel
         <button type="button" disabled={!targets.length} onClick={() => { if (targets.length) onPlane(targets.map(r => r.id), bulkPlane); }}
           className="admin-focus-ring col-span-2 min-h-9 rounded-lg bg-gold px-2.5 text-[11px] font-black text-stone-950 disabled:opacity-40">Aplicar plano a {targets.length} punto(s)</button>
         {!picked.length && <p className="col-span-2 text-[11px] text-stone-300">Selecciona marcas para aplicar un plano.</p>}
-      </div>}
+      </div></details>}
+      {header && <button type="button" onClick={() => setPanel('edit')}
+        className="admin-focus-ring min-h-9 shrink-0 rounded-lg border border-gold/30 bg-gold/10 px-2 text-left text-xs font-semibold text-gold">Editar marca seleccionada · #{rows.find(row => row.id === selectedId)?.index}</button>}
       {!rows.length && <p className="rounded-xl border border-dashed border-white/15 p-5 text-center text-sm text-stone-400">Elige una herramienta y marca sobre el rostro.</p>}
       {rows.length > 0 && !visible.length && <p role="status" className="text-xs text-stone-300">No hay marcas con estos filtros.</p>}
       <div role="list" aria-label="Elementos marcados" className="min-h-[8rem] flex-1 space-y-3 overflow-y-auto overscroll-contain pr-1">
@@ -647,6 +664,7 @@ export function PointLedger({ rows, selectedId, onSelect, onHover, onDose, onDel
         })}
       </div>
       {children}
+      </div>
     </section>
   );
 }

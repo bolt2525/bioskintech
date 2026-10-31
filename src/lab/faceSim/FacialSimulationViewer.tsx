@@ -53,6 +53,7 @@ interface ViewerState {
   cut: SimulationCut;
   view: View;
   comparison: Comparison;
+  navigation: 'orbit' | 'pan';
   showMesh: boolean;
   plane: RegionPlane;
   hair: EstimatedHairSettings;
@@ -68,7 +69,7 @@ interface ViewerState {
   selection: string | null;
   marks: readonly string[];
 }
-interface ViewerRuntime { update: (state: ViewerState) => void; dispose: () => void }
+interface ViewerRuntime { update: (state: ViewerState) => void; dispose: () => void; zoom: (factor: number) => void; reframe: () => void }
 interface PreparedSimulation {
   mesh: SimulationMesh | null;
   sourceMesh: SimulationMesh | null;
@@ -136,7 +137,7 @@ function mountFacialSimulation(
   const canvas = renderer.domElement;
   canvas.tabIndex = 0;
   canvas.setAttribute('role', 'img');
-  canvas.setAttribute('aria-label', 'Simulación facial 3D. Arrastra para orbitar; flechas para girar; más y menos para acercar o alejar.');
+  canvas.setAttribute('aria-label', 'Simulación facial 3D. Arrastra según Girar o Desplazar; Mayús y flechas desplazan; más y menos acercan; cero reencuadra.');
   canvas.style.display = 'block';
   canvas.style.width = '100%';
   canvas.style.height = '100%';
@@ -154,7 +155,8 @@ function mountFacialSimulation(
   const distance = size * 2.4;
   const controls = new OrbitControls(camera, canvas);
   controls.target.copy(center);
-  controls.enablePan = false;
+  controls.enablePan = true;
+  controls.screenSpacePanning = true;
   controls.minDistance = size * 0.7;
   controls.maxDistance = size * 6;
   controls.minZoom = 0.25;
@@ -194,12 +196,14 @@ function mountFacialSimulation(
   const photoTextures: THREE.Texture[] = [];
   let afterBacking: THREE.Mesh<THREE.BufferGeometry, THREE.MeshStandardMaterial> | undefined;
   let beforeBacking: THREE.Mesh<THREE.BufferGeometry, THREE.MeshStandardMaterial> | undefined;
+  let backingThickness = 0.11;
   const backingGeometry = (positions: Float32Array, thicknessRatio = 0.11) => {
-    const data = buildMaskBacking(positions, mesh.indices, thicknessRatio);
+    const data = buildMaskBacking(positions, sourceMesh.indices, thicknessRatio);
     const geometry = new THREE.BufferGeometry();
     geometry.setAttribute('position', new THREE.BufferAttribute(data.positions, 3));
     geometry.setIndex(new THREE.BufferAttribute(data.indices, 1));
     geometry.computeVertexNormals();
+    geometry.userData.originalPositions = data.positions.slice();
     return geometry;
   };
   let previousPhotoPatches: readonly PhotoSurfacePatch[] | undefined;
@@ -425,6 +429,14 @@ function mountFacialSimulation(
   const keyboard = (event: KeyboardEvent) => {
     const angle = 0.10, offset = camera.position.clone().sub(controls.target);
     const spherical = new THREE.Spherical().setFromVector3(offset);
+    if (event.shiftKey && ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(event.key)) {
+      const step = size * 0.025 / camera.zoom;
+      const shift = new THREE.Vector3(event.key === 'ArrowLeft' ? -step : event.key === 'ArrowRight' ? step : 0,
+        event.key === 'ArrowUp' ? step : event.key === 'ArrowDown' ? -step : 0, 0).applyQuaternion(camera.quaternion);
+      camera.position.add(shift); controls.target.add(shift);
+      event.preventDefault(); controls.update(); requestRender(); return;
+    }
+    if (event.key === '0') { event.preventDefault(); reframe(); return; }
     if (event.key === '+' || event.key === '=') camera.zoom = Math.min(controls.maxZoom, camera.zoom / 0.9);
     else if (event.key === '-') camera.zoom = Math.max(controls.minZoom, camera.zoom / 1.1);
     else if (controls.enableRotate && event.key === 'ArrowLeft') spherical.theta -= angle;
@@ -437,6 +449,11 @@ function mountFacialSimulation(
     spherical.phi = THREE.MathUtils.clamp(spherical.phi, 0.08, Math.PI - 0.08);
     camera.position.copy(controls.target).add(new THREE.Vector3().setFromSpherical(spherical));
     controls.update(); requestRender();
+  };
+  const reframe = () => {
+    const offset = camera.position.clone().sub(controls.target).normalize().multiplyScalar(distance);
+    controls.target.copy(center); camera.position.copy(center).add(offset);
+    camera.zoom = 1; camera.updateProjectionMatrix(); controls.update(); requestRender();
   };
   const dispose = () => {
     disposed = true;
@@ -501,8 +518,8 @@ function mountFacialSimulation(
     before.add(beforeMesh);
     if (mesh.source === 'personal' && mesh.observedIndexCount === undefined) {
       const material = new THREE.MeshStandardMaterial({ color: '#475569', roughness: 1, side: THREE.DoubleSide });
-      afterBacking = new THREE.Mesh(backingGeometry(mesh.positions), material);
-      beforeBacking = new THREE.Mesh(backingGeometry(mesh.positions), material.clone());
+      afterBacking = new THREE.Mesh(backingGeometry(sourceMesh.positions), material);
+      beforeBacking = new THREE.Mesh(afterBacking.geometry.clone(), material.clone());
       afterBacking.name = beforeBacking.name = 'MASK_NEUTRAL_BACKING';
       after.add(afterBacking); before.add(beforeBacking);
     }
@@ -526,6 +543,11 @@ function mountFacialSimulation(
   }
   return {
     dispose,
+    reframe,
+    zoom(factor) {
+      camera.zoom = THREE.MathUtils.clamp(camera.zoom * factor, controls.minZoom, controls.maxZoom);
+      camera.updateProjectionMatrix(); requestRender();
+    },
     update(next) {
       if (disposed || failed) return;
       state = next;
@@ -668,10 +690,18 @@ function mountFacialSimulation(
           object.geometry.computeBoundingSphere();
         }
       }
-      if (afterBacking && (geometryChanged || referencesChanged && needsReferences)) {
+      if (afterBacking && (parametersChanged || referencesChanged && needsReferences)) {
         const thickness = Math.max(0.11, ...next.references.map(reference => reference.depth + 0.025));
-        afterBacking.geometry.dispose();
-        afterBacking.geometry = backingGeometry(deformedPositions, thickness);
+        if (backingThickness !== thickness) {
+          afterBacking.geometry.dispose();
+          afterBacking.geometry = backingGeometry(sourceMesh.positions, thickness);
+          backingThickness = thickness;
+        }
+        const geometry = afterBacking.geometry;
+        const original = geometry.userData.originalPositions as Float32Array;
+        (geometry.getAttribute('position').array as Float32Array).set(deformPositions(original, mesh.anchors, next.parameters));
+        geometry.getAttribute('position').needsUpdate = true;
+        geometry.computeVertexNormals(); geometry.computeBoundingSphere();
       }
       if (next.showMesh && (!regionState || regionState.parameters !== next.parameters || regionState.anatomy !== next.anatomy
         || regionState.plane !== next.plane || regionState.references !== next.references || regionState.marks !== next.marks)) {
@@ -776,10 +806,13 @@ function mountFacialSimulation(
       // Antes conserva originales; recibe el mismo corte para comparar sin ocultaciones engañosas.
       if (beforeMesh) for (const material of beforeMesh.material) material.clippingPlanes = plane ? [plane] : [];
       controls.enableRotate = true;
+      controls.mouseButtons.LEFT = next.navigation === 'pan' ? THREE.MOUSE.PAN : THREE.MOUSE.ROTATE;
+      controls.touches.ONE = next.navigation === 'pan' ? THREE.TOUCH.PAN : THREE.TOUCH.ROTATE;
+      controls.touches.TWO = THREE.TOUCH.DOLLY_PAN;
       if (previousView !== next.view) {
         const direction = next.view === 'left' ? new THREE.Vector3(-1, 0, 0)
           : next.view === 'right' ? new THREE.Vector3(1, 0, 0) : new THREE.Vector3(0, 0, 1);
-        camera.position.copy(center).addScaledVector(direction, distance);
+        controls.target.copy(center); camera.position.copy(center).addScaledVector(direction, distance);
         camera.up.set(0, 1, 0); camera.lookAt(center); controls.update();
         previousView = next.view;
       }
@@ -798,6 +831,7 @@ export function FacialSimulationViewer({ surface, photo, showMesh, plane, onMesh
     if (window.matchMedia?.('(min-width: 1024px)').matches) editor.current?.scrollIntoView?.({ block: 'start', behavior: 'smooth' });
   }, []);
   const [tool, setTool] = useState<InspectorTool>('morphology');
+  const [morphologyGroup, setMorphologyGroup] = useState<typeof SIMULATION_GROUPS[number]>('Nariz');
   const [skinOpened, setSkinOpened] = useState(false);
   const [referenceEditorOpened, setReferenceEditorOpened] = useState(false);
   const [skinReviewVersion, setSkinReviewVersion] = useState(0);
@@ -815,6 +849,7 @@ export function FacialSimulationViewer({ surface, photo, showMesh, plane, onMesh
   const layers = useMemo<LayerSettings>(() => ({ skin: display.skin }), [display.skin]);
   const [cut, setCut] = useState<SimulationCut>({ ...INITIAL_CUT });
   const [view, setView] = useState<View>('orbit');
+  const [navigation, setNavigation] = useState<'orbit' | 'pan'>('orbit');
   const [comparison, setComparison] = useState<Comparison>('after');
   const [error, setError] = useState<string | null>(null);
   const [ready, setReady] = useState(false), [attempt, setAttempt] = useState(0);
@@ -930,10 +965,10 @@ export function FacialSimulationViewer({ surface, photo, showMesh, plane, onMesh
     blendIndices: patch.blendIndices && prepared.refinement!.indicesFor(patch.blendIndices),
     alpha: patch.alpha && prepared.refinement!.attribute(patch.alpha, 1),
   })), [prepared, photoPatches]);
-  const state = useMemo<ViewerState>(() => ({ parameters, layers, cut, view, comparison, showMesh: meshVisible, plane: activePlane, hair,
+  const state = useMemo<ViewerState>(() => ({ parameters, layers, cut, view, comparison, navigation, showMesh: meshVisible, plane: activePlane, hair,
     hairPatches: displayHair ?? undefined, photoPatches: displayPhotos ?? undefined, skinTexture, skinRegions, references: displayReferences, anatomy,
     referenceLayers, overlay, reveal, selection, marks }),
-    [parameters, layers, cut, view, comparison, meshVisible, activePlane, hair, displayHair, displayPhotos, skinTexture, skinRegions, displayReferences, anatomy, referenceLayers, overlay, reveal, selection, marks]);
+    [parameters, layers, cut, view, comparison, navigation, meshVisible, activePlane, hair, displayHair, displayPhotos, skinTexture, skinRegions, displayReferences, anatomy, referenceLayers, overlay, reveal, selection, marks]);
 
   useEffect(() => {
     setError(null); setReady(false);
@@ -962,6 +997,7 @@ export function FacialSimulationViewer({ surface, photo, showMesh, plane, onMesh
     setSkinReview(undefined);
     setSkinReviewVersion(value => value + 1);
     setCut({ ...INITIAL_CUT }); setView('front'); setComparison('after');
+    setNavigation('orbit'); runtime.current?.reframe();
     setReveal({ ...INITIAL_REVEAL }); setSelection(null); setMarks([]);
     if (onPlaneChange) onPlaneChange('superficial'); else setLocalPlane('superficial');
     setHoveredZone(null);
@@ -992,14 +1028,36 @@ export function FacialSimulationViewer({ surface, photo, showMesh, plane, onMesh
             <button type="button" key={key} className={buttonClass} aria-pressed={view === key} onClick={() => setView(key)}>{label}</button>
           ))}
         </div>
+        <div role="group" aria-label="Navegación del visor" className="flex flex-wrap gap-1">
+          <button type="button" className={buttonClass} aria-pressed={navigation === 'orbit'} onClick={() => setNavigation('orbit')}>Girar</button>
+          <button type="button" className={buttonClass} aria-pressed={navigation === 'pan'} onClick={() => setNavigation('pan')}>Desplazar</button>
+          <button type="button" className={buttonClass} aria-label="Alejar modelo" onClick={() => runtime.current?.zoom(0.8)}>−</button>
+          <button type="button" className={buttonClass} aria-label="Acercar modelo" onClick={() => runtime.current?.zoom(1.25)}>+</button>
+          <button type="button" className={buttonClass} onClick={() => runtime.current?.reframe()}>Reencuadrar</button>
+        </div>
         <div role="group" aria-label="Comparación morfológica" className="flex flex-wrap gap-1">
           {([['before', 'Antes'], ['after', 'Después'], ['split', 'Comparar 3D']] as const).map(([key, label]) => (
             <button type="button" key={key} className={buttonClass} aria-pressed={comparison === key} onClick={() => setComparison(key)}>{label}</button>
           ))}
         </div>
       </div>
-      <div className="grid min-h-0 flex-1 gap-3 lg:grid-cols-[minmax(0,1fr)_18rem]">
-        <div className="flex min-h-0 min-w-0 flex-col gap-2">
+      <div className="grid min-h-0 flex-1 gap-3 lg:grid-cols-[10rem_minmax(0,1fr)_19rem] xl:grid-cols-[12rem_minmax(0,1fr)_21rem]">
+        <aside aria-label="Herramientas de simulación" className="min-h-0 min-w-0 rounded-xl border border-white/10 bg-black/30 p-2 lg:overflow-y-auto">
+          <nav aria-label="Sección de simulación" className="grid grid-cols-2 gap-1 lg:grid-cols-1">
+            {([['morphology', 'Morfología'], ['skin', 'Piel'], ['layers', 'Capas'], ['cut', 'Corte']] as const).map(([key, label]) =>
+              <button type="button" key={key} aria-pressed={tool === key} aria-controls={`${id}-tool-${key}`}
+                className={`${buttonClass} min-h-10 text-left`} onClick={() => { setTool(key); if (key === 'skin') setSkinOpened(true); inspector.current?.scrollTo({ top: 0 }); }}>{label}</button>)}
+          </nav>
+          <div hidden={tool !== 'morphology'} className="mt-3 space-y-2 border-t border-white/10 pt-3">
+            <h3 className="text-[11px] font-bold uppercase tracking-wider text-gold">Región morfológica</h3>
+            <div role="group" aria-label="Región morfológica" className="flex flex-wrap gap-1 lg:flex-col">
+              {SIMULATION_GROUPS.map(group => <button key={group} type="button" className={`${buttonClass} text-left`}
+                aria-pressed={morphologyGroup === group} onClick={() => { setMorphologyGroup(group); inspector.current?.scrollTo({ top: 0 }); }}>{group}</button>)}
+            </div>
+          </div>
+          <p className="mt-3 hidden text-[11px] leading-relaxed text-stone-400 lg:block">Elige una sección aquí. Sus controles aparecen a la derecha; el visor conserva el centro.</p>
+        </aside>
+        <div className="flex min-h-0 min-w-0 flex-col gap-2" data-simulation-center>
           <div className="relative min-h-64 flex-1 overflow-hidden rounded-lg border border-slate-700 bg-slate-950">
             <div ref={host} data-simulation-viewport data-ready={ready} aria-busy={!ready && !failure} className="h-[46dvh] min-h-64 w-full lg:h-full" />
             {comparison === 'split' && !failure ? (
@@ -1023,22 +1081,26 @@ export function FacialSimulationViewer({ surface, photo, showMesh, plane, onMesh
             <p>{referenceError}</p><button type="button" className={buttonClass} onClick={() => setReferenceAttempt(value => value + 1)}>Reintentar referencias</button>
           </div> : needsReferences && (!references.length || anatomy !== 'skin' && !references.some(reference => reference.kind === anatomy))
             ? <p role="status" className="text-xs text-slate-300">Preparando referencias ilustrativas sobre {surface ? 'la superficie facial' : 'el modelo genérico'}…</p> : null}
-          <p id={`${id}-help`} className="text-[11px] text-slate-400">Arrastra o usa las flechas para girar · rueda, pinza o +/− para zoom. «Antes» conserva el original.</p>
+          <p id={`${id}-help`} className="text-[11px] text-slate-400">Arrastra para {navigation === 'pan' ? 'desplazar' : 'girar'} · botón derecho o Mayús + flechas para mover · dos dedos para desplazar/zoom · 0 reencuadra. «Antes» conserva el original.</p>
           <details className="shrink-0 text-xs text-slate-400"><summary className="cursor-pointer rounded focus-visible:outline focus-visible:outline-cyan-300">Límites · no es un escaneo ni una predicción clínica</summary>
             <p className="max-h-24 overflow-y-auto py-2">La máscara conserva una profundidad aproximada. El reverso es un cierre mate, no una cabeza reconstruida. Músculos, arterias y huesos son ilustraciones genéricas: sus zonas están autoradas sobre las imágenes, no detectadas en el paciente. Corte y separación son visuales, no espesores anatómicos ni planos de inyección. No predice tratamientos ni diagnostica lesiones.</p>
           </details>
         </div>
         <aside aria-label="Inspector de simulación" className="flex min-h-0 min-w-0 flex-col rounded-xl border border-white/10 bg-black/30">
-          <nav aria-label="Herramientas de simulación" className="grid shrink-0 grid-cols-2 gap-1 border-b border-slate-700 p-2">
-            {([['morphology', 'Morfología'], ['skin', 'Piel'], ['layers', 'Capas'], ['cut', 'Corte']] as const).map(([key, label]) =>
-              <button type="button" key={key} aria-pressed={tool === key} aria-controls={`${id}-tool-${key}`}
-                className={`${buttonClass} min-h-10`} onClick={() => { setTool(key); if (key === 'skin') setSkinOpened(true); inspector.current?.scrollTo({ top: 0 }); }}>{label}</button>)}
-          </nav>
+          <h3 className="shrink-0 border-b border-white/10 p-3 text-xs font-bold text-gold">
+            {tool === 'morphology' ? `Morfología · ${morphologyGroup}` : tool === 'skin' ? 'Piel · revisión y ajustes' : tool === 'layers' ? 'Capas · referencias' : 'Corte · profundidad'}
+          </h3>
           <div ref={inspector} data-simulation-inspector className="max-h-[48dvh] min-h-0 space-y-3 overflow-y-auto overscroll-contain p-3 lg:max-h-none lg:flex-1" aria-describedby={`${id}-help`}>
           <div id={`${id}-tool-morphology`} hidden={tool !== 'morphology'} className="space-y-3">
-          <button type="button" className={buttonClass} onClick={() => chooseAnatomy('skin')}>Mostrar superficie</button>
+          <div className="flex flex-wrap gap-1">
+            <button type="button" className={buttonClass} onClick={() => chooseAnatomy('skin')}>Mostrar superficie</button>
+            <button type="button" className={buttonClass} onClick={() => setParameters(current => ({
+              ...current, ...Object.fromEntries(SIMULATION_CONTROLS.filter(control => control.group === morphologyGroup).map(control => [control.key, 0])),
+              ...(morphologyGroup === 'Nariz' ? { noseSymmetry: 0 } : {}),
+            }))}>Restablecer {morphologyGroup.toLocaleLowerCase('es')}</button>
+          </div>
           {SIMULATION_GROUPS.map(group => (
-            <fieldset key={group} className="space-y-2 rounded-lg border border-slate-700 p-2">
+            <fieldset key={group} hidden={morphologyGroup !== group} className="space-y-3 rounded-lg border border-slate-700 p-2">
               <legend className="px-1 text-xs font-semibold">{group}</legend>
               {SIMULATION_CONTROLS.filter(control => control.group === group).map(control => (
                 <label key={control.key} className="block text-xs" htmlFor={`${id}-${control.key}`}>

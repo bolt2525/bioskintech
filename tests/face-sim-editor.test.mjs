@@ -102,6 +102,31 @@ test('editor: un solo retoque de piel; herramientas independientes conservan mor
   assert.match(find(tree, node => node.props?.['data-simulation-inspector'] !== undefined)[0].props.className, /overflow-y-auto/);
 });
 
+test('editor: región independiente, navegación explícita y restauración localizada', () => {
+  const app = editor();
+  let tree = app.render();
+  const click = label => find(tree, node => node.type === 'button' && text(node) === label)[0].props.onClick();
+  const control = key => find(tree, node => node.props?.id === `editor-${key}`)[0];
+  control('noseBridge').props.onChange({ target: { value: '0.5' } });
+  click('Desplazar'); tree = app.render();
+  assert.equal(find(tree, node => node.type === 'button' && text(node) === 'Desplazar')[0].props['aria-pressed'], true);
+  assert.equal(control('noseBridge').props.value, 0.5);
+  const region = find(tree, node => node.type === 'legend' && text(node) !== 'Nariz' && /Labios/.test(text(node)))[0];
+  assert.ok(region);
+  click('Labios'); tree = app.render();
+  const morphology = find(tree, node => node.props?.id === 'editor-tool-morphology')[0];
+  const fields = find(morphology, node => node.type === 'fieldset');
+  assert.equal(fields.filter(node => !node.props.hidden).length, 1);
+  assert.equal(text(fields.find(node => !node.props.hidden).props.children[0]), 'Labios');
+  control('lipUpper').props.onChange({ target: { value: '0.4' } });
+  click('Restablecer labios'); tree = app.render();
+  assert.equal(control('lipUpper').props.value, 0);
+  assert.equal(control('noseBridge').props.value, 0.5);
+  click('Nariz'); tree = app.render();
+  click('Restablecer nariz'); tree = app.render();
+  assert.equal(control('noseBridge').props.value, 0);
+});
+
 test('editor: imágenes independientes, opacidad no forzada y dos modos de corte', () => {
   const app = editor();
   let tree = app.render();

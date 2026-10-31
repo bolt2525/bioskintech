@@ -32,7 +32,9 @@ test('runtime: slider reutiliza buffers, deforma una sola vez y omite capas/zona
     referenceGroup: { children: [] }, photoGroup: { children: [] }, beforePhotoGroup: { children: [] },
     hairGroup: { children: [] }, regionOverlay: {}, highlight: {}, regionMaterial: {}, highlightMaterial: {},
     signalTexture: undefined, texture: undefined,
-    controls: { enableRotate: false }, bounds: {}, THREE: { Mesh: class {} },
+    controls: { enableRotate: false, mouseButtons: {}, touches: {} }, bounds: {}, THREE: {
+      Mesh: class {}, MOUSE: { PAN: 2, ROTATE: 0 }, TOUCH: { PAN: 1, ROTATE: 0, DOLLY_PAN: 2 },
+    },
     deformPositions: (original, _anchors, parameters) => { deformations++; return Float32Array.from(original, v => v + parameters.noseTip); },
     revealStage: () => null, buildCutPlane: () => null, selectZone() {},
     getAnatomyCells: fail, buildReferenceGeometry: fail, buildSimulationLayers: fail,
@@ -60,6 +62,10 @@ test('runtime: slider reutiliza buffers, deforma una sola vez y omite capas/zona
   assert.ok(Math.abs(attribute.array[0] - 0.7) < 1e-6, 'evalúa desde el original, sin acumular');
   assert.equal(renders, 3);
   assert.equal(context.controls.enableRotate, true);
+  context.update({ ...state, parameters: context.lastParameters, navigation: 'pan' });
+  assert.equal(context.controls.mouseButtons.LEFT, 2);
+  assert.equal(context.controls.touches.ONE, 1);
+  assert.equal(deformations, 2, 'navegar no vuelve a calcular la geometría');
   context.THREE.CanvasTexture = class { constructor(image) { this.image = image; } dispose() {} };
   const withTexture = { ...state, parameters: context.lastParameters, skinTexture: { width: 10 } };
   context.update(withTexture);
@@ -77,6 +83,16 @@ test('runtime: slider reutiliza buffers, deforma una sola vez y omite capas/zona
   context.update({ ...withTexture, skinRegions: [] });
   assert.ok(Math.abs(attribute.array[0] - 0.7) < 1e-6, 'antes/restablecer retira relieve sin perder morfología');
   assert.equal(deformations, 2);
+  const backingAttribute = { array: positions.slice(), needsUpdate: false };
+  const backingGeometry = { userData: { originalPositions: positions.slice() },
+    getAttribute: () => backingAttribute, computeVertexNormals() {}, computeBoundingSphere() {},
+    dispose() { throw new Error('El slider no debe reconstruir el reverso'); } };
+  context.afterBacking = { geometry: backingGeometry };
+  context.backingThickness = 0.11;
+  context.update({ ...withTexture, parameters: { noseTip: 0.8 }, skinRegions: [] });
+  assert.equal(context.afterBacking.geometry, backingGeometry);
+  assert.ok(Math.abs(backingAttribute.array[0] - 0.8) < 1e-6);
+  assert.deepEqual(Array.from(backingGeometry.userData.originalPositions), Array.from(positions));
 });
 
 test('carga: listo solo después de dibujar; un error no anuncia éxito', () => {
