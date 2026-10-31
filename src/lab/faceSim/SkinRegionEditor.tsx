@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
-import type { KeyboardEvent as ReactKeyboardEvent, PointerEvent } from 'react';
+import type { KeyboardEvent as ReactKeyboardEvent, PointerEvent, MutableRefObject } from 'react';
+import { skinBrushPolygon, type SkinModelDrawing } from './skinDrawing';
 import type { P2 } from './engine';
 import { analyzeSkinAppearance } from './skinAppearance';
 import { createSkinSignalMask, skinSignalPreview } from './skinSignalTexture';
 import {
   applySkinRegionRgb, createSkinRegionMask, createSkinReviewRegion, isValidSkinPolygon,
-  pointInValidatedSkinPolygon, SKIN_REVIEW_LABELS, type SkinReviewRegion,
+  pointInValidatedSkinPolygon, skinEducationalPreset, SKIN_REVIEW_LABELS, type SkinReviewRegion,
 } from './skinRegionReview';
 
 interface SkinRegionEditorProps {
@@ -13,9 +14,11 @@ interface SkinRegionEditorProps {
   landmarks?: readonly P2[];
   onTexture: (canvas: HTMLCanvasElement | undefined) => void;
   onRegionsChange?: (regions: readonly SkinReviewRegion[]) => void;
+  modelDrawingRef?: MutableRefObject<SkinModelDrawing | undefined>;
+  sourceLabel?: string;
 }
 
-type DrawMode = 'rectangle' | 'freehand';
+type DrawMode = 'rectangle' | 'freehand' | 'brush';
 interface AnalysisSnapshot {
   regionId: string;
   result: ReturnType<typeof analyzeSkinAppearance>;
@@ -108,7 +111,7 @@ function statusSummary(snapshot: AnalysisSnapshot): string {
     : 'Sin sugerencia cromática o textural visible en este ROI. No indica ausencia de una alteración.';
 }
 
-export default function SkinRegionEditor({ canvas, landmarks, onTexture, onRegionsChange }: SkinRegionEditorProps) {
+export default function SkinRegionEditor({ canvas, landmarks, onTexture, onRegionsChange, modelDrawingRef, sourceLabel = 'Foto frontal' }: SkinRegionEditorProps) {
   const [context, setContext] = useState<SourceContext>(() => ({ canvas, landmarks }));
   const contextMatches = context.canvas === canvas && context.landmarks === landmarks;
   const [base, setBase] = useState<HTMLCanvasElement>();
@@ -123,6 +126,14 @@ export default function SkinRegionEditor({ canvas, landmarks, onTexture, onRegio
   const [resetAcknowledged, setResetAcknowledged] = useState(false);
   const [message, setMessage] = useState('Delimita una zona de forma manual; el análisis solo se ejecuta al solicitarlo.');
   const [customLabel, setCustomLabel] = useState('');
+  const [modelDrawing, setModelDrawing] = useState(false);
+  const [expanded, setExpanded] = useState(false);
+  const [zoom, setZoom] = useState(1);
+  const [photoPan, setPhotoPan] = useState(false);
+  const [pan, setPan] = useState({ x: 0, y: 0 });
+  const dialogRef = useRef<HTMLDialogElement>(null);
+  const panRef = useRef<{ x: number; y: number; startX: number; startY: number }>();
+  const openButtonRef = useRef<HTMLButtonElement>(null);
   const previewRef = useRef<HTMLCanvasElement>(null);
   const drawingRef = useRef<DrawDraft>();
   const pendingRef = useRef<ReturnType<typeof setTimeout>>();
@@ -131,6 +142,13 @@ export default function SkinRegionEditor({ canvas, landmarks, onTexture, onRegio
   const regionsCallback = useRef(onRegionsChange);
   useEffect(() => { textureCallback.current = onTexture; }, [onTexture]);
   useEffect(() => { regionsCallback.current = onRegionsChange; }, [onRegionsChange]);
+  useEffect(() => () => {
+    generationRef.current++;
+    clearTimeout(pendingRef.current);
+    drawingRef.current = undefined;
+    textureCallback.current(undefined);
+    regionsCallback.current?.([]);
+  }, []);
   const invalidateAnalysis = () => {
     generationRef.current++;
     clearTimeout(pendingRef.current);
@@ -151,6 +169,8 @@ export default function SkinRegionEditor({ canvas, landmarks, onTexture, onRegio
       setShowBefore(false);
       setResetAcknowledged(false);
       drawingRef.current = undefined;
+      setModelDrawing(false);
+      setZoom(1); setPan({ x: 0, y: 0 });
       setCustomLabel('');
       setMessage('Cambió la imagen o sus referencias: las zonas y revisiones anteriores se descartaron.');
       setBase(undefined);
@@ -190,7 +210,12 @@ export default function SkinRegionEditor({ canvas, landmarks, onTexture, onRegio
         setMessage(error instanceof Error ? error.message : 'No se pudo aplicar el retoque de la zona.');
       }
     }
-  }, [base, landmarks, regions, showBefore]);
+  }, [base, landmarks, regions, showBefore, expanded]);
+
+  useEffect(() => {
+    if (expanded) dialogRef.current?.showModal();
+    else dialogRef.current?.close();
+  }, [expanded]);
 
   useEffect(() => {
     regionsCallback.current?.(showBefore || resetAcknowledged
@@ -245,10 +270,19 @@ export default function SkinRegionEditor({ canvas, landmarks, onTexture, onRegio
     event.preventDefault();
     event.currentTarget.setPointerCapture(event.pointerId);
     const point = getPoint(event);
+    if (photoPan) {
+      panRef.current = { x: event.clientX, y: event.clientY, startX: pan.x, startY: pan.y };
+      return;
+    }
     drawingRef.current = { mode: drawMode, start: point, points: [point] };
     setDraft([point]);
   };
   const moveDraw = (event: PointerEvent<SVGSVGElement>) => {
+    if (panRef.current) {
+      setPan({ x: panRef.current.startX + event.clientX - panRef.current.x,
+        y: panRef.current.startY + event.clientY - panRef.current.y });
+      return;
+    }
     const current = drawingRef.current;
     if (!current) return;
     const point = getPoint(event);
@@ -267,7 +301,17 @@ export default function SkinRegionEditor({ canvas, landmarks, onTexture, onRegio
   };
   const commitPolygon = (polygon: P2[]) => {
     if (!isValidSkinPolygon(polygon)) {
-      setMessage('El trazado es demasiado pequeño o inválido. Intenta delimitarlo de nuevo.');
+      setMessage('Trazado inválido. El pincel admite toques o gestos cortos; para recorridos largos usa Trazado libre.');
+      return;
+    }
+    if (!base || !landmarks) {
+      setMessage('No hay referencias seguras de esta foto; no se creó una zona.');
+      return;
+    }
+    const safe = createSkinSignalMask(base.width, base.height, landmarks);
+    const mask = createSkinRegionMask(base.width, base.height, polygon, safe);
+    if (mask.reduce((sum, value) => sum + value, 0) < 64) {
+      setMessage('Zona sin al menos 64 píxeles seguros: evita ojos, boca y bordes.');
       return;
     }
     const replacingId = selected?.id;
@@ -283,16 +327,52 @@ export default function SkinRegionEditor({ canvas, landmarks, onTexture, onRegio
     setMessage('Zona delimitada. Elige una etiqueta y solicita el análisis local para revisarla.');
   };
   const finishDraw = (event: PointerEvent<SVGSVGElement>) => {
+    if (panRef.current) { panRef.current = undefined; return; }
     const current = drawingRef.current;
     if (!current) return;
     const point = getPoint(event);
     const polygon = current.mode === 'rectangle'
       ? [current.start, { x: point.x, y: current.start.y }, point, { x: current.start.x, y: point.y }]
-      : [...current.points, point];
+      : current.mode === 'brush' ? skinBrushPolygon([...current.points, point]) : [...current.points, point];
     drawingRef.current = undefined;
     setDraft([]);
     commitPolygon(polygon);
   };
+  const cancelDraw = () => {
+    drawingRef.current = undefined; panRef.current = undefined; setDraft([]);
+    setMessage('Trazado cancelado; no se creó una zona.');
+  };
+  // Se actualiza tras cada render: runtime accede siempre a la selección/fuente vigente.
+  useEffect(() => {
+    if (!modelDrawingRef) return;
+    modelDrawingRef.current = {
+      enabled: modelDrawing && !!base && contextMatches && !expanded,
+      start(point) {
+        invalidateAnalysis();
+        drawingRef.current = { mode: drawMode, start: point, points: [point] };
+        setDraft([point]);
+      },
+      move(point) {
+        const current = drawingRef.current;
+        if (!current || current.points.length >= 510) return;
+        if (Math.hypot(point.x - current.points.at(-1)!.x, point.y - current.points.at(-1)!.y) > 0.12) {
+          cancelDraw(); return;
+        }
+        current.points.push(point); setDraft([...current.points]);
+      },
+      finish(point) {
+        const current = drawingRef.current;
+        if (!current) return;
+        drawingRef.current = undefined; setDraft([]);
+        commitPolygon(current.mode === 'brush' ? skinBrushPolygon([...current.points, point])
+          : current.mode === 'rectangle' ? [current.start, { x: point.x, y: current.start.y }, point,
+            { x: current.start.x, y: point.y }] : [...current.points, point]);
+      },
+      cancel: cancelDraw,
+      stop() { cancelDraw(); setModelDrawing(false); },
+    };
+    return () => { modelDrawingRef.current = undefined; };
+  });
   const handleCanvasKeyDown = (event: ReactKeyboardEvent<SVGSVGElement>) => {
     if (event.key.startsWith('Arrow')) {
       event.preventDefault();
@@ -365,7 +445,7 @@ export default function SkinRegionEditor({ canvas, landmarks, onTexture, onRegio
   };
 
   const verifySelected = () => {
-    if (!selected || !selectedAnalysis || !selected.label.trim()) return;
+    if (!selected || !selectedAnalysis?.result.usable || !selected.label.trim()) return;
     setResetAcknowledged(false);
     setRegions(currentRegions => currentRegions.map(region => region.id === selected.id
       ? { ...region, verified: true } : region));
@@ -398,11 +478,28 @@ export default function SkinRegionEditor({ canvas, landmarks, onTexture, onRegio
     setMessage('Dibuja una nueva zona rectangular o a mano alzada.');
   };
 
+  const photoEditor = base && <div className="relative mx-auto w-full overflow-hidden rounded-lg border border-slate-700 bg-slate-900"
+    style={{ aspectRatio: `${base.width} / ${base.height}`, width: expanded ? `min(100%, ${68 * base.width / base.height}dvh)` : '100%' }}>
+    <div className="absolute inset-0" style={{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})` }}>
+      <canvas ref={previewRef} aria-hidden="true" className="absolute inset-0 h-full w-full" />
+      <svg viewBox="0 0 1 1" preserveAspectRatio="none" aria-label="Área para delimitar una zona de piel"
+        aria-describedby="skin-region-keyboard-help" role="application" tabIndex={0} onKeyDown={handleCanvasKeyDown}
+        className={`absolute inset-0 h-full w-full touch-none ${photoPan ? 'cursor-grab' : 'cursor-crosshair'} ${GOLD_FOCUS}`}
+        onPointerDown={beginDraw} onPointerMove={moveDraw} onPointerUp={finishDraw} onPointerCancel={cancelDraw}>
+        {regions.map(region => <polygon key={region.id} points={pointsText(region.polygon)}
+          fill="rgba(251,191,36,0.15)" stroke={region.verified ? '#86efac' : '#fbbf24'} strokeWidth="0.003" />)}
+        {selectionPolygon.length > 2 && <polygon points={pointsText(selectionPolygon)}
+          fill="rgba(251,191,36,0.15)" stroke="#fbbf24" strokeWidth="0.004" />}
+      </svg>
+    </div>
+  </div>;
+
   return <section aria-label="Revisión visual manual por zonas" className="min-w-0 space-y-3 rounded-xl border border-amber-800/60 bg-slate-950 p-3 text-sm text-slate-100 shadow-lg sm:p-4">
     <header className="flex flex-wrap items-start justify-between gap-2">
       <div>
         <h3 className="font-semibold text-amber-200">Revisión visual por zonas</h3>
         <p className="mt-1 text-xs text-slate-300">Delimita · etiqueta · analiza ROI · revisa y valida manualmente.</p>
+        <p className="text-xs text-amber-200">Fuente: {sourceLabel}</p>
       </div>
       <span className="rounded-full border border-amber-800 px-2 py-1 text-[11px] text-amber-200">Local · sin guardar</span>
     </header>
@@ -426,6 +523,15 @@ export default function SkinRegionEditor({ canvas, landmarks, onTexture, onRegio
         onClick={() => { invalidateAnalysis(); setDrawMode('rectangle'); }}>Rectángulo</button>
       <button type="button" aria-pressed={drawMode === 'freehand'} className={`${BUTTON} ${drawMode === 'freehand' ? 'border-amber-300 bg-amber-400/15' : ''}`}
         onClick={() => { invalidateAnalysis(); setDrawMode('freehand'); }}>Trazado libre</button>
+      <button type="button" aria-pressed={drawMode === 'brush'} className={BUTTON}
+        onClick={() => { cancelDraw(); setDrawMode('brush'); }}>Pincel</button>
+      {modelDrawingRef && <button type="button" aria-pressed={modelDrawing} className={BUTTON}
+        onClick={() => { cancelDraw(); setModelDrawing(value => !value); }}>
+        {modelDrawing ? 'Terminar marcado · liberar giro' : 'Marcar sobre máscara'}
+      </button>}
+      <button ref={openButtonRef} type="button" className={BUTTON} onClick={() => {
+        cancelDraw(); setZoom(1); setPan({ x: 0, y: 0 }); setExpanded(true);
+      }}>Ampliar foto</button>
       {selected && <button type="button" className={BUTTON} onClick={() => {
         drawingRef.current = undefined; setDraft([]); setAnalysis(undefined);
         invalidateAnalysis();
@@ -437,23 +543,25 @@ export default function SkinRegionEditor({ canvas, landmarks, onTexture, onRegio
       }}>Cancelar</button>}
     </div>
 
-    {base && <div className="relative mx-auto w-full overflow-hidden rounded-lg border border-slate-700 bg-slate-900"
-      style={{ aspectRatio: `${base.width} / ${base.height}` }}>
-      <canvas ref={previewRef} aria-hidden="true" className="absolute inset-0 h-full w-full" />
-      <svg viewBox="0 0 1 1" preserveAspectRatio="none" aria-label="Área para delimitar una zona de piel"
-        aria-describedby="skin-region-keyboard-help" role="application" tabIndex={0} onKeyDown={handleCanvasKeyDown}
-        className={`absolute inset-0 h-full w-full touch-none cursor-crosshair ${GOLD_FOCUS}`}
-        onPointerDown={beginDraw} onPointerMove={moveDraw} onPointerUp={finishDraw}
-        onPointerCancel={() => { drawingRef.current = undefined; setDraft([]); }}>
-        {regions.map(region => <polygon key={region.id} points={pointsText(region.polygon)}
-          fill={region.id === activeId ? 'rgba(222,184,135,0.2)' : 'rgba(148,163,184,0.12)'}
-          stroke={region.verified ? '#86efac' : region.id === activeId ? '#deb887' : '#cbd5e1'}
-          strokeWidth="0.003" vectorEffect="non-scaling-stroke" />)}
-        {selectionPolygon.length > 2 && <polygon points={pointsText(selectionPolygon)}
-          fill="rgba(251,191,36,0.15)" stroke="#fbbf24" strokeWidth="0.004"
-          strokeDasharray="0.012 0.008" vectorEffect="non-scaling-stroke" />}
-      </svg>
-    </div>}
+    {!expanded && photoEditor}
+    <dialog ref={dialogRef} aria-label={`Foto ampliada · ${sourceLabel}`}
+      onCancel={event => { event.preventDefault(); if (drawingRef.current) cancelDraw(); else setExpanded(false); }}
+      onClose={() => {
+        cancelDraw(); setExpanded(false); setZoom(1); setPan({ x: 0, y: 0 }); setPhotoPan(false);
+        openButtonRef.current?.focus();
+      }}
+      className="m-auto w-[95vw] max-w-4xl rounded-xl border border-amber-700 bg-slate-950 p-3 text-slate-100 backdrop:bg-black/80">
+      <div className="mb-2 flex flex-wrap items-center gap-2">
+        <h4 className="text-sm font-semibold">Foto ampliada · {sourceLabel}</h4>
+        <button type="button" className={BUTTON} onClick={() => setZoom(value => Math.min(4, value + 0.5))}>Acercar foto</button>
+        <button type="button" className={BUTTON} onClick={() => setZoom(value => Math.max(1, value - 0.5))}>Alejar foto</button>
+        <button type="button" className={BUTTON} onClick={() => { cancelDraw(); setZoom(1); setPan({ x: 0, y: 0 }); }}>Centrar foto</button>
+        <button type="button" className={BUTTON} aria-pressed={photoPan} onClick={() => { cancelDraw(); setPhotoPan(value => !value); }}>{photoPan ? 'Dibujar foto' : 'Mover foto'}</button>
+        <button type="button" className={BUTTON} onClick={() => setExpanded(false)}>Cerrar foto</button>
+      </div>
+      {expanded && photoEditor}
+      <p className="mt-2 text-xs">Escape cancela el trazado; de nuevo cierra. Zoom y desplazamiento conservan las coordenadas de la foto.</p>
+    </dialog>
     <p id="skin-region-keyboard-help" className="text-[11px] text-slate-400">
       Ratón o tacto: arrastra para trazar. Teclado: enfoca la imagen, mueve el centro con flechas (Mayús = paso mayor) y pulsa Intro para crear un rectángulo.
     </p>
@@ -482,7 +590,7 @@ export default function SkinRegionEditor({ canvas, landmarks, onTexture, onRegio
     {selected && <div className="flex flex-wrap gap-2">
       <button type="button" className={BUTTON} disabled={busy || !labelIsReady || !base || !contextMatches}
         onClick={analyzeSelected}>{busy ? 'Analizando ROI…' : 'Analizar solo esta zona'}</button>
-      <button type="button" className={BUTTON} disabled={!selectedAnalysis || !labelIsReady}
+      <button type="button" className={BUTTON} disabled={!selectedAnalysis?.result.usable || !labelIsReady}
         onClick={verifySelected}>Validar revisión manual</button>
       <button type="button" className={BUTTON} onClick={discardSelected}>Descartar zona</button>
     </div>}
@@ -490,11 +598,24 @@ export default function SkinRegionEditor({ canvas, landmarks, onTexture, onRegio
     {selectedAnalysis && <div className="rounded-lg border border-slate-700 bg-slate-900/80 p-2.5 text-xs" aria-label="Resultado de la revisión visual">
       <p className="font-medium text-amber-100">{statusSummary(selectedAnalysis)}</p>
       <p className="mt-1 text-slate-400">{selectedAnalysis.roiPixels} píxeles RGB locales revisados. La etiqueta es tuya; esto no es diagnóstico ni identifica relieve real.</p>
+      <p className="mt-1 text-slate-300">Soporte visual utilizable: {numberFormat.format(selectedAnalysis.result.diagnostics.analyzedFraction)}.
+        Confianza visual {selectedAnalysis.result.usable && selectedAnalysis.result.diagnostics.analyzedFraction >= 0.8 ? 'moderada' : 'baja'}; nunca confianza diagnóstica.</p>
+      <ul className="mt-1 space-y-1">
+        {(['redness', 'contrast', 'texture'] as const).map(channel => <li key={channel}>
+          {{ redness: 'Rojez relativa', contrast: 'Contraste cromático', texture: 'Microcontraste / textura' }[channel]}:
+          {' '}{numberFormat.format(selectedAnalysis.result.channels[channel].coverage)} del ROI · umbral RGB interno {selectedAnalysis.result.channels[channel].threshold.toFixed(3)}
+        </li>)}
+      </ul>
       {selectedAnalysis.result.warnings.length > 0 && <p className="mt-1 text-amber-200/80">{selectedAnalysis.result.warnings[0]}</p>}
     </div>}
 
     {selected?.verified && <fieldset className="grid gap-x-4 gap-y-2 rounded-lg border border-emerald-800/70 bg-emerald-950/30 p-2.5 sm:grid-cols-2">
       <legend className="px-1 text-xs font-medium text-emerald-200">Vista ilustrativa · solo dentro del ROI validado</legend>
+      <button type="button" className={BUTTON} disabled={!landmarks} onClick={() => {
+        setShowBefore(false); setResetAcknowledged(false);
+        setRegions(current => current.map(region => region.id === selected.id
+          ? { ...region, adjustments: skinEducationalPreset(region.label) } : region));
+      }}>Aplicar combinación educativa · {selected.label}</button>
       {([
         ['attenuation', 'Atenuación visual', 0, 1, 0.05],
         ['scarAttenuation', 'Atenuar apariencia de cicatriz', 0, 1, 0.05],

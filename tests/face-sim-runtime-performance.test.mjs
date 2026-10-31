@@ -16,14 +16,19 @@ test('runtime: slider reutiliza buffers, deforma una sola vez y omite capas/zona
   const positions = new Float32Array([0, 0, 0, 1, 0, 0, 0, 1, 0]);
   const attribute = { array: positions.slice(), needsUpdate: false };
   let normals = 0, deformations = 0, renders = 0;
+  const protection = { minimumStrength: 0.75, moderatedComponents: 1 };
+  const protectionReports = [];
+  const onProtection = report => protectionReports.push(report);
   const geometry = { getAttribute: () => attribute, computeVertexNormals: () => normals++, computeBoundingSphere() {} };
   const material = { transparent: false };
   const skin = { geometry, material: [material] };
   const hair = { enabled: false };
   const references = [];
+  const photo = { width: 10, height: 10 };
   const fail = () => { throw new Error('No debe reconstruir geometría oculta'); };
   const context = {
     disposed: false, failed: false, state: undefined, lastParameters: undefined, lastSkinRegions: undefined, referenceParameters: undefined,
+    drawing: { current: undefined }, skinCancel() {}, photo,
     previousReferences: undefined, previousSignal: undefined, previousPhotoPatches: undefined, previousHair: hair, previousPatches: undefined,
     previousView: 'orbit', previousAnatomy: 'skin', pointerInside: false, selectedZone: null,
     morphologyPositions: positions, morphologyNormals: undefined,
@@ -35,7 +40,17 @@ test('runtime: slider reutiliza buffers, deforma una sola vez y omite capas/zona
     controls: { enableRotate: false, mouseButtons: {}, touches: {} }, bounds: {}, THREE: {
       Mesh: class {}, MOUSE: { PAN: 2, ROTATE: 0 }, TOUCH: { PAN: 1, ROTATE: 0, DOLLY_PAN: 2 },
     },
-    deformPositions: (original, _anchors, parameters) => { deformations++; return Float32Array.from(original, v => v + parameters.noseTip); },
+    onProtection,
+    deformPositions: (original, _anchors, parameters, indices, reportProtection) => {
+      deformations++;
+      if (reportProtection) {
+        assert.equal(original, positions, 'morfología evalúa el buffer original');
+        assert.equal(indices, context.mesh.indices, 'protección usa la topología de la superficie');
+        assert.equal(reportProtection, onProtection, 'runtime entrega el callback real del cierre');
+        reportProtection(protection);
+      }
+      return Float32Array.from(original, v => v + parameters.noseTip);
+    },
     revealStage: () => null, buildCutPlane: () => null, selectZone() {},
     getAnatomyCells: fail, buildReferenceGeometry: fail, buildSimulationLayers: fail,
     regionCellPositions: fail, requestRender: () => renders++,
@@ -45,18 +60,21 @@ test('runtime: slider reutiliza buffers, deforma una sola vez y omite capas/zona
   const state = {
     parameters: { noseTip: 0.1 }, references, referenceLayers: { muscle: { visible: false, opacity: 1 } },
     layers: { skin: { visible: true, opacity: 1 } }, anatomy: 'skin', showMesh: false,
-    hair, skinRegions: [], plane: 'superficial', cut: { scope: 'none' }, view: 'orbit', reveal: {},
+    hair, skinSource: photo, skinRegions: [], plane: 'superficial', cut: { scope: 'none' }, view: 'orbit', reveal: {},
   };
   context.update(state);
   assert.equal(deformations, 1);
+  assert.deepEqual(protectionReports, [protection]);
   assert.equal(normals, 1);
   assert.equal(skin.geometry, geometry);
   assert.equal(geometry.getAttribute('position'), attribute);
   assert.ok(Math.abs(attribute.array[0] - 0.1) < 1e-6);
   context.update({ ...state, cut: { scope: 'skin', position: 0.4 } });
   assert.equal(deformations, 1, 'corte no recalcula morfología');
+  assert.equal(protectionReports.length, 1, 'corte no vuelve a comunicar protección');
   context.update({ ...state, parameters: { noseTip: 0.7 } });
   assert.equal(deformations, 2);
+  assert.deepEqual(protectionReports, [protection, protection]);
   assert.equal(normals, 2);
   assert.equal(geometry.getAttribute('position'), attribute);
   assert.ok(Math.abs(attribute.array[0] - 0.7) < 1e-6, 'evalúa desde el original, sin acumular');
@@ -83,6 +101,7 @@ test('runtime: slider reutiliza buffers, deforma una sola vez y omite capas/zona
   context.update({ ...withTexture, skinRegions: [] });
   assert.ok(Math.abs(attribute.array[0] - 0.7) < 1e-6, 'antes/restablecer retira relieve sin perder morfología');
   assert.equal(deformations, 2);
+  assert.equal(protectionReports.length, 2, 'navegación, textura y relieve no recalculan protección morfológica');
   const backingAttribute = { array: positions.slice(), needsUpdate: false };
   const backingGeometry = { userData: { originalPositions: positions.slice() },
     getAttribute: () => backingAttribute, computeVertexNormals() {}, computeBoundingSphere() {},
@@ -93,6 +112,8 @@ test('runtime: slider reutiliza buffers, deforma una sola vez y omite capas/zona
   assert.equal(context.afterBacking.geometry, backingGeometry);
   assert.ok(Math.abs(backingAttribute.array[0] - 0.8) < 1e-6);
   assert.deepEqual(Array.from(backingGeometry.userData.originalPositions), Array.from(positions));
+  assert.equal(deformations, 4, 'nuevo slider: una deformación de piel y otra del reverso');
+  assert.deepEqual(protectionReports, [protection, protection, protection], 'el reverso no duplica el aviso de la superficie');
 });
 
 test('carga: listo solo después de dibujar; un error no anuncia éxito', () => {

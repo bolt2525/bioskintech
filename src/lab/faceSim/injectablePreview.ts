@@ -1,4 +1,93 @@
 import type { SimMode } from './engine';
+import { FACE_OVAL, type P2 } from './engine';
+import { FACE_REGION_BOUNDARIES } from './faceRegions';
+import { isValidSkinPolygon, pointInValidatedSkinPolygon } from './skinRegionReview';
+import atlas from './genericFaceAtlas.json' with { type: 'json' };
+
+/** ROI educativo explícito, nunca TreatmentPoint ni dato clínico. UV con origen superior. */
+export interface ManualEffectArea {
+  id: string;
+  mode: SimMode;
+  label: string;
+  polygon: P2[];
+  chart: readonly P2[];
+}
+
+export const GENERIC_EFFECT_CHART: readonly P2[] = (() => {
+  const xs = atlas.positions.filter((_, i) => i % 3 === 0), ys = atlas.positions.filter((_, i) => i % 3 === 1);
+  const left = Math.min(...xs), right = Math.max(...xs), top = Math.max(...ys), bottom = Math.min(...ys);
+  return xs.map((x, i) => ({ x: (x - left) / (right - left), y: (top - ys[i]) / (top - bottom) }));
+})();
+
+/** Mismo ROI validado que Revisar piel; feather interior, sin fuga fuera del polígono. */
+export function manualAreaWeight(x: number, y: number, polygon: readonly P2[], feather = 0.035): number {
+  if (!pointInValidatedSkinPolygon(x, y, polygon)) return 0;
+  let nearest = Infinity;
+  for (let i = 0; i < polygon.length; i++) {
+    const a = polygon[i], b = polygon[(i + 1) % polygon.length];
+    const dx = b.x - a.x, dy = b.y - a.y, length = dx * dx + dy * dy;
+    const t = length ? clamp(((x - a.x) * dx + (y - a.y) * dy) / length, 0, 1) : 0;
+    nearest = Math.min(nearest, Math.hypot(x - a.x - t * dx, y - a.y - t * dy));
+  }
+  return smoothstep(0, feather, nearest);
+}
+
+const protectedIds = new Set<number>([
+  ...FACE_REGION_BOUNDARIES.leftEye, ...FACE_REGION_BOUNDARIES.rightEye,
+  ...FACE_REGION_BOUNDARIES.upperLip, ...FACE_REGION_BOUNDARIES.lowerLip,
+]);
+const safetyCache = new WeakMap<readonly P2[], { contour: P2[]; exclusions: P2[][] }>();
+function safeChartPoint(x: number, y: number, chart: readonly P2[]): boolean {
+  let safety = safetyCache.get(chart);
+  if (!safety) {
+    safety = { contour: FACE_OVAL.map(id => chart[id]), exclusions:
+      [FACE_REGION_BOUNDARIES.leftEye, FACE_REGION_BOUNDARIES.rightEye,
+        FACE_REGION_BOUNDARIES.upperLip, FACE_REGION_BOUNDARIES.lowerLip].map(ids => ids.map(id => chart[id])) };
+    safetyCache.set(chart, safety);
+  }
+  return pointInValidatedSkinPolygon(x, y, safety.contour)
+    && !safety.exclusions.some(polygon => pointInValidatedSkinPolygon(x, y, polygon));
+}
+
+/** Raster por triángulos reales: cada UV destino vuelve al chart de autoría, no al encuadre de otra foto. */
+function addManualFields(fields: InfluenceFields, width: number, height: number, mask: ArrayLike<number>, settings: PreviewSettings) {
+  const target = settings.areaLandmarks;
+  if (!target || target.length < 468 || target.some(p => !Number.isFinite(p.x) || !Number.isFinite(p.y))) return;
+  const areas = (settings.manualAreas ?? []).filter(area => settings.enabled[area.mode] && previewGain(settings, area.mode) > 0
+    && isValidSkinPolygon(area.polygon) && area.chart.length >= 468
+    && area.chart.every(p => Number.isFinite(p.x) && Number.isFinite(p.y)));
+  if (!areas.length) return;
+  for (const area of areas) fields[area.mode] ??= new Float32Array(width * height);
+  for (let triangle = 0; triangle < atlas.triangles.length; triangle += 3) {
+    const ids = atlas.triangles.slice(triangle, triangle + 3);
+    // Protección conservadora también en esquema/superficie y parches parciales.
+    if (ids.some(id => protectedIds.has(id))) continue;
+    const [a, b, c] = ids.map(id => target[id]);
+    const det = (b.y - c.y) * (a.x - c.x) + (c.x - b.x) * (a.y - c.y);
+    if (Math.abs(det) < 1e-10) continue;
+    const minX = Math.max(0, Math.floor(Math.min(a.x, b.x, c.x) * width));
+    const maxX = Math.min(width - 1, Math.ceil(Math.max(a.x, b.x, c.x) * width));
+    const minY = Math.max(0, Math.floor(Math.min(a.y, b.y, c.y) * height));
+    const maxY = Math.min(height - 1, Math.ceil(Math.max(a.y, b.y, c.y) * height));
+    for (let y = minY; y <= maxY; y++) for (let x = minX; x <= maxX; x++) {
+      const index = y * width + x;
+      if (!mask[index]) continue;
+      const u = (x + 0.5) / width, v = (y + 0.5) / height;
+      const wa = ((b.y - c.y) * (u - c.x) + (c.x - b.x) * (v - c.y)) / det;
+      const wb = ((c.y - a.y) * (u - c.x) + (a.x - c.x) * (v - c.y)) / det;
+      const wc = 1 - wa - wb;
+      if (Math.min(wa, wb, wc) < -1e-6 || !safeChartPoint(u, v, target)) continue;
+      for (const area of areas) {
+        const px = ids.reduce((sum, id, i) => sum + area.chart[id].x * [wa, wb, wc][i], 0);
+        const py = ids.reduce((sum, id, i) => sum + area.chart[id].y * [wa, wb, wc][i], 0);
+        const weight = manualAreaWeight(px, py, area.polygon, 0.035 / previewCoverageScale(settings, area.mode))
+          * previewGain(settings, area.mode);
+        const field = fields[area.mode]!;
+        field[index] = Math.max(field[index], weight);
+      }
+    }
+  }
+}
 
 /** Contrato visual local: deliberadamente no acepta dosis, productos ni zonas clínicas. */
 export interface PreviewSettings {
@@ -12,6 +101,9 @@ export interface PreviewSettings {
   coverage?: Partial<Record<SimMode, number>>;
   /** Indica al visor que dibuje las áreas de cobertura; los filtros de píxel/superficie lo ignoran. */
   showCoverage?: boolean;
+  manualAreas?: readonly ManualEffectArea[];
+  /** Topología UV del destino actual, explícita; no reutilizar charts de otras capturas. */
+  areaLandmarks?: readonly P2[];
 }
 export interface PreviewSample {
   mode: SimMode;
@@ -133,7 +225,7 @@ export function previewSurface(
   const next = positions.slice(), colors = rgb?.slice();
   if (!strength(settings)) return { positions: next, rgb: colors };
   const list = active(samples, settings);
-  if (!list.length) return { positions: next, rgb: colors };
+  if (!list.length && !settings.manualAreas?.length) return { positions: next, rgb: colors };
   const ratio = Number.isFinite(aspect) && aspect > 0 ? aspect : 1;
   const count = Math.min(observedVertexCount, positions.length / 3, uvs.length / 2);
   let minY = Infinity, maxY = -Infinity;
@@ -141,11 +233,23 @@ export function previewSurface(
     minY = Math.min(minY, positions[i * 3 + 1]); maxY = Math.max(maxY, positions[i * 3 + 1]);
   }
   const height = maxY > minY ? maxY - minY : 1;
+  const manual = (settings.manualAreas ?? []).filter(area => settings.enabled[area.mode] && isValidSkinPolygon(area.polygon));
+  const target = settings.areaLandmarks;
   for (let i = 0; i < count; i++) {
     let relief = 0, glow = 0, soften = 0;
-    for (const p of list) {
+    const areaSamples: Array<{ mode: SimMode; weight: number }> = [];
+    if (target && target.length >= 468 && safeChartPoint(uvs[i * 2], uvs[i * 2 + 1], target)) {
+      // Los vértices observados conservan índice canónico (las tapas se excluyen por count).
+      for (const area of manual) {
+        const point = area.chart[i];
+        if (point) areaSamples.push({ mode: area.mode, weight: manualAreaWeight(point.x, point.y, area.polygon) * previewGain(settings, area.mode) });
+      }
+    }
+    for (const p of [...list.map(p => {
       const dx = (uvs[i * 2] - p.x) * ratio, dy = uvs[i * 2 + 1] - p.y;
-      const w = falloff(dx * dx + dy * dy, p.radius) * p.gain;
+      return { mode: p.mode, weight: falloff(dx * dx + dy * dy, p.radius) * p.gain };
+    }), ...areaSamples]) {
+      const w = p.weight;
       // Altura relativa: hasta 3 % para HA a ganancia 1,5; ilustrativo, nunca ml → volumen.
       relief = Math.max(relief, w * height * (p.mode === 'relleno_ha' ? 0.02 : p.mode === 'bioestimulador' ? 0.004 : 0));
       glow = Math.max(glow, w * (p.mode === 'hidratacion' ? 0.045 : p.mode === 'bioestimulador' ? 0.018 : 0));
@@ -330,9 +434,10 @@ export function previewPixels(
   const n = width * height;
   if (rgba.length < n * 4) return next;
   const list = active(samples, settings);
-  if (!list.length) return next;
-  const fields = influenceFields(list, width, height, mask);
-  if (!fields) return next;
+  if (!list.length && !settings.manualAreas?.length) return next;
+  const fields = (list.length ? influenceFields(list, width, height, mask) : null) ?? {};
+  addManualFields(fields, width, height, mask, settings);
+  if (!Object.keys(fields).length) return next;
   const { fine, coarse, support } = layersFor(rgba, mask, width, height);
   const { toxina, relleno_ha: relleno, hidratacion, bioestimulador } = fields;
   for (let i = 0; i < n; i++) {

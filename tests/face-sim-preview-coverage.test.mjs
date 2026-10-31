@@ -1,19 +1,11 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
-import vm from 'node:vm';
 import test from 'node:test';
-import ts from 'typescript';
+import { loadFaceAreaModule } from './helpers/load-face-area-module.mjs';
 
 const file = path.resolve('src/lab/faceSim/injectablePreview.ts');
-const preview = (() => {
-  const exports = {};
-  const code = ts.transpileModule(readFileSync(file, 'utf8'), { compilerOptions: {
-    module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022,
-  } }).outputText;
-  vm.runInNewContext(code, { exports, require: () => ({}) }, { filename: file });
-  return exports;
-})();
+const preview = loadFaceAreaModule(file);
 
 const MODES = ['toxina', 'relleno_ha', 'hidratacion', 'bioestimulador'];
 const only = mode => Object.fromEntries(MODES.map(m => [m, m === mode]));

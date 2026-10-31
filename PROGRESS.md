@@ -1,5 +1,11 @@
 # Progreso de BioSkinTech App
 
+- ✅ 2026-10-31 Piel: marcado sobre máscara.
+- ✅ 2026-10-31 Piel: foto ampliada; correcciones combinables.
+- ✅ 2026-10-31 Morfología: rango y espesor labial.
+- ✅ 2026-10-31 Inyectables: áreas por categoría.
+- QA: 142 pruebas, lint focal y build aprobados; tres recorridos navegador verifican rango, áreas y Piel. Piel/áreas pasan en 1440/390 px; labios frontal 24→35 px, cicatriz reduce contraste/color sin alterar exterior y restaura el original.
+- Límites: TypeScript conserva 12 errores ajenos; panel RGB legacy agotó memoria. Detector, producción, multivista de áreas y fluidez en GPU física no verificados.
 - ✅ 2026-10-31 Capturas: carga múltiple y revisión.
 - ✅ 2026-10-31 Nariz: campos locales; raíz independiente.
 - ✅ 2026-10-31 Inyectables: deslizador y doble visor.

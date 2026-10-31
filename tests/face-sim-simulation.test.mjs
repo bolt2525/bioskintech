@@ -213,7 +213,7 @@ test('piel personal conserva topología, escala y el mismo campo morfológico si
   const settings = { jawWidth: 1, chinProjection: 1, noseWidth: 1 };
   const [neutral] = buildSimulationLayers(own, {}), [changed] = buildSimulationLayers(own, settings);
   assert.notDeepEqual(changed.positions, neutral.positions);
-  assert.deepEqual(changed.positions, deformPositions(own.positions, own.anchors, settings));
+  assert.deepEqual(changed.positions, deformPositions(own.positions, own.anchors, settings, own.indices));
   assert.deepEqual(changed.indices, own.indices);
   assert.deepEqual(buildSimulationLayers(own, {})[0].positions, neutral.positions);
   assert.deepEqual(buildSimulationLayers(own, settings)[0].positions, changed.positions);

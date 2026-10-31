@@ -1,7 +1,8 @@
-import { lazy, Suspense, useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useId, useMemo, useRef, useState, type MutableRefObject } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
-import type { PersonalSurface } from './engine';
+import type { P2, PersonalSurface } from './engine';
+import type { SkinModelDrawing } from './skinDrawing';
 import { updatePhotoFrustum } from '../../components/admin/ficha-clinica/components/clinicalCamera';
 import atlas from './genericFaceAtlas.json';
 import { buildFaceRegionMap, buildFaceTriangleRegions, faceRegionColor } from './faceRegions';
@@ -16,15 +17,15 @@ import { buildReferenceGeometry } from './referenceGeometry';
 import { refineDisplaySurface } from './displaySurface';
 import { buildMaskBacking, INITIAL_REVEAL, revealPlane, revealStage, type MaskReveal, type ReferenceKind } from './maskAnatomy';
 import { NEUTRAL_SKIN_COSMETICS, SKIN_COSMETIC_CONTROLS, type SkinCosmeticParameters } from './skinAppearance';
-import { composeSkinCosmeticTexture } from './skinSignalTexture';
+import { composeSkinCosmeticTexture, createSkinSignalMask } from './skinSignalTexture';
 import { applySkinRegionRelief, type SkinReviewRegion } from './skinRegionReview';
 import { editorPanel } from './MarkingPanels';
 import {
   buildCutPlane, buildSimulationLayers, buildSimulationReferenceSurface, createSimulationMesh, deformPositions, meshBounds,
   NEUTRAL_SIMULATION, SIMULATION_CONTROLS, SIMULATION_GROUPS, SIMULATION_LAYERS, SIMULATION_NOTICE, vertexNormals,
-  type LayerId, type SimulationCut, type SimulationMesh, type SimulationParameters,
+  type LayerId, type SimulationCut, type SimulationMesh, type SimulationParameters, type SimulationProtection,
 } from './simulation';
-const SkinSignalPanel = lazy(() => import('./SkinSignalPanel'));
+const SkinRegionEditor = lazy(() => import('./SkinRegionEditor'));
 const AnatomicalReferencePanel = lazy(() => import('./AnatomicalReferencePanel'));
 
 export interface FacialSimulationViewerProps {
@@ -55,6 +56,11 @@ interface ViewerState {
   photoPatches?: readonly PhotoSurfacePatch[];
   skinTexture?: HTMLCanvasElement;
   skinRegions: readonly SkinReviewRegion[];
+  skinSource?: HTMLCanvasElement;
+  skinUVs?: Float32Array;
+  skinSafeMask?: Uint8Array;
+  skinDirection?: readonly number[];
+  skinVisibleVertices?: Uint8Array;
   references: readonly AnatomicalReference[];
   anatomy: AnatomyPlane;
   referenceLayers: ReferenceSettings;
@@ -123,6 +129,8 @@ function mountFacialSimulation(
   onHover: (zone: string | null) => void,
   onSelect: (zone: string | null) => void,
   onReady: () => void,
+  onProtection: (protection: SimulationProtection) => void,
+  drawing: MutableRefObject<SkinModelDrawing | undefined>,
 ): ViewerRuntime {
   const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
   renderer.setClearColor('#0f172a');
@@ -275,6 +283,92 @@ function mountFacialSimulation(
     selectZone(hit && isObserved && !clipped && !covered ? label : null);
   };
   const hairGroup = new THREE.Group(); scene.add(hairGroup);
+  const strokeLine = new THREE.Line(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({
+    color: '#fbbf24', depthTest: false, transparent: true, opacity: 0.95,
+  }));
+  strokeLine.renderOrder = 20; strokeLine.visible = false; scene.add(strokeLine);
+  let strokePoints: THREE.Vector3[] = [];
+  let lastSkinPoint: THREE.Vector3 | undefined;
+  let drawingPointer: number | undefined;
+  const releaseDrawing = (cancel = true) => {
+    if (cancel) drawing.current?.cancel();
+    if (drawingPointer !== undefined && canvas.hasPointerCapture(drawingPointer)) canvas.releasePointerCapture(drawingPointer);
+    drawingPointer = undefined; controls.enabled = true;
+    strokePoints = []; strokeLine.visible = false; requestRender();
+  };
+  const pickSkin = (event: PointerEvent): P2 | undefined => {
+    if (!state || state.comparison !== 'after' || state.anatomy !== 'skin'
+      || state.cut.scope !== 'none' || !state.skinSafeMask || !state.skinSource) return;
+    const direction = camera.position.clone().sub(controls.target).normalize();
+    const sourceDirection = new THREE.Vector3(...(state.skinDirection ?? [0, 0, 1]) as [number, number, number]).normalize();
+    if (direction.dot(sourceDirection) < 0.85) return;
+    const rect = canvas.getBoundingClientRect();
+    cursor.set((event.clientX - rect.left) / rect.width * 2 - 1, -(event.clientY - rect.top) / rect.height * 2 + 1);
+    hoverRay.setFromCamera(cursor, camera);
+    const skin = afterMeshes.get('skin');
+    const candidates = [skin, ...photoGroup.children, afterBacking, ...hairGroup.children]
+      .filter((object): object is THREE.Object3D => !!object && object.visible);
+    const hits = hoverRay.intersectObjects(candidates, true);
+    const first = hits[0];
+    if (!first) return;
+    const winner = hits.find(hit => {
+      if (hit.distance > first.distance + 1e-5 || !(hit.object instanceof THREE.Mesh) || !hit.face) return false;
+      const alpha = hit.object.geometry.getAttribute('color');
+      return hit.object.userData.skinSource
+        && hit.object.userData.skinSelectableTriangles?.has(triangleKey(hit.face.a, hit.face.b, hit.face.c))
+        && (!alpha || [hit.face.a, hit.face.b, hit.face.c].every(id => alpha.getW(id) > 0.65));
+    });
+    if (winner && winner.object.userData.skinSource !== state.skinSource) return;
+    // Parches coplanares: solo admitir la foto efectivamente dominante.
+    const hit = hits.find(hit => hit.distance <= first.distance + 1e-5
+      && (hit.object.userData.skinSource === state!.skinSource
+        || hit.object === skin && state!.skinSource === photo));
+    if (!hit?.uv || !hit.face || !skin?.visible || !after.visible) return;
+    if (hit.object === skin && mesh.observedIndexCount !== undefined && (hit.faceIndex ?? Infinity) * 3 >= mesh.observedIndexCount) return;
+    if (hit.object !== skin && !hit.object.userData.observed) return;
+    if (hit.object instanceof THREE.Mesh) {
+      const material = Array.isArray(hit.object.material) ? hit.object.material[0] : hit.object.material;
+      if (material.opacity < 0.99 || material.clippingPlanes?.some((plane: THREE.Plane) => plane.distanceToPoint(hit.point) < 0)) return;
+      const alpha = hit.object.geometry.getAttribute('color');
+      // Ganador multivista: alfa > 0.65 en los tres vértices, fuera del margen de mezcla.
+      if (alpha && [hit.face.a, hit.face.b, hit.face.c].some(id => alpha.getW(id) <= 0.65)) return;
+      if (hit.object !== skin && !hit.object.userData.skinSelectableTriangles?.has(triangleKey(hit.face.a, hit.face.b, hit.face.c))) return;
+    }
+    const { x, y } = hit.uv;
+    if (!(x >= 0 && x < 1 && y >= 0 && y < 1) || !state.skinSafeMask[Math.floor(y * 384) * 384 + Math.floor(x * 384)]) return;
+    canvas.dataset.skinRaycastUv = `${x.toFixed(5)},${y.toFixed(5)}`;
+    lastSkinPoint = hit.point.clone();
+    return { x, y };
+  };
+  const skinPointerDown = (event: PointerEvent) => {
+    if (!drawing.current?.enabled || event.button !== 0 || !state?.skinSource || state.comparison !== 'after') return;
+    event.preventDefault(); event.stopImmediatePropagation();
+    const point = pickSkin(event);
+    if (!point) { drawing.current.cancel(); return; }
+    controls.enabled = false; drawingPointer = event.pointerId;
+    canvas.setPointerCapture(event.pointerId); drawing.current.start(point);
+    strokePoints = [lastSkinPoint!.clone()]; strokeLine.visible = true;
+    strokeLine.geometry.setFromPoints(strokePoints); requestRender();
+  };
+  const skinPointerMove = (event: PointerEvent) => {
+    if (drawingPointer !== event.pointerId) return;
+    event.preventDefault(); event.stopImmediatePropagation();
+    const point = pickSkin(event);
+    if (point) {
+      drawing.current?.move(point);
+      if (strokePoints.length < 512) strokePoints.push(lastSkinPoint!.clone());
+      strokeLine.geometry.setFromPoints(strokePoints); requestRender();
+    } else releaseDrawing();
+  };
+  const skinPointerUp = (event: PointerEvent) => {
+    if (drawingPointer !== event.pointerId) return;
+    event.preventDefault(); event.stopImmediatePropagation();
+    const point = pickSkin(event);
+    if (point) drawing.current?.finish(point); else drawing.current?.cancel();
+    releaseDrawing(false);
+  };
+  const skinCancel = () => { if (drawingPointer !== undefined) releaseDrawing(); };
+  const skinEscape = (event: KeyboardEvent) => { if (event.key === 'Escape') skinCancel(); };
   const hairTextures: THREE.Texture[] = [];
   let previousHair: EstimatedHairSettings | undefined;
   let previousPatches: readonly PhotoHairPatch[] | undefined;
@@ -461,7 +555,14 @@ function mountFacialSimulation(
     canvas.removeEventListener('pointerleave', leave);
     canvas.removeEventListener('pointerdown', pointerDown);
     canvas.removeEventListener('pointerup', pointerUp);
+    releaseDrawing();
+    canvas.removeEventListener('pointerdown', skinPointerDown, true);
+    canvas.removeEventListener('pointermove', skinPointerMove, true);
+    canvas.removeEventListener('pointerup', skinPointerUp, true);
+    canvas.removeEventListener('pointercancel', skinCancel);
+    window.removeEventListener('keydown', skinEscape);
     controls.dispose();
+    strokeLine.geometry.dispose(); strokeLine.material.dispose();
     scene.traverse(object => {
       if (object instanceof THREE.Mesh) {
         object.geometry.dispose();
@@ -525,6 +626,11 @@ function mountFacialSimulation(
     canvas.addEventListener('pointerleave', leave);
     canvas.addEventListener('pointerdown', pointerDown);
     canvas.addEventListener('pointerup', pointerUp);
+    canvas.addEventListener('pointerdown', skinPointerDown, true);
+    canvas.addEventListener('pointermove', skinPointerMove, true);
+    canvas.addEventListener('pointerup', skinPointerUp, true);
+    canvas.addEventListener('pointercancel', skinCancel);
+    window.addEventListener('keydown', skinEscape);
     observer = new ResizeObserver(() => {
       viewportWidth = Math.max(2, Math.floor(host.clientWidth));
       viewportHeight = Math.max(2, Math.floor(host.clientHeight));
@@ -545,10 +651,11 @@ function mountFacialSimulation(
     },
     update(next) {
       if (disposed || failed) return;
+      if (state?.skinSource !== next.skinSource || state?.view !== next.view || !drawing.current?.enabled) skinCancel();
       state = next;
       const parametersChanged = next.parameters !== lastParameters;
       if (parametersChanged) {
-        morphologyPositions = deformPositions(mesh.positions, mesh.anchors, next.parameters, mesh.indices);
+        morphologyPositions = deformPositions(mesh.positions, mesh.anchors, next.parameters, mesh.indices, onProtection);
         morphologyNormals = undefined;
       }
       const geometryChanged = parametersChanged || next.skinRegions !== lastSkinRegions;
@@ -556,7 +663,7 @@ function mountFacialSimulation(
         const hasRelief = mesh.uvs && next.skinRegions.some(region => region.verified && region.adjustments.relief !== 0);
         if (hasRelief && mesh.uvs) {
           morphologyNormals ??= vertexNormals(morphologyPositions, mesh.indices);
-          deformedPositions = applySkinRegionRelief(morphologyPositions, mesh.uvs, next.skinRegions, morphologyNormals);
+          deformedPositions = applySkinRegionRelief(morphologyPositions, next.skinUVs ?? mesh.uvs, next.skinRegions, morphologyNormals, mesh.uvs, next.skinVisibleVertices);
         } else deformedPositions = morphologyPositions;
       }
       const referencesChanged = previousReferences !== next.references;
@@ -624,7 +731,7 @@ function mountFacialSimulation(
         } else { signalTexture?.dispose(); signalTexture = undefined; }
         const material = afterMeshes.get('skin')?.material[0];
         if (material) {
-          const map = signalTexture ?? texture ?? null;
+          const map = next.skinSource === photo ? signalTexture ?? texture ?? null : texture ?? null;
           if (Boolean(material.map) !== Boolean(map)) material.needsUpdate = true;
           material.map = map;
         }
@@ -666,6 +773,10 @@ function mountFacialSimulation(
             }));
             object.userData.blended = blended;
             object.userData.observed = part.observed;
+            object.userData.skinSource = patch.source.texture;
+            object.userData.originalMap = map;
+            object.userData.skinSelectableTriangles = new Set(Array.from({ length: patch.indices.length / 3 },
+              (_, i) => triangleKey(patch.indices[i * 3], patch.indices[i * 3 + 1], patch.indices[i * 3 + 2])));
             // La mezcla «over» exige dibujar las vistas en el mismo orden en que se calcularon los alfas.
             object.name = 'MULTIVIEW_PHOTO_SURFACE'; object.renderOrder = 6 + order * 0.01; group.add(object);
             }
@@ -773,7 +884,9 @@ function mountFacialSimulation(
       photoGroup.visible = next.layers.skin.visible && next.layers.skin.opacity > 0;
       for (const group of [photoGroup, beforePhotoGroup]) for (const object of group.children) if (object instanceof THREE.Mesh) {
         // El retoque reemplaza sólo la cara observada, nunca las fotos del cabello, orejas o cuello.
-        object.visible = group === beforePhotoGroup || !next.skinTexture || !object.userData.observed;
+        object.visible = true;
+        object.material.map = group === photoGroup && object.userData.skinSource === next.skinSource && signalTexture
+          ? signalTexture : object.userData.originalMap;
         object.material.clippingPlanes = plane ? [plane] : [];
         object.material.opacity = group === photoGroup ? next.layers.skin.opacity : 1;
         const transparent = object.userData.blended || object.material.opacity < 1;
@@ -833,6 +946,7 @@ export function FacialSimulationViewer({ surface, photo, hair = DEFAULT_HAIR, ha
   const [referenceEditorOpened, setReferenceEditorOpened] = useState(false);
   const [skinReviewVersion, setSkinReviewVersion] = useState(0);
   const [parameters, setParameters] = useState<SimulationParameters>({ ...NEUTRAL_SIMULATION });
+  const [protection, setProtection] = useState<SimulationProtection>({ minimumStrength: 1, moderatedComponents: 0 });
   const [symmetryDirection, setSymmetryDirection] = useState<1 | -1>(1);
   const [localDisplay, changeDisplay] = useState(initialAnatomyDisplay);
   const skinDisplay = useMemo(initialAnatomyDisplay, []);
@@ -844,6 +958,28 @@ export function FacialSimulationViewer({ surface, photo, hair = DEFAULT_HAIR, ha
     from: 'skin', to: 'bone', position: 0,
   });
   const [view, setView] = useState<View>('orbit');
+  const modelDrawingRef = useRef<SkinModelDrawing>();
+  const skinPhotoContext = useMemo(() => {
+    const direction = view === 'left' ? [-1, 0, 0] : view === 'right' ? [1, 0, 0] : [0, 0, 1];
+    const patch = view === 'left' || view === 'right' ? photoPatches?.find(patch => {
+      const toward = patch.source.projection.towardCamera;
+      return toward.reduce((sum, value, i) => sum + value * direction[i], 0) / Math.hypot(...toward) > 0.85;
+    }) : undefined;
+    if ((view === 'left' || view === 'right') && !patch) return undefined;
+    const uvs = patch?.uvs ?? surface?.uvs;
+    if (!uvs) return undefined;
+    const landmarks = Array.from({ length: 468 }, (_, i) => ({ x: uvs[i * 2], y: uvs[i * 2 + 1] }));
+    try {
+      const safeMask = createSkinSignalMask(384, 384, landmarks);
+      if (!safeMask.some(Boolean)) return undefined;
+      return { canvas: patch?.source.texture ?? photo, landmarks, uvs, safeMask,
+        direction: patch?.source.projection.towardCamera ?? direction, label: patch?.source.label ?? 'Foto frontal' };
+    } catch (cause) {
+      if (cause instanceof TypeError || cause instanceof RangeError) return undefined;
+      throw cause;
+    }
+  }, [view, photoPatches, surface, photo]);
+  const skinPhoto = skinPhotoContext?.canvas;
   const [navigation, setNavigation] = useState<'orbit' | 'pan'>('orbit');
   const [comparison, setComparison] = useState<Comparison>('after');
   const [error, setError] = useState<string | null>(null);
@@ -897,15 +1033,15 @@ export function FacialSimulationViewer({ surface, photo, hair = DEFAULT_HAIR, ha
     }
   }, [display, changeDisplay, referenceUVs]);
   const onSignalTexture = useCallback((canvas: HTMLCanvasElement | undefined) => {
-    setSignal(photo && canvas ? { source: photo, canvas } : undefined);
+    setSignal(skinPhoto && canvas ? { source: skinPhoto, canvas } : undefined);
     setCosmetics(current => Object.values(current).some(value => value !== 0) ? { ...NEUTRAL_SKIN_COSMETICS } : current);
     setCosmeticTexture(undefined);
-  }, [photo]);
+  }, [skinPhoto]);
   const onSkinRegions = useCallback((regions: readonly SkinReviewRegion[]) => {
-    setSkinReview(photo ? { source: photo, regions } : undefined);
-  }, [photo]);
-  const skinRegions = skinReview?.source === photo ? skinReview?.regions ?? EMPTY_SKIN_REGIONS : EMPTY_SKIN_REGIONS;
-  const signalTexture = signal?.source === photo ? signal?.canvas : undefined;
+    setSkinReview(skinPhoto ? { source: skinPhoto, regions } : undefined);
+  }, [skinPhoto]);
+  const skinRegions = skinReview?.source === skinPhoto ? skinReview?.regions ?? EMPTY_SKIN_REGIONS : EMPTY_SKIN_REGIONS;
+  const signalTexture = signal?.source === skinPhoto ? signal?.canvas : undefined;
   const skinTexture = signalTexture ?? (cosmeticTexture?.source === photo ? cosmeticTexture?.canvas : undefined);
   const signalLandmarks = useMemo(() => surface
     ? Array.from({ length: 468 }, (_, i) => ({ x: surface.uvs[i * 2], y: surface.uvs[i * 2 + 1] })) : undefined, [surface]);
@@ -959,17 +1095,31 @@ export function FacialSimulationViewer({ surface, photo, hair = DEFAULT_HAIR, ha
   const activeReveal = tool === 'morphology' || tool === 'skin' ? INITIAL_REVEAL : reveal;
   const activeSkinTexture = tool === 'skin' ? skinTexture : undefined;
   const activeSkinRegions = tool === 'skin' ? skinRegions : EMPTY_SKIN_REGIONS;
-  const state = useMemo<ViewerState>(() => ({ parameters, layers, cut: activeCut, view, comparison, navigation, showMesh: meshVisible, plane: activePlane, hair,
+  const skinDisplayUVs = useMemo(() => skinPhotoContext?.uvs && prepared.refinement
+    ? prepared.refinement.attribute(skinPhotoContext.uvs, 2) : skinPhotoContext?.uvs, [skinPhotoContext, prepared.refinement]);
+  const skinVisibleVertices = useMemo(() => {
+    const patch = displayPhotos?.find(patch => patch.source.texture === skinPhoto);
+    if (!patch || !prepared.mesh) return undefined;
+    const visible = new Uint8Array(prepared.mesh.positions.length / 3);
+    // Solo el parche ganador, no su margen de mezcla ni la superficie de otra cámara.
+    for (const id of patch.indices) visible[id] = 1;
+    return visible;
+  }, [displayPhotos, skinPhoto, prepared.mesh]);
+  const state = useMemo<ViewerState>(() => ({ parameters: tool === 'skin' ? NEUTRAL_SIMULATION : parameters, layers, cut: activeCut, view, comparison, navigation, showMesh: meshVisible, plane: activePlane, hair,
     hairPatches: displayHair ?? undefined, photoPatches: displayPhotos ?? undefined, skinTexture: activeSkinTexture, skinRegions: activeSkinRegions, references: displayReferences, anatomy,
+    skinSource: tool === 'skin' ? skinPhoto : undefined, skinUVs: skinDisplayUVs, skinSafeMask: skinPhotoContext?.safeMask, skinDirection: skinPhotoContext?.direction,
+    skinVisibleVertices,
     referenceLayers, overlay, instantLayers: tool === 'cut', reveal: activeReveal, selection, marks }),
-    [parameters, layers, activeCut, view, comparison, navigation, meshVisible, activePlane, hair, displayHair, displayPhotos, activeSkinTexture, activeSkinRegions, displayReferences, anatomy, referenceLayers, overlay, tool, activeReveal, selection, marks]);
+    [parameters, layers, activeCut, view, comparison, navigation, meshVisible, activePlane, hair, displayHair, displayPhotos, activeSkinTexture, activeSkinRegions, displayReferences, anatomy, referenceLayers, overlay, tool, activeReveal, selection, marks, skinPhoto, skinDisplayUVs, skinPhotoContext, skinVisibleVertices]);
 
   useEffect(() => {
     setError(null); setReady(false);
     if (!host.current || !prepared.mesh || !prepared.sourceMesh) return;
     try {
       runtime.current = mountFacialSimulation(host.current, prepared.mesh, prepared.sourceMesh, photo,
-        message => { setError(message); setReady(false); }, setHoveredZone, setSelection, () => setReady(true));
+        message => { setError(message); setReady(false); }, setHoveredZone, setSelection, () => setReady(true),
+        next => setProtection(current => current.minimumStrength === next.minimumStrength
+          && current.moderatedComponents === next.moderatedComponents ? current : next), modelDrawingRef);
     } catch (cause) {
       console.error('[FacialSimulationViewer] Inicio', cause);
       setError('No se pudo iniciar WebGL. Comprueba la aceleración gráfica del navegador.');
@@ -1024,8 +1174,8 @@ export function FacialSimulationViewer({ surface, photo, hair = DEFAULT_HAIR, ha
           ))}
         </div>
         <div role="group" aria-label="Navegación del visor" className="flex flex-wrap gap-1">
-          <button type="button" className={buttonClass} aria-pressed={navigation === 'orbit'} onClick={() => setNavigation('orbit')}>Girar</button>
-          <button type="button" className={buttonClass} aria-pressed={navigation === 'pan'} onClick={() => setNavigation('pan')}>Desplazar</button>
+          <button type="button" className={buttonClass} aria-pressed={navigation === 'orbit'} onClick={() => { modelDrawingRef.current?.stop(); setNavigation('orbit'); }}>Girar</button>
+          <button type="button" className={buttonClass} aria-pressed={navigation === 'pan'} onClick={() => { modelDrawingRef.current?.stop(); setNavigation('pan'); }}>Desplazar</button>
           <button type="button" className={buttonClass} aria-label="Alejar modelo" onClick={() => runtime.current?.zoom(0.8)}>−</button>
           <button type="button" className={buttonClass} aria-label="Acercar modelo" onClick={() => runtime.current?.zoom(1.25)}>+</button>
           <button type="button" className={buttonClass} onClick={() => runtime.current?.reframe()}>Reencuadrar</button>
@@ -1042,6 +1192,7 @@ export function FacialSimulationViewer({ surface, photo, hair = DEFAULT_HAIR, ha
             {([['morphology', 'Morfología'], ['skin', 'Piel'], ['layers', 'Capas'], ['cut', 'Corte']] as const).map(([key, label]) =>
               <button type="button" key={key} aria-pressed={tool === key} aria-controls={`${id}-tool-${key}`}
                 className={`${buttonClass} min-h-10 text-left`} onClick={() => {
+                  if (key !== 'skin') modelDrawingRef.current?.stop();
                   setTool(key);
                   if (key === 'skin') setSkinOpened(true);
                   if (key === 'layers' || key === 'cut') setComparison('after');
@@ -1092,6 +1243,11 @@ export function FacialSimulationViewer({ surface, photo, hair = DEFAULT_HAIR, ha
           </h3>
           <div ref={inspector} data-simulation-inspector className="max-h-[48dvh] min-h-0 space-y-3 overflow-y-auto overscroll-contain p-3 lg:max-h-none lg:flex-1" aria-describedby={`${id}-help`}>
           <div id={`${id}-tool-morphology`} hidden={tool !== 'morphology'} className="space-y-3">
+          <p className="text-[11px] text-stone-400">Rango visual ampliado · 0 conserva el original. No son medidas clínicas.</p>
+          {protection.moderatedComponents > 0 ? <p role="status" data-morphology-protection className="rounded-lg border border-amber-400/40 p-2 text-xs text-amber-200">
+            Protección de superficie: el rango solicitado se ha moderado en {protection.moderatedComponents} {protection.moderatedComponents === 1 ? 'zona conectada' : 'zonas conectadas'}.
+            {' '}La zona más limitada materializa el {Math.round(protection.minimumStrength * 100)} % del desplazamiento solicitado; los controles muestran la intensidad solicitada.
+          </p> : null}
           <div className="flex flex-wrap gap-1">
             <button type="button" className={buttonClass} onClick={() => chooseAnatomy('skin')}>Mostrar superficie</button>
             <button type="button" className={buttonClass} onClick={() => setParameters(current => ({
@@ -1104,10 +1260,10 @@ export function FacialSimulationViewer({ surface, photo, hair = DEFAULT_HAIR, ha
               <legend className="px-1 text-xs font-semibold">{group}</legend>
               {SIMULATION_CONTROLS.filter(control => control.group === group).map(control => (
                 <label key={control.key} className="block text-xs" htmlFor={`${id}-${control.key}`}>
-                  <span className="flex justify-between gap-2"><span>{control.label}</span><output>{Math.round(parameters[control.key] * 100)} %</output></span>
+                  <span className="flex justify-between gap-2"><span>{control.label}</span><output>{Math.round(parameters[control.key] * 100)} % solicitado</output></span>
                   <input id={`${id}-${control.key}`} type="range" min="-1" max="1" step="0.01" value={parameters[control.key]}
                     aria-describedby={control.hint ? `${id}-${control.key}-hint` : undefined}
-                    aria-valuetext={`${Math.round(parameters[control.key] * 100)} por ciento de intensidad visual`}
+                    aria-valuetext={`${Math.round(parameters[control.key] * 100)} por ciento de intensidad visual solicitada${protection.moderatedComponents ? '; protección de superficie activa, rango moderado' : ''}`}
                     onChange={event => setParameters(current => ({ ...current, [control.key]: Number(event.target.value) }))}
                     className="mt-1 block w-full accent-gold focus-visible:outline-gold" />
                     {control.hint ? <span id={`${id}-${control.key}-hint`} className="mt-1 block text-[11px] text-stone-400">{control.hint}</span> : null}
@@ -1145,9 +1301,11 @@ export function FacialSimulationViewer({ surface, photo, hair = DEFAULT_HAIR, ha
           <p className="text-[11px] text-amber-200">{SIMULATION_NOTICE}</p>
           </div>
           <div id={`${id}-tool-skin`} hidden={tool !== 'skin'} className="space-y-3">
-              {skinOpened && photo && surface ? <Suspense fallback={<p role="status" className="text-xs text-gold">Preparando revisión por zonas…</p>}>
-                <SkinSignalPanel key={skinReviewVersion} canvas={photo} landmarks={signalLandmarks} onTexture={onSignalTexture} onRegionsChange={onSkinRegions} />
-              </Suspense> : !photo || !surface ? <p className="text-xs text-amber-200">La revisión por zonas necesita una foto con referencias faciales válidas.</p> : null}
+              {skinOpened && skinPhoto && skinPhotoContext ? <Suspense fallback={<p role="status" className="text-xs text-gold">Preparando revisión por zonas…</p>}>
+                <SkinRegionEditor key={`${skinReviewVersion}-${view}`} canvas={skinPhoto} landmarks={skinPhotoContext.landmarks}
+                  sourceLabel={skinPhotoContext.label} modelDrawingRef={modelDrawingRef} onTexture={onSignalTexture} onRegionsChange={onSkinRegions} />
+              </Suspense> : <p role="status" className="text-xs text-amber-200">Esta vista no tiene correspondencia fotográfica y UV facial segura. No se usa la foto frontal como sustituto del perfil.</p>}
+              <p className="text-xs text-slate-300">Marca en Después, con la cámara alineada a la fuente. Ojos, boca, bordes, respaldo y costuras multivista mezcladas se rechazan. Girar y mover quedan libres al terminar cada gesto.</p>
               <details className="rounded-lg border border-white/15 p-2 text-sm">
                 <summary className="cursor-pointer text-gold">Retoque global de la piel</summary>
               <fieldset disabled={!photo || !surface || !!signalTexture} aria-describedby={`${id}-cosmetic-help`} className="space-y-3 rounded-lg border border-slate-700 p-2 disabled:opacity-50">

@@ -5,6 +5,7 @@ import vm from 'node:vm';
 import test from 'node:test';
 import ts from 'typescript';
 import * as review from '../src/lab/faceSim/skinRegionReview.ts';
+import * as drawing from '../src/lab/faceSim/skinDrawing.ts';
 
 const require = createRequire(import.meta.url);
 const source = readFileSync(new URL('../src/lab/faceSim/SkinRegionEditor.tsx', import.meta.url), 'utf8');
@@ -25,13 +26,13 @@ class FakeCanvas {
   }
 }
 
-function harness(initialCanvas = new FakeCanvas()) {
+function harness(initialCanvas = new FakeCanvas(), previewSize = 100) {
   const states = [], refs = [], effects = [], timers = new Map(), calls = [], regionCalls = [];
   const windowListeners = new Map();
   let stateCursor = 0, refCursor = 0, effectCursor = 0, dirty = false, timerId = 0, analyses = 0;
   let props = {
     canvas: initialCanvas,
-    landmarks: undefined,
+    landmarks: [],
     onTexture: value => calls.push(value),
     onRegionsChange: regions => regionCalls.push(regions),
   };
@@ -58,7 +59,7 @@ function harness(initialCanvas = new FakeCanvas()) {
     },
     useEffect(callback, dependencies) {
       const index = effectCursor++, previous = effects[index];
-      if (!previous || dependencies.some((value, i) => !Object.is(value, previous.dependencies[i]))) {
+      if (!previous || !dependencies || dependencies.some((value, i) => !Object.is(value, previous.dependencies?.[i]))) {
         effects[index] = { dependencies, callback, cleanup: previous?.cleanup, pending: true };
       }
     },
@@ -82,17 +83,19 @@ function harness(initialCanvas = new FakeCanvas()) {
           return {
             usable: true, warnings: [],
             channels: {
-              contrast: { status: 'highlighted' }, redness: { status: 'no-signal' },
-              texture: { status: 'no-signal' }, shine: { status: 'no-signal' },
+              contrast: { status: 'highlighted', coverage: 0.1, threshold: 0.1 }, redness: { status: 'no-signal', coverage: 0, threshold: 0.1 },
+              texture: { status: 'no-signal', coverage: 0, threshold: 0.1 }, shine: { status: 'no-signal' },
             },
+            diagnostics: { analyzedFraction: 0.9 },
           };
         },
       };
       if (name === './skinSignalTexture') return {
-        skinSignalPreview: () => new FakeCanvas(100, 100),
+        skinSignalPreview: () => new FakeCanvas(previewSize, previewSize),
         createSkinSignalMask: (width, height) => new Uint8Array(width * height).fill(1),
       };
       if (name === './skinRegionReview') return review;
+      if (name === './skinDrawing') return drawing;
       return require(name);
     },
   });
@@ -137,6 +140,28 @@ const pointer = (node, x, y) => ({
     getBoundingClientRect: () => ({ left: 0, top: 0, width: 100, height: 100 }),
     setPointerCapture() {},
   },
+});
+
+test('máscara comparte borrador: pointercancel/Escape/stop no crean ROI; pincel corto sí', t => {
+  const app = harness(new FakeCanvas(), 384), bridge = { current: undefined };
+  t.after(() => app.restore());
+  app.update({ modelDrawingRef: bridge });
+  app.button('Pincel').props.onClick();
+  app.button('Marcar sobre máscara').props.onClick(); app.render();
+  assert.equal(bridge.current.enabled, true);
+  bridge.current.start({ x: 0.5, y: 0.5 }); app.render();
+  app.svg.props.onPointerCancel(); app.render();
+  bridge.current.finish({ x: 0.5, y: 0.5 }); app.render();
+  assert.equal(app.find(app.render(), n => n.type === 'select').length, 0);
+  bridge.current.start({ x: 0.5, y: 0.5 }); app.render();
+  app.windowListeners.get('keydown')({ key: 'Escape', target: { closest: () => null } });
+  bridge.current.finish({ x: 0.5, y: 0.5 }); app.render();
+  assert.equal(app.find(app.render(), n => n.type === 'select').length, 0);
+  bridge.current.start({ x: 0.5, y: 0.5 });
+  bridge.current.finish({ x: 0.505, y: 0.5 }); app.render();
+  assert.equal(app.find(app.render(), n => n.type === 'select').length, 1);
+  bridge.current.stop(); app.render();
+  assert.equal(bridge.current.enabled, false);
 });
 
 test('flujo de componente: dibuja, etiqueta, analiza solo bajo demanda y valida manualmente', t => {

@@ -33,7 +33,8 @@ import { AnatomyLayerControls, chooseAnatomyDisplay, depthPeelDisplay, initialAn
 import { initialQuickRecordSettings, type QuickRecordSettings } from './quickRecord';
 import { EXTENDED_ZONE, KIND_LABELS, formatVolume, ledgerRows, patternTips, volumeTotals } from './markingModel';
 import { CheckChip, CutControls, EditorTabs, EffectMixer, IconToggle, ModeCards, PatternSetupDialog, NO_CUT, PanelSection, PointLedger, SelectionInspector, ToolDock, VolumeDialog, VolumeHud, ZoneChip, ZoneView, createZoneStore, editorPanel, hudChip, isDepthCut, type MarkingCut, type ZoneStore } from './MarkingPanels';
-import { DEFAULT_PREVIEW, PREVIEW_DESCRIPTIONS, buildIllustrativeEffects, previewCoverage, previewPixels, previewSurface } from './injectablePreview';
+import { DEFAULT_PREVIEW, GENERIC_EFFECT_CHART, PREVIEW_DESCRIPTIONS, buildIllustrativeEffects, previewCoverage, previewPixels, previewSurface, type ManualEffectArea, type PreviewSettings } from './injectablePreview';
+import EffectAreaEditor from './EffectAreaEditor';
 import { importLocalRecord, localRecord } from './injectableLocalRecord';
 
 const modelPoint = (...args: Parameters<typeof tryModelPoint>): Vec3 => requireMappedPoint(tryModelPoint(...args));
@@ -570,11 +571,26 @@ export default function FaceSimLab() {
     .filter(([, entry]) => !entry.graphicOnly && !entry.entry)
     .map(([id, entry]) => [id, entry.mode])));
   const previewModes = useMemo<Record<string, SimMode>>(() => JSON.parse(previewModeKey), [previewModeKey]);
+  const areaSources: unknown[] = PHOTO_SLOTS.flatMap(({ id }) => [photos[id]?.canvas, photos[id]?.landmarks]);
+  areaSources.push(personal?.canvas, personal?.regionMap.landmarks);
+  const [areaSnapshot, setAreaSnapshot] = useState(() => ({ sources: areaSources, areas: [] as ManualEffectArea[], revision: 0 }));
+  const areasCompatible = areaSnapshot.sources.every((source, i) => source === areaSources[i]);
+  const manualAreas = useMemo(() => areasCompatible ? areaSnapshot.areas : [], [areasCompatible, areaSnapshot.areas]);
+  const areaChart = photos.frontal?.landmarks ?? GENERIC_EFFECT_CHART;
+  useEffect(() => {
+    if (areasCompatible) return;
+    setAreaSnapshot(previous => ({ sources: areaSources, areas: [], revision: previous.revision + 1 }));
+    if (areaSnapshot.areas.length) setStatus('Cambió la fuente/captura o sus UV: se descartaron las áreas de efecto incompatibles. Puntos y dosis intactos.');
+  // La comparación por identidad invalida antes del render, incluso con trabajos GLB pendientes.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [photos, personal, areasCompatible]);
+  const areaSettings = useCallback((landmarks: readonly P2[], settings = preview): PreviewSettings =>
+    ({ ...settings, manualAreas, areaLandmarks: landmarks }), [preview, manualAreas]);
   useEffect(() => {
     let active = true;
     if (!personal) return;
     const source = personal, review = currentSkinReview?.result.usable && currentSkinReview.canvas === personal.canvas ? currentSkinReview : null;
-    const previewActive = workspace === 'simulate' && preview.after && Object.keys(bindings).length > 0;
+    const previewActive = workspace === 'simulate' && preview.after && (Object.keys(bindings).length > 0 || manualAreas.length > 0);
     if (!review && !previewActive && !(personal.closedHead && hair.enabled && hairPatches?.length)) { setAppearanceGlb(null); return; }
     void (async () => {
       try {
@@ -601,12 +617,12 @@ export default function FaceSimLab() {
         if (previewActive) {
           const pixels = context.getImageData(0, 0, canvas.width, canvas.height);
           const mask = illustrativeSkinMask(source.regionMap, canvas.width, canvas.height);
-          pixels.data.set(previewPixels(pixels.data, canvas.width, canvas.height, samples, preview, mask));
+          pixels.data.set(previewPixels(pixels.data, canvas.width, canvas.height, samples, areaSettings(source.regionMap.landmarks), mask));
           context.putImageData(pixels, 0, 0);
         }
         const original = source.renderSurface;
         const positions = previewActive
-          ? previewSurface(original.positions, original.uvs, samples, preview, source.canvas.width / source.canvas.height,
+          ? previewSurface(original.positions, original.uvs, samples, areaSettings(source.regionMap.landmarks), source.canvas.width / source.canvas.height,
             undefined, source.surface.positions.length / 3).positions : original.positions;
         const surface = { ...original, positions };
         // Cada parche conserva su foto y sus UV; no se tapa el preview con RGB original.
@@ -638,7 +654,7 @@ export default function FaceSimLab() {
           const rgba = ctx.getImageData(0, 0, texture.width, texture.height);
           const coverage = maskContext.getImageData(0, 0, texture.width, texture.height).data;
           const mask = Uint8Array.from({ length: texture.width * texture.height }, (_, i) => coverage[i * 4 + 3] ? 1 : 0);
-          rgba.data.set(previewPixels(rgba.data, texture.width, texture.height, projected, preview, mask));
+          rgba.data.set(previewPixels(rgba.data, texture.width, texture.height, projected, areaSettings(landmarks), mask));
           ctx.putImageData(rgba, 0, 0);
           return { ...patch, source: { ...patch.source, texture } };
         }) : source.photoPatches;
@@ -650,7 +666,7 @@ export default function FaceSimLab() {
       }
     })();
     return () => { active = false; };
-  }, [personal, currentSkinReview, skinChannel, skinOpacity, hair, hairPatches, workspace, preview, bindings, previewModes]);
+  }, [personal, currentSkinReview, skinChannel, skinOpacity, hair, hairPatches, workspace, preview, bindings, previewModes, manualAreas, areaSettings]);
   const canonicalRegionMap = useMemo(() => buildFaceRegionMap(
     Array.from({ length: 468 }, (_, i) => ({ x: genericFaceAtlas.positions[i * 3], y: -genericFaceAtlas.positions[i * 3 + 1] })),
     genericFaceAtlas.triangles, 1, genericFaceAtlas.positions,
@@ -891,10 +907,10 @@ export default function FaceSimLab() {
     const context = output.getContext('2d');
     if (!context) { console.error('[FaceSimLab] No se pudo preparar el filtro ilustrativo de la foto.'); return null; }
     const image = context.createImageData(canvas.width, canvas.height);
-    image.data.set(previewPixels(rgba, canvas.width, canvas.height, previewSamples, preview, mask));
+    image.data.set(previewPixels(rgba, canvas.width, canvas.height, previewSamples, areaSettings(slot!.regionMap!.landmarks), mask));
     context.putImageData(image, 0, 0);
     return output;
-  }, [photoPreviewBase, previewSamples, preview]);
+  }, [photoPreviewBase, previewSamples, preview, areaSettings, slot]);
   // El atlas genérico es la misma referencia usada por los bindings.
   useEffect(() => {
     let active = true;
@@ -919,7 +935,7 @@ export default function FaceSimLab() {
         });
         const rgb = Float32Array.from({ length: positions.length }, (_, i) => [0.65, 0.47, 0.37][i % 3]);
         for (const after of comparison === 'actual' ? [preview.after] : [false, true]) {
-        const result = previewSurface(positions, uvs, samples, { ...preview, after }, (right - left) / (top - bottom), rgb);
+        const result = previewSurface(positions, uvs, samples, areaSettings(GENERIC_EFFECT_CHART, { ...preview, after }), (right - left) / (top - bottom), rgb);
         const geometry = new THREE.BufferGeometry();
         geometry.setAttribute('position', new THREE.BufferAttribute(result.positions, 3));
         geometry.setAttribute('color', new THREE.BufferAttribute(result.rgb!, 3));
@@ -941,7 +957,7 @@ export default function FaceSimLab() {
       }
     })();
     return () => { active = false; };
-  }, [workspace, workMode, modelKind, splitAnnotations, bindings, previewModes, preview, calibrating, comparison]);
+  }, [workspace, workMode, modelKind, splitAnnotations, bindings, previewModes, preview, calibrating, comparison, manualAreas, areaSettings]);
 
   // Renderer por foto activa
   const photoSource = slot?.canvas;
@@ -2164,11 +2180,16 @@ export default function FaceSimLab() {
               </PanelSection>
               <PanelSection title="Filtros por inyectable" icon={Sparkles}>
                 <p role="status" className="text-[11px] leading-relaxed text-stone-300">
-                  {preview.after ? 'Después · filtros activos sobre los puntos registrados.' : 'Antes · imagen original. Ajustar un filtro abre Después automáticamente.'}
+                  {preview.after ? 'Después · filtros sobre puntos y áreas educativas.' : 'Antes · imagen original. Ajustar un filtro abre Después automáticamente.'}
                 </p>
-                {!Object.keys(previewModes).length && <p className="text-[11px] text-amber-300">Registra puntos de inyectable para ver efectos; las figuras sin puntos no generan simulación.</p>}
+                {!Object.keys(previewModes).length && !manualAreas.length && <p className="text-[11px] text-amber-300">Añade puntos o un área educativa para ver filtros; las figuras de marcación no generan efectos.</p>}
                 <EffectMixer value={preview} onChange={next => { comparePreview(true); setPreview({ ...next, after: true }); }} />
               </PanelSection>
+              <EffectAreaEditor key={areaSnapshot.revision} chart={areaChart} image={photos.frontal?.landmarks ? photos.frontal.previewUrl : undefined}
+                aspect={photos.frontal?.landmarks ? photos.frontal.aspect : 0.75} areas={manualAreas} onChange={areas => {
+                  setAreaSnapshot(previous => ({ ...previous, sources: areaSources, areas }));
+                  comparePreview(true);
+                }} />
               <PanelSection title="Visibilidad de revisión" icon={Eye}>
                 <CheckChip label="Mostrar puntos registrados" icon={Crosshair} checked={showMarks} onChange={setShowMarks}>Puntos</CheckChip>
                 <CheckChip label="Mostrar trazos y notas" icon={Brush} checked={showTraces} onChange={setShowTraces}>Trazos y notas</CheckChip>

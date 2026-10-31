@@ -139,7 +139,7 @@ for (const [label, mesh] of meshes) {
     }
     let checked = 0, minArea = Infinity, minCos = Infinity;
     for (const params of cases) {
-      const out = deformPositions(mesh.positions, mesh.anchors, params);
+      const out = deformPositions(mesh.positions, mesh.anchors, params, mesh.indices);
       for (let i = 0; i < mesh.indices.length; i += 3) {
         const ids = Array.from(mesh.indices.slice(i, i + 3));
         if (!ids.some(id => at(out, id).some((v, a) => v !== mesh.positions[id * 3 + a]))) continue;

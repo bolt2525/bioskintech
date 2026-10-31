@@ -49,6 +49,21 @@ function facialPositions() {
   return positions;
 }
 
+test('relieve con UV de otra foto solo desplaza vértices ganadores visibles y protege ojos/boca canónicos', () => {
+  const canonical = facialUvs(), projected = canonical.slice(), positions = facialPositions();
+  projected.set([0.4, 0.5], 100 * 2);
+  projected.set([0.4, 0.5], 102 * 2);
+  projected.set([0.4, 0.5], 103 * 2);
+  projected.set([0.4, 0.5], 105 * 2);
+  const visible = new Uint8Array(468);
+  visible[100] = 1; visible[103] = 1; visible[105] = 1;
+  const edited = applySkinRegionRelief(positions, projected,
+    [enabled(square(0.3, 0.4, 0.5, 0.6), { relief: -0.5 })], undefined, canonical, visible);
+  assert.notEqual(edited[100 * 3 + 2], positions[100 * 3 + 2]);
+  for (const id of [102, 103, 105]) assert.deepEqual(edited.slice(id * 3, id * 3 + 3), positions.slice(id * 3, id * 3 + 3));
+  assert.deepEqual(positions, facialPositions());
+});
+
 test('ROI respeta trazado y agujeros de seguridad, y rechaza dimensiones/trazados inválidos', () => {
   const safe = new Uint8Array(100).fill(1);
   safe[5 * 10 + 5] = 0;

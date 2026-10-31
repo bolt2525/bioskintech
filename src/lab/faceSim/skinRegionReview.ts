@@ -22,11 +22,28 @@ export interface SkinReviewRegion {
 }
 
 export const SKIN_REVIEW_LABELS = [
-  'Grano', 'Pápula', 'Pústula', 'Cicatriz', 'Mancha', 'Lunar', 'Verruga', 'Otra',
+  'Rojez', 'Mancha', 'Cicatriz', 'Textura', 'Relieve', 'Grano', 'Pápula', 'Pústula', 'Lunar', 'Verruga', 'Otra',
 ] as const;
 
 const EMPTY_ADJUSTMENTS = Object.freeze({ attenuation: 0, scarAttenuation: 0, tone: 0, uniformity: 0, relief: 0 });
 const MAX_POLYGON_POINTS = 512;
+
+/** Solo una ilustración manual, nunca una clasificación automática de lesiones. */
+export function skinEducationalPreset(label: string): SkinReviewRegion['adjustments'] {
+  const presets: Record<string, Partial<SkinReviewRegion['adjustments']>> = {
+    Rojez: { attenuation: 0.5, tone: -0.2, uniformity: 0.2 },
+    Mancha: { attenuation: 0.6, tone: 0.1, uniformity: 0.35 },
+    Cicatriz: { scarAttenuation: 0.65, attenuation: 0.35, tone: 0.1, uniformity: 0.5, relief: -0.15 },
+    Textura: { uniformity: 0.6 },
+    Relieve: { relief: -0.15 },
+    Grano: { attenuation: 0.25, uniformity: 0.2, relief: -0.1 },
+    Pápula: { uniformity: 0.2, relief: -0.1 },
+    Pústula: { attenuation: 0.2, uniformity: 0.2 },
+    Lunar: { attenuation: 0.2, tone: 0.05 },
+    Verruga: { uniformity: 0.2, relief: -0.1 },
+  };
+  return { ...EMPTY_ADJUSTMENTS, ...presets[label] };
+}
 
 export function isValidSkinPolygon(polygon: readonly P2[]): boolean {
   if (polygon.length < 3 || polygon.length > MAX_POLYGON_POINTS) return false;
@@ -225,13 +242,17 @@ export function applySkinRegionRelief(
   uvs: Float32Array,
   regions: readonly SkinReviewRegion[],
   normals?: Float32Array,
+  protectionUvs: Float32Array = uvs,
+  visibleVertices?: Uint8Array,
 ): Float32Array {
   if (!(positions instanceof Float32Array)) return new Float32Array();
   const output = positions.slice();
   if (!Number.isSafeInteger(positions.length) || positions.length % 3 !== 0
     || !(uvs instanceof Float32Array) || uvs.length !== positions.length / 3 * 2
     || (normals && (!(normals instanceof Float32Array) || normals.length !== positions.length))) return output;
-  const safety = getFacialUvSafety(uvs);
+  if (protectionUvs.length !== uvs.length) return output;
+  if (visibleVertices && visibleVertices.length !== positions.length / 3) return output;
+  const safety = getFacialUvSafety(protectionUvs);
   if (!safety) return output;
   let minY = Infinity, maxY = -Infinity;
   for (let i = 0; i < positions.length; i += 3) {
@@ -242,8 +263,10 @@ export function applySkinRegionRelief(
   if (!Number.isFinite(height) || height <= 0) return output;
   const validRegions = regions.filter(region => region.verified && isValidSkinPolygon(region.polygon));
   for (let vertex = 0; vertex < positions.length / 3; vertex++) {
+    if (visibleVertices && !visibleVertices[vertex]) continue;
     const uvX = uvs[vertex * 2], uvY = uvs[vertex * 2 + 1];
-    if (!Number.isFinite(uvX) || !Number.isFinite(uvY) || !isSafeFacialUv(uvX, uvY, safety)) continue;
+    if (!Number.isFinite(uvX) || !Number.isFinite(uvY)
+      || !isSafeFacialUv(protectionUvs[vertex * 2], protectionUvs[vertex * 2 + 1], safety)) continue;
     for (const region of validRegions) {
       const relief = region.adjustments.relief;
       if (!Number.isFinite(relief) || relief === 0 || !pointInValidatedSkinPolygon(uvX, uvY, region.polygon)) continue;
