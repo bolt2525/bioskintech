@@ -32,7 +32,7 @@ export const DEFAULT_PREVIEW: PreviewSettings = {
 };
 export const PREVIEW_DESCRIPTIONS: Record<SimMode, string> = {
   toxina: 'Filtro que atenúa el detalle fino y las líneas más anchas existentes, protegiendo bordes marcados. No inventa líneas ni simula relajación muscular.',
-  relleno_ha: 'Variación ilustrativa del relieve y brillo local; no representa volumen inyectado.',
+  relleno_ha: 'Proyección local de la malla proporcional a la altura facial (hasta 3 %) y brillo de piel. Los labios conservan su textura. No representa ml inyectados ni predice resultados.',
   hidratacion: 'Variación ilustrativa de luminosidad; no mide hidratación.',
   bioestimulador: 'Unifica textura y tono locales de forma ilustrativa; no simula producción de colágeno.',
 };
@@ -124,6 +124,7 @@ export function buildIllustrativeEffects(samples: readonly PreviewSample[], sett
  * Helper para el visor principal: posiciones + RGB opcional, UV con origen superior.
  * No muta buffers ni conoce dosis. Solo procesa vértices observados (no tapa/cabello).
  * La toxina modifica únicamente contraste RGB existente, nunca geometría/líneas.
+ * El relieve escala con la altura observada, no con unidades arbitrarias del modelo ni dosis.
  */
 export function previewSurface(
   positions: Float32Array, uvs: Float32Array, samples: readonly PreviewSample[], settings: PreviewSettings,
@@ -135,15 +136,22 @@ export function previewSurface(
   if (!list.length) return { positions: next, rgb: colors };
   const ratio = Number.isFinite(aspect) && aspect > 0 ? aspect : 1;
   const count = Math.min(observedVertexCount, positions.length / 3, uvs.length / 2);
+  let minY = Infinity, maxY = -Infinity;
+  for (let i = 0; i < count; i++) {
+    minY = Math.min(minY, positions[i * 3 + 1]); maxY = Math.max(maxY, positions[i * 3 + 1]);
+  }
+  const height = maxY > minY ? maxY - minY : 1;
   for (let i = 0; i < count; i++) {
     let relief = 0, glow = 0, soften = 0;
     for (const p of list) {
       const dx = (uvs[i * 2] - p.x) * ratio, dy = uvs[i * 2 + 1] - p.y;
       const w = falloff(dx * dx + dy * dy, p.radius) * p.gain;
-      relief = Math.max(relief, w * (p.mode === 'relleno_ha' ? 0.018 : p.mode === 'bioestimulador' ? 0.006 : 0));
+      // Altura relativa: hasta 3 % para HA a ganancia 1,5; ilustrativo, nunca ml → volumen.
+      relief = Math.max(relief, w * height * (p.mode === 'relleno_ha' ? 0.02 : p.mode === 'bioestimulador' ? 0.004 : 0));
       glow = Math.max(glow, w * (p.mode === 'hidratacion' ? 0.045 : p.mode === 'bioestimulador' ? 0.018 : 0));
       soften = Math.max(soften, p.mode === 'toxina' ? Math.min(0.6, w * 0.25) : 0);
     }
+    // Conserva XY/UV y la abertura labial: solo cambia la profundidad de la máscara observada.
     next[i * 3 + 2] += relief;
     if (colors) for (let channel = 0; channel < 3; channel++) {
       const at = i * 3 + channel;

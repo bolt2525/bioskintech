@@ -1,5 +1,7 @@
 # Progreso de BioSkinTech App
 
+- ✅ 2026-10-30 Relleno: relieve proporcional perceptible.
+- QA: seis puntos labiales sintéticos, relieve 1,8 % y desplazamiento oblicuo 17,06 px; 41 pruebas, 12 comprobaciones navegador y build aprobados.
 - ✅ 2026-10-30 Inyectables: efectos y WebGL corregidos.
 - QA: 40 pruebas, build y once comprobaciones de navegador aprobadas; cuatro categorías verificadas en máscara, genérico dividido y foto sintéticos.
 - ✅ 2026-10-30 Nariz: perfil dorsal continuo.

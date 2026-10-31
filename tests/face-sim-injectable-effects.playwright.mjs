@@ -47,7 +47,7 @@ try {
     const THREE = await import(code.match(/import \* as THREE from "([^"]+)"/)[1]);
     window.__effects = { personal: null, generic: null };
     const original = THREE.Mesh.prototype.onAfterRender;
-    THREE.Mesh.prototype.onAfterRender = function (renderer) {
+    THREE.Mesh.prototype.onAfterRender = function (renderer, scene, camera) {
       const kind = renderer.domElement.closest('section[aria-label="Foto personal en 3D"]') ? 'personal'
         : renderer.domElement.closest('section[aria-label="Modelo genérico 3D"]') ? 'generic' : null;
       if (kind && this.name.startsWith('PERSONAL_FACE_SURFACE') && !this.name.includes('_POINT')) {
@@ -64,8 +64,15 @@ try {
             const bytes = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
             for (let i = 0; i < bytes.length; i += 4) textureHash += bytes[i] + bytes[i + 1] + bytes[i + 2];
           }
-          window.__effects[kind] = { uuid: this.uuid, geometryHash, colorHash, textureHash, at: performance.now() };
+          window.__effects[kind] = { uuid: this.uuid, geometryHash, colorHash, textureHash, at: performance.now(),
+            positions: Array.from(pos), indices: Array.from(this.geometry.index.array) };
         }
+        const bounds = renderer.domElement.getBoundingClientRect();
+        window.__effects[kind].lips = [14, 17, 87, 317, 84, 314].map(id => {
+          const point = new THREE.Vector3().fromBufferAttribute(this.geometry.attributes.position, id)
+            .applyMatrix4(this.matrixWorld).project(camera);
+          return [point.x * bounds.width / 2, point.y * bounds.height / 2];
+        });
       }
       return original?.apply(this, arguments);
     };
@@ -189,6 +196,65 @@ try {
   assert.equal(await page.getByRole('button', { name: 'Antes', exact: true }).getAttribute('aria-pressed'), 'true');
   assert.equal(await page.getByRole('list', { name: 'Elementos marcados' }).locator('li').count(), 8);
   results.push('Elegir herramienta de marcación vuelve a Antes sin modificar el registro');
+  // Caso reportado: seis puntos de HA en labio inferior, no solo muestras de mejilla ni hash distinto.
+  await page.getByRole('toolbar', { name: 'Marcar', exact: true }).getByRole('button', { name: 'Personal', exact: true }).click();
+  await page.getByLabel('Visor dividido · genérico y máscara', { exact: true }).uncheck();
+  await page.getByRole('tab', { name: /Revisar/ }).click();
+  const lipPoints = [14, 17, 87, 317, 84, 314].map(id => ({ id: `lip-${id}`,
+    position: { x: atlas.positions[id * 3], y: atlas.positions[id * 3 + 1], z: atlas.positions[id * 3 + 2] }, units: 0 }));
+  await page.getByRole('button', { name: 'Limpiar', exact: true }).click();
+  if (!await page.getByLabel('JSON de Inyectables', { exact: true }).isVisible())
+    await page.getByText('Importar de Inyectables', { exact: true }).click();
+  await page.getByLabel('JSON de Inyectables', { exact: true }).fill(JSON.stringify({ mapping_data: {
+    injectionPoints: lipPoints, freehandLines: [], surfaceShapes: [], lab: { version: 1,
+      meta: Object.fromEntries(lipPoints.map(p => [p.id, { mode: 'relleno_ha', zone: 'Labio inferior', dose: 0.05 }])) },
+  } }));
+  await page.getByRole('button', { name: 'Importar', exact: true }).click();
+  assert.equal(await page.getByRole('list', { name: 'Elementos marcados' }).locator('li').count(), 6);
+  const lipAmounts = await page.getByLabel('Volumen acumulado', { exact: true }).textContent();
+  await page.getByLabel('Efecto Hidratación', { exact: true }).uncheck();
+  await page.getByLabel('Efecto Relleno HA', { exact: true }).check();
+  await page.getByLabel('Cobertura visual Relleno HA', { exact: true }).fill('1');
+  await page.getByLabel('Intensidad visual independiente', { exact: true }).fill('0.6');
+  const previous = await sample();
+  await page.getByLabel('Intensidad Relleno HA', { exact: true }).fill('0');
+  await nextFrame(previous);
+  const lipCanvas = personal.locator('canvas');
+  await lipCanvas.scrollIntoViewIfNeeded();
+  const bounds = await lipCanvas.boundingBox();
+  await page.mouse.move(bounds.x + bounds.width * 0.5, bounds.y + bounds.height * 0.5);
+  await page.mouse.down();
+  await page.mouse.move(bounds.x + bounds.width * 0.5 + 110, bounds.y + bounds.height * 0.5, { steps: 12 });
+  await page.mouse.up();
+  await page.waitForTimeout(1500);
+  const lipOriginal = await sample(), originalRender = await lipCanvas.screenshot();
+  await page.getByLabel('Intensidad Relleno HA', { exact: true }).fill('1.5');
+  const lipAfter = await nextFrame(lipOriginal);
+  const displacements = lipAfter.positions.filter((_, i) => i % 3 === 0).map((_, id) =>
+    Math.hypot(...[0, 1, 2].map(k => lipAfter.positions[id * 3 + k] - lipOriginal.positions[id * 3 + k])));
+  const yValues = lipOriginal.positions.filter((_, i) => i % 3 === 1), height = Math.max(...yValues) - Math.min(...yValues);
+  const screenShift = Math.max(...lipAfter.lips.map((p, i) => Math.hypot(p[0] - lipOriginal.lips[i][0], p[1] - lipOriginal.lips[i][1])));
+  assert.ok(Math.max(...displacements) >= height * 0.015, 'relieve real del labio ≥ 1,5 % de altura facial');
+  assert.ok(Math.max(...displacements) <= height * 0.03, 'relieve acotado al 3 %');
+  for (const id of [14, 17, 87, 317, 84, 314])
+    assert.ok(displacements[id] >= height * 0.015, `punto labial ${id}: relieve perceptible, no solo mejillas`);
+  assert.ok(screenShift >= 3, `desplazamiento labial perceptible ≥ 3 CSS px: ${screenShift}`);
+  const normal = (positions, a, b, c) => {
+    const u = [0, 1, 2].map(k => positions[b * 3 + k] - positions[a * 3 + k]);
+    const v = [0, 1, 2].map(k => positions[c * 3 + k] - positions[a * 3 + k]);
+    return [u[1] * v[2] - u[2] * v[1], u[2] * v[0] - u[0] * v[2], u[0] * v[1] - u[1] * v[0]];
+  };
+  for (let i = 0; i < lipOriginal.indices.length; i += 3) {
+    const ids = lipOriginal.indices.slice(i, i + 3), n0 = normal(lipOriginal.positions, ...ids), n1 = normal(lipAfter.positions, ...ids);
+    if (Math.hypot(...n0) < 1e-8) continue;
+    assert.ok(n0.reduce((sum, value, k) => sum + value * n1[k], 0) > 0, `triángulo ${i / 3} sin invertir`);
+  }
+  assert.ok(!(await lipCanvas.screenshot()).equals(originalRender), 'silueta/render del labio cambia');
+  await page.getByLabel('Intensidad Relleno HA', { exact: true }).fill('0');
+  await page.waitForFunction(hash => window.__effects.personal.geometryHash === hash, lipOriginal.geometryHash);
+  assert.equal(await page.getByLabel('Volumen acumulado', { exact: true }).textContent(), lipAmounts);
+  console.log(JSON.stringify({ lipMaxReliefPercent: Math.max(...displacements) / height * 100, lipScreenShiftPx: screenShift }));
+  results.push('Seis puntos labiales: relieve ≥ 1,5 %, desplazamiento ≥ 3 px en vista oblicua, sin inversiones y reversible');
   await page.setViewportSize({ width: 390, height: 844 });
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1), false);
   assert.deepEqual(errors, []);

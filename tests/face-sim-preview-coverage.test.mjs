@@ -196,3 +196,23 @@ test('superficie: roles preservados, cobertura y ganancia afectan, buffers inmut
   const weird = preview.previewSurface(positions, new Float32Array(2), sample('relleno_ha'), base('relleno_ha'), Number.NaN, rgb);
   assert.ok([...weird.positions, ...weird.rgb].every(Number.isFinite), 'uv corto y aspecto no finito');
 });
+
+test('relleno: relieve visible relativo al rostro, independiente de escala y sin desplazar XY', () => {
+  // Plano oblicuo de altura facial 5: un cambio distinto de cero no basta para ser perceptible.
+  const positions = new Float32Array([-2.5, -2.5, 2.5, 2.5, -2.5, -2.5, 0, 2.5, 0, 0, 0, 0]);
+  const uvs = new Float32Array([0, 1, 1, 1, 0.5, 0, 0.5, 0.5]);
+  const samples = [{ mode: 'relleno_ha', x: 0.5, y: 0.5 }];
+  const settings = base('relleno_ha', { intensity: 0.6, levels: { relleno_ha: 1.5 } });
+  const result = preview.previewSurface(positions, uvs, samples, settings, 1, undefined, 4).positions;
+  const distance = Math.hypot(...[0, 1, 2].map(k => result[9 + k] - positions[9 + k]));
+  assert.ok(distance >= 5 * 0.015, `relieve ${distance}: mínimo ilustrativo 1,5 % de altura`);
+  assert.ok(distance <= 5 * 0.03, 'sin picos mayores al 3 %');
+  for (let i = 0; i < positions.length; i++) if (i % 3 !== 2) assert.equal(result[i], positions[i], 'XY intacto');
+  const scaled = preview.previewSurface(Float32Array.from(positions, v => v * 10), uvs,
+    samples, settings, 1, undefined, 4).positions;
+  for (let i = 0; i < result.length; i++) assert.ok(Math.abs(result[i] * 10 - scaled[i]) < 1e-5, 'escala equivarante');
+  assert.deepEqual(preview.previewSurface(positions, uvs, samples, { ...settings, after: false }, 1, undefined, 4).positions, positions);
+  assert.deepEqual(preview.previewSurface(positions, uvs, samples, { ...settings, levels: { relleno_ha: 0 } }, 1, undefined, 4).positions, positions);
+  const limited = preview.previewSurface(positions, uvs, samples, settings, 1, undefined, 3).positions;
+  assert.deepEqual(limited.slice(9), positions.slice(9), 'fuera de superficie observada intacto');
+});
