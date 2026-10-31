@@ -48,6 +48,19 @@ try {
     window.__effects = { personal: null, generic: null };
     const original = THREE.Mesh.prototype.onAfterRender;
     THREE.Mesh.prototype.onAfterRender = function (renderer, scene, camera) {
+      if (this.name === 'MORPHOLOGY_SKIN_AFTER') {
+        const material = Array.isArray(this.material) ? this.material[0] : this.material;
+        const image = material.map?.image;
+        if (image && image !== window.__skinImage) {
+          window.__skinImage = image;
+          const c = document.createElement('canvas'); c.width = image.width; c.height = image.height;
+          const ctx = c.getContext('2d'); ctx.drawImage(image, 0, 0);
+          const bytes = ctx.getImageData(0, 0, c.width, c.height).data;
+          let hash = 0;
+          for (let i = 0; i < bytes.length; i += 4) hash += bytes[i] + bytes[i + 1] + bytes[i + 2];
+          window.__skinHash = hash;
+        }
+      }
       const kind = renderer.domElement.closest('section[aria-label="Foto personal en 3D"]') ? 'personal'
         : renderer.domElement.closest('section[aria-label="Modelo genérico 3D"]') ? 'generic' : null;
       if (kind && this.name.startsWith('PERSONAL_FACE_SURFACE') && !this.name.includes('_POINT')) {
@@ -255,6 +268,35 @@ try {
   assert.equal(await page.getByLabel('Volumen acumulado', { exact: true }).textContent(), lipAmounts);
   console.log(JSON.stringify({ lipMaxReliefPercent: Math.max(...displacements) / height * 100, lipScreenShiftPx: screenShift }));
   results.push('Seis puntos labiales: relieve ≥ 1,5 %, desplazamiento ≥ 3 px en vista oblicua, sin inversiones y reversible');
+  await page.getByRole('navigation', { name: 'Grupos del editor' })
+    .getByRole('button', { name: 'Morfología, piel y capas', exact: true }).click();
+  const appearance = page.locator('[data-face-appearance-group]');
+  await appearance.getByRole('button', { name: 'Piel', exact: true }).click();
+  const regionEditor = appearance.getByRole('region', { name: 'Revisión visual manual por zonas', exact: true });
+  const roi = regionEditor.getByRole('application', { name: 'Área para delimitar una zona de piel' });
+  await roi.waitFor();
+  await page.waitForFunction(() => window.__skinHash > 0);
+  const skinBefore = await page.evaluate(() => window.__skinHash);
+  assert.equal(await regionEditor.getByLabel('Atenuar apariencia de cicatriz', { exact: true }).count(), 0, 'sin control antes de validar');
+  await roi.scrollIntoViewIfNeeded();
+  const box = await roi.boundingBox(), cheek = fixture.landmarks[50];
+  await page.mouse.move(box.x + box.width * (cheek[0] - 0.07), box.y + box.height * (cheek[1] - 0.07));
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width * (cheek[0] + 0.07), box.y + box.height * (cheek[1] + 0.07), { steps: 5 });
+  await page.mouse.up();
+  await regionEditor.locator('select').selectOption({ label: 'Cicatriz' });
+  await regionEditor.getByRole('button', { name: 'Analizar solo esta zona', exact: true }).click();
+  await regionEditor.getByRole('button', { name: 'Validar revisión manual', exact: true }).click();
+  await regionEditor.getByLabel('Atenuar apariencia de cicatriz', { exact: true }).fill('1');
+  await page.waitForFunction(hash => window.__skinHash !== hash, skinBefore);
+  const scarHash = await page.evaluate(() => window.__skinHash);
+  await regionEditor.getByRole('button', { name: 'Ver antes', exact: true }).click();
+  await page.waitForFunction(hash => window.__skinHash === hash, skinBefore);
+  await regionEditor.getByRole('button', { name: 'Ver después', exact: true }).click();
+  await page.waitForFunction(hash => window.__skinHash === hash, scarHash);
+  await regionEditor.getByRole('button', { name: 'Restablecer · imagen original', exact: true }).click();
+  await page.waitForFunction(hash => window.__skinHash === hash, skinBefore);
+  results.push('Piel: rectángulo → Cicatriz → analizar → validar → atenuar modifica textura 3D; Antes/Después y restablecer reversibles');
   await page.setViewportSize({ width: 390, height: 844 });
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1), false);
   assert.deepEqual(errors, []);

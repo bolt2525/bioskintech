@@ -33,14 +33,14 @@ export const DEFAULT_PREVIEW: PreviewSettings = {
 export const PREVIEW_DESCRIPTIONS: Record<SimMode, string> = {
   toxina: 'Filtro que atenúa el detalle fino y las líneas más anchas existentes, protegiendo bordes marcados. No inventa líneas ni simula relajación muscular.',
   relleno_ha: 'Proyección local de la malla proporcional a la altura facial (hasta 3 %) y brillo de piel. Los labios conservan su textura. No representa ml inyectados ni predice resultados.',
-  hidratacion: 'Variación ilustrativa de luminosidad; no mide hidratación.',
+  hidratacion: 'Suavizado cosmético local de microtextura y luminosidad, con protección de bordes. No mide hidratación ni predice resultados.',
   bioestimulador: 'Unifica textura y tono locales de forma ilustrativa; no simula producción de colágeno.',
 };
 /** Qué hace cada variador, en lenguaje de filtro. */
 export const PREVIEW_FILTERS: Record<SimMode, string> = {
   toxina: 'Atenuar líneas',
   relleno_ha: 'Relieve y brillo',
-  hidratacion: 'Luminosidad',
+  hidratacion: 'Suavizar y luminosidad',
   bioestimulador: 'Textura y tono',
 };
 export const MAX_LEVEL = 1.5;
@@ -346,7 +346,8 @@ export function previewPixels(
     const base2 = luma(coarse[rgb], coarse[rgb + 1], coarse[rgb + 2]);
     const tF = wT > 0 ? saturate(0.92, 0.35, wT) : 0, tC = wT > 0 ? saturate(0.7, 0.45, wT) : 0;
     const bF = wB > 0 ? saturate(0.62, 0.5, wB) : 0, bC = wB > 0 ? saturate(0.32, 0.6, wB) : 0;
-    const fineAmount = 1 - (1 - tF) * (1 - bF), coarseAmount = 1 - (1 - tC) * (1 - bC);
+    const hF = wH > 0 ? saturate(0.72, 0.4, wH) : 0, hC = wH > 0 ? saturate(0.28, 0.6, wH) : 0;
+    const fineAmount = 1 - (1 - tF) * (1 - bF) * (1 - hF), coarseAmount = 1 - (1 - tC) * (1 - bC) * (1 - hC);
     const keepFine = 1 - fineAmount * (1 - smoothstep(FINE_EDGE[0], FINE_EDGE[1], Math.abs(original - base1))) * border;
     const keepCoarse = 1 - coarseAmount * (1 - smoothstep(COARSE_EDGE[0], COARSE_EDGE[1], Math.abs(base1 - base2))) * border;
     const glow = (wH * 12 + wB * 5 + wR * 6) * border;

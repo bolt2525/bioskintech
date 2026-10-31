@@ -90,6 +90,29 @@ test('restablecer reproduce exactamente la fuente y mover controles no acumula r
   assert.deepEqual(applySkinRegionRgb(source, safe, [region]), first);
 });
 
+test('cicatriz: reduce contraste multiescala solo en ROI validado sin alterar alfa, zonas protegidas ni original', () => {
+  const width = 128, height = 128, data = new Uint8ClampedArray(width * height * 4);
+  for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
+    const shade = y >= 63 && y <= 65 ? 150 : 180;
+    data.set([shade, shade - 20, shade - 35, 255], (y * width + x) * 4);
+  }
+  const source = { width, height, data }, original = data.slice(), safe = new Uint8Array(width * height).fill(1);
+  safe[64 * width + 60] = 0;
+  const region = enabled(square(), { tone: 0, scarAttenuation: 1 });
+  const result = applySkinRegionRgb(source, safe, [region]);
+  const contrast = bytes => bytes[(58 * width + 64) * 4] - bytes[(64 * width + 64) * 4];
+  assert.ok(contrast(result) < contrast(data) * 0.75, `contraste ${contrast(data)} → ${contrast(result)}`);
+  assert.deepEqual(applySkinRegionRgb(source, safe, [{ ...region, verified: false }]), original);
+  assert.deepEqual(applySkinRegionRgb(source, safe, [{ ...region, adjustments: { ...region.adjustments, scarAttenuation: 0 } }]), original);
+  for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
+    const i = y * width + x;
+    assert.equal(result[i * 4 + 3], 255);
+    if (!safe[i] || x < 32 || x >= 96 || y < 32 || y >= 96)
+      assert.deepEqual(result.slice(i * 4, i * 4 + 4), data.slice(i * 4, i * 4 + 4));
+  }
+  assert.deepEqual(data, original);
+});
+
 test('zonas múltiples conservan sus propios ROI sin acumular cambios solapados', () => {
   const source = image(), safe = new Uint8Array(source.width * source.height).fill(1);
   const left = enabled(square(0.05, 0.1, 0.48, 0.9), { tone: 0.5 });

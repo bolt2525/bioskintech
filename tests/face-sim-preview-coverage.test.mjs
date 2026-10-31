@@ -107,6 +107,22 @@ test('toxina: cobertura 0.5 vs 2 y ganancia 1 vs 1.5 cambian el alcance/fuerza',
   assert.ok(at(1.5) < at(1), 'ganancia 1.5 atenúa más que 1');
 });
 
+test('embellecimiento: hidratación y bioestimulador atenúan textura además de iluminar; toxina no aclara piel plana', () => {
+  const rgba = synthetic(), mask = fullMask(), samples = [{ x: 0.5, y: FINE_ROW / SIZE }];
+  for (const mode of ['hidratacion', 'bioestimulador']) {
+    const render = level => preview.previewPixels(rgba, SIZE, SIZE, samples.map(p => ({ ...p, mode })),
+      base(mode, { levels: { [mode]: level } }), mask);
+    const before = lineContrast(rgba, 200, FINE_ROW), result = render(1.5);
+    assert.ok(lineContrast(result, 200, FINE_ROW) < before * 0.75, `${mode}: contraste se reduce ≥ 25 %, no solo brillo`);
+    assert.ok(px(result, 200, FINE_ROW - 6) > px(rgba, 200, FINE_ROW - 6), `${mode}: luminosidad local`);
+    assert.ok(lineContrast(result, 200, FINE_ROW) < lineContrast(render(0.5), 200, FINE_ROW), 'intensidad gradual');
+    assert.deepEqual(render(0), rgba, 'cero restaura');
+    assert.deepEqual(result.slice(0, 4), rgba.slice(0, 4), 'fuera de cobertura intacto');
+  }
+  const flat = new Uint8ClampedArray(SIZE * SIZE * 4).fill(170);
+  assert.deepEqual(preview.previewPixels(flat, SIZE, SIZE, [{ mode: 'toxina', x: 0.5, y: 0.5 }], base('toxina'), mask), flat);
+});
+
 test('máscara: fuera intacto, alpha conservado y sin promediar ojos/labios excluidos hacia la piel', () => {
   const rgba = synthetic({ alpha: 77 }), mask = fullMask();
   // "Ojo" oscuro excluido de la máscara en mitad de piel plana.

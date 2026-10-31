@@ -1,5 +1,8 @@
 # Progreso de BioSkinTech App
 
+- ✅ 2026-10-30 Hidratación: suavizado y luminosidad.
+- ✅ 2026-10-30 Cicatrices: atenuación por zona validada.
+- QA: 22 pruebas, 13 comprobaciones navegador, lint y build aprobados; ciclo de cicatriz completo sobre textura 3D, con restauración del original.
 - ✅ 2026-10-30 Relleno: relieve proporcional perceptible.
 - QA: seis puntos labiales sintéticos, relieve 1,8 % y desplazamiento oblicuo 17,06 px; 41 pruebas, 12 comprobaciones navegador y build aprobados.
 - ✅ 2026-10-30 Inyectables: efectos y WebGL corregidos.

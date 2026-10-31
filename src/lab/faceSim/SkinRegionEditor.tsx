@@ -185,8 +185,9 @@ export default function SkinRegionEditor({ canvas, landmarks, onTexture, onRegio
         const safeMask = createSkinSignalMask(image.width, image.height, landmarks);
         imageData.data.set(applySkinRegionRgb(imageData, safeMask, adjustedRegions));
         context2d.putImageData(imageData, 0, 0);
-      } catch {
+      } catch (error) {
         textureCallback.current(undefined);
+        setMessage(error instanceof Error ? error.message : 'No se pudo aplicar el retoque de la zona.');
       }
     }
   }, [base, landmarks, regions, showBefore]);
@@ -496,15 +497,17 @@ export default function SkinRegionEditor({ canvas, landmarks, onTexture, onRegio
       <legend className="px-1 text-xs font-medium text-emerald-200">Vista ilustrativa · solo dentro del ROI validado</legend>
       {([
         ['attenuation', 'Atenuación visual', 0, 1, 0.05],
+        ['scarAttenuation', 'Atenuar apariencia de cicatriz', 0, 1, 0.05],
         ['uniformity', 'Uniformidad de textura', 0, 1, 0.05],
         ['tone', 'Tono RGB aparente', -1, 1, 0.05],
         ['relief', 'Relieve ilustrativo · sin medición', -1, 1, 0.05],
       ] as const).map(([key, label, min, max, step]) => <label key={key} className="text-xs text-slate-200">
-        <span className="flex justify-between gap-2"><span>{label}</span><output>{numberFormat.format(selected.adjustments[key])}</output></span>
-        <input aria-label={label} type="range" min={min} max={max} step={step} value={selected.adjustments[key]}
+        <span className="flex justify-between gap-2"><span>{label}</span><output>{numberFormat.format(selected.adjustments[key] ?? 0)}</output></span>
+        <input aria-label={label} type="range" min={min} max={max} step={step} value={selected.adjustments[key] ?? 0}
           disabled={!landmarks} onChange={event => updateAdjustment(key, Number(event.target.value))}
           className="mt-1 block w-full accent-amber-300" />
       </label>)}
+      <p className="text-[11px] text-slate-400 sm:col-span-2">Cicatriz: atenúa contraste y textura de la foto dentro de la zona validada. No elimina cicatrices físicas ni reconstruye su profundidad; el relieve se ajusta por separado.</p>
       {!landmarks && <p className="text-xs text-amber-200 sm:col-span-2">Se requieren referencias faciales para proteger ojos y labios; las sugerencias de ajuste están desactivadas.</p>}
       {verifiedRegions.some(region => Object.values(region.adjustments).some(value => value !== 0)) && <>
         <div className="flex flex-wrap gap-2 sm:col-span-2">
@@ -514,7 +517,7 @@ export default function SkinRegionEditor({ canvas, landmarks, onTexture, onRegio
             setShowBefore(false);
             setResetAcknowledged(true);
             setRegions(currentRegions => currentRegions.map(region => ({
-              ...region, adjustments: { attenuation: 0, tone: 0, uniformity: 0, relief: 0 },
+              ...region, adjustments: { attenuation: 0, scarAttenuation: 0, tone: 0, uniformity: 0, relief: 0 },
             })));
           }}>Restablecer · imagen original</button>
         </div>

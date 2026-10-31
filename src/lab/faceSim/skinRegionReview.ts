@@ -10,6 +10,8 @@ export interface SkinReviewRegion {
   adjustments: {
     /** 0..1 · intensidad manual de atenuación RGB, sin inferencia clínica. */
     attenuation: number;
+    /** 0..1 · atenuación RGB multiescala manual; no elimina una cicatriz física. */
+    scarAttenuation?: number;
     /** -1..1 · tono RGB aparente. */
     tone: number;
     /** 0..1 · uniformidad de textura ilustrativa. */
@@ -23,7 +25,7 @@ export const SKIN_REVIEW_LABELS = [
   'Grano', 'Pápula', 'Pústula', 'Cicatriz', 'Mancha', 'Lunar', 'Verruga', 'Otra',
 ] as const;
 
-const EMPTY_ADJUSTMENTS = Object.freeze({ attenuation: 0, tone: 0, uniformity: 0, relief: 0 });
+const EMPTY_ADJUSTMENTS = Object.freeze({ attenuation: 0, scarAttenuation: 0, tone: 0, uniformity: 0, relief: 0 });
 const MAX_POLYGON_POINTS = 512;
 
 export function isValidSkinPolygon(polygon: readonly P2[]): boolean {
@@ -118,15 +120,17 @@ export function applySkinRegionRgb(
   for (const region of regions) {
     if (!region.verified || !isValidSkinPolygon(region.polygon)) continue;
     const mask = createSkinRegionMask(width, height, region.polygon, safeMask);
-    const { attenuation, tone, uniformity, relief } = region.adjustments;
-    const values = [attenuation, tone, uniformity, relief];
+    const { attenuation, tone, uniformity, relief, scarAttenuation = 0 } = region.adjustments;
+    const values = [attenuation, tone, uniformity, relief, scarAttenuation];
     if (values.some(value => !Number.isFinite(value))) continue;
     const bounded = values.map(value => Math.max(-1, Math.min(1, value)));
     if (bounded.every(value => value === 0)) continue;
     const retouched = applySkinCosmetics({ width, height, data }, mask, {
-      spots: Math.max(0, bounded[0]),
+      spots: Math.max(0, bounded[0], bounded[4] * 0.65),
       tone: bounded[1],
-      texture: Math.max(0, bounded[2]),
+      texture: Math.max(0, bounded[2], bounded[4] * 0.75),
+      fineWrinkles: Math.max(0, bounded[4]),
+      coarseWrinkles: Math.max(0, bounded[4]),
     });
     // El relieve es solo una sugerencia RGB local basada en luminancia; no mide ni simula profundidad real.
     const amount = bounded[3] * 0.12;

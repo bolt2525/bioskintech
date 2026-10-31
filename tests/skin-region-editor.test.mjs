@@ -145,6 +145,7 @@ test('flujo de componente: dibuja, etiqueta, analiza solo bajo demanda y valida 
   app.render();
   assert.equal(app.analyses, 0, 'el análisis no se activa al cargar');
   app.button('Rectángulo').props.onClick();
+  assert.equal(app.find(app.render(), node => node.props?.['aria-label'] === 'Atenuar apariencia de cicatriz').length, 0);
   let svg = app.svg;
   svg.props.onPointerDown(pointer(svg, 20, 20));
   svg.props.onPointerUp(pointer(svg, 80, 80));
@@ -162,7 +163,11 @@ test('flujo de componente: dibuja, etiqueta, analiza solo bajo demanda y valida 
   app.button('Validar revisión manual').props.onClick();
   app.render();
   assert.equal(app.regionCalls.at(-1)[0].verified, true);
-  assert.equal(app.find(app.render(), node => node.type === 'input' && node.props.type === 'range').length, 4);
+  assert.equal(app.find(app.render(), node => node.type === 'input' && node.props.type === 'range').length, 5);
+  app.find(app.render(), node => node.props?.['aria-label'] === 'Atenuar apariencia de cicatriz')[0]
+    .props.onChange({ target: { value: '0.75' } });
+  app.render();
+  assert.equal(app.regionCalls.at(-1)[0].adjustments.scarAttenuation, 0.75);
   app.find(app.render(), node => node.type === 'input' && node.props['aria-label'] === 'Relieve ilustrativo · sin medición')[0]
     .props.onChange({ target: { value: '0.5' } });
   app.render();
