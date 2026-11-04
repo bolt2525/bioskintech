@@ -16,7 +16,7 @@ try {
     const url = route.request().url();
     if (!url.startsWith(`${origin}/`) && !/^(data:|blob:)/.test(url)) return route.abort();
     if (!url.includes('/src/lab/faceSim/FaceSimLab.tsx')) return route.continue();
-    const response = await route.fetch(), source = await response.text();
+    const response = await route.fetch({ timeout: 120000 }), source = await response.text();
     const pattern = /async function detectFrame\([^]*?\n\}/;
     assert.match(source, pattern);
     return route.fulfill({ response, body: source.replace(pattern, `async function detectFrame(img) {
@@ -74,8 +74,9 @@ try {
   };
   const build = async () => {
     const previous = await page.evaluate(() => window.__baseMask?.uuid);
-    await page.getByRole('button', { name: /^Calcular superficie con/ }).click();
-    await page.getByText(/^Superficie 3D personal generada desde la foto Frontal/).waitFor();
+    await page.getByRole('button', { name: '2. Generar y revisar máscara', exact: true }).click();
+    await page.getByRole('dialog', { name: 'Revisar máscara antes de usarla' }).waitFor();
+    await page.getByRole('button', { name: 'Usar generada sin ajustes', exact: true }).click();
     await page.getByRole('button', { name: 'Simular y marcar', exact: true }).click();
     try {
       await page.waitForFunction(uuid => window.__baseMask && window.__baseMask.uuid !== uuid, previous);
@@ -86,7 +87,7 @@ try {
     return page.evaluate(() => window.__baseMask);
   };
   await load('Frontal', 1);
-  await page.getByRole('button', { name: /^Calcular superficie con/ }).click();
+  await page.getByRole('button', { name: '2. Generar y revisar máscara', exact: true }).click();
   await page.getByText(/^La captura asignada a Frontal muestra un giro lateral/).waitFor();
   assert.equal(await page.evaluate(() => window.__baseMask), undefined);
   await page.getByLabel('Retirar Frontal', { exact: true }).click();
@@ -98,26 +99,35 @@ try {
   assert.deepEqual(recovered.positions, monocular.positions, 'dos recuperaciones no alteran la base frontal');
   console.log('Frontal con dos perfiles recuperados: geometría original exacta.');
   await page.getByRole('button', { name: 'Capturas', exact: true }).click();
-  await page.getByText('Opciones de superficie y cabeza experimental', { exact: true }).click();
-  await page.getByText('Concordancia por foto', { exact: true }).click();
-  assert.equal(await page.getByText(/Detección recuperada: referencia visual únicamente; calibra/).count(), 2);
-  await page.getByText('Calibrar perfil base · nariz, filtrum y labios', { exact: true }).click();
+  await page.getByRole('button', { name: 'Revisar máscara aceptada', exact: true }).click();
+  const review = page.getByRole('dialog', { name: 'Revisar máscara antes de usarla' });
+  await review.waitFor();
+  const slider = review.getByLabel('Ajuste de perfil Filtrum', { exact: true });
+  const previewHost = review.getByTestId('mask-review-preview');
+  await page.waitForFunction(() => document.querySelector('[data-testid="mask-review-preview"]')?.dataset.displacement === '0');
+  await slider.focus();
+  await slider.press('Home');
+  await page.waitForFunction(() => Number(document.querySelector('[data-testid="mask-review-preview"]')?.dataset.displacement) > 0.02);
+  const liveMax = await previewHost.getAttribute('data-displacement');
+  assert.ok(Number(liveMax) > 0.02, 'el borrador cambia inmediatamente, sin aplicar ni recalcular');
+  await review.getByRole('button', { name: 'Comparar sin ajustes', exact: true }).click();
+  await page.waitForFunction(() => document.querySelector('[data-testid="mask-review-preview"]')?.dataset.displacement === '0');
+  await review.getByRole('button', { name: 'Ver ajustes', exact: true }).click();
+  await page.waitForFunction(() => Number(document.querySelector('[data-testid="mask-review-preview"]')?.dataset.displacement) > 0.02);
+  await review.getByRole('button', { name: 'Cancelar', exact: true }).click();
+  await page.getByRole('button', { name: 'Simular y marcar', exact: true }).click();
+  await page.waitForFunction(() => window.__baseMask);
+  assert.deepEqual((await page.evaluate(() => window.__baseMask)).positions, monocular.positions, 'cancelar no modifica la base aceptada');
+  await page.getByRole('button', { name: 'Capturas', exact: true }).click();
+  await page.getByRole('button', { name: 'Revisar máscara aceptada', exact: true }).click();
+  await slider.focus(); await slider.press('Home');
+  await page.waitForFunction(() => Number(document.querySelector('[data-testid="mask-review-preview"]')?.dataset.displacement) > 0.02);
+  await page.evaluate(() => { window.__calibrationMask = null; });
+  await review.getByRole('button', { name: 'Confirmar propuesta ajustada', exact: true }).click();
+  await review.waitFor({ state: 'detached' });
   await page.getByRole('region', { name: 'Perfil base calibrado en 3D', exact: true }).locator('canvas').waitFor();
   await page.waitForFunction(() => window.__calibrationMask);
-  const preview = await page.evaluate(() => window.__calibrationMask);
-  assert.deepEqual(preview.positions, monocular.positions, 'el visor de calibración usa la base sin efectos');
-  const slider = page.getByLabel('Calibración base Filtrum', { exact: true });
-  await slider.evaluate(node => {
-    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(node, '-0.04');
-    node.dispatchEvent(new Event('input', { bubbles: true }));
-    node.dispatchEvent(new Event('change', { bubbles: true }));
-  });
-  assert.deepEqual((await page.evaluate(() => window.__calibrationMask)).positions, preview.positions,
-    'el borrador no cambia la base antes de aplicar');
-  const oldUuid = recovered.uuid;
-  await page.getByRole('button', { name: 'Aplicar calibración', exact: true }).click();
-  await page.getByText(/^Superficie 3D personal generada desde la foto Frontal/).waitFor();
-  await page.waitForFunction(uuid => window.__calibrationMask?.uuid !== uuid, preview.uuid);
+  const oldUuid = await page.evaluate(() => window.__baseMask?.uuid);
   const appliedPreview = await page.evaluate(() => window.__calibrationMask);
   await page.getByRole('button', { name: 'Simular y marcar', exact: true }).click();
   await page.waitForFunction(uuid => window.__baseMask?.uuid !== uuid, oldUuid);
@@ -131,22 +141,24 @@ try {
   assert.ok(max > 0.02, `relieve real: ${max}`);
   console.log(`Filtrum calibrado: desplazamiento Z ${max}; XY exacto.`);
   await page.getByRole('button', { name: 'Capturas', exact: true }).click();
-  await page.getByText('Calibrar perfil base · nariz, filtrum y labios', { exact: true }).click();
-  await page.getByRole('button', { name: 'Poner calibración a cero', exact: true }).click();
-  await page.getByRole('button', { name: 'Aplicar calibración', exact: true }).click();
-  await page.getByText(/^Superficie 3D personal generada desde la foto Frontal/).waitFor();
+  await page.getByRole('button', { name: 'Revisar máscara aceptada', exact: true }).click();
+  await page.getByRole('button', { name: 'Usar generada sin ajustes', exact: true }).click();
   await page.getByRole('button', { name: 'Simular y marcar', exact: true }).click();
   await page.waitForFunction(uuid => window.__baseMask?.uuid !== uuid, calibrated.uuid);
   assert.deepEqual((await page.evaluate(() => window.__baseMask)).positions, monocular.positions);
   await page.getByRole('button', { name: 'Capturas', exact: true }).click();
-  await page.getByText('Calibrar perfil base · nariz, filtrum y labios', { exact: true }).click();
+  await page.getByRole('button', { name: 'Revisar máscara aceptada', exact: true }).click();
   await page.setViewportSize({ width: 390, height: 844 });
-  await slider.scrollIntoViewIfNeeded();
+  await slider.evaluate(node => node.scrollIntoView({ block: 'end' }));
   assert.equal(await slider.isVisible(), true);
-  assert.equal(await page.getByRole('region', { name: 'Perfil base calibrado en 3D', exact: true }).isVisible(), true);
+  assert.equal(await review.isVisible(), true);
+  const mobilePreview = await review.getByRole('region', { name: 'Comparación de máscara preliminar' }).boundingBox();
+  const mobileSlider = await slider.boundingBox();
+  assert.ok(mobilePreview.y >= 0 && mobilePreview.y + mobilePreview.height <= mobileSlider.y, 'visor visible mientras se ajusta en móvil');
   assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), 'sin desbordamiento móvil');
   assert.deepEqual(errors, []);
-  console.log(JSON.stringify({ cases: 8, recoveredProfiles: 'base frontal exacta', calibrationMax: max,
+  await review.getByRole('button', { name: 'Cancelar', exact: true }).click();
+  console.log(JSON.stringify({ cases: 11, recoveredProfiles: 'base frontal exacta', calibrationMax: max,
     restore: 'exacto', frontalXY: 'exacto', mobile: 390, errors: errors.length }));
 } finally {
   await browser.close();

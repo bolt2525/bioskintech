@@ -22,8 +22,9 @@ import { applySkinRegionRelief, type SkinReviewRegion } from './skinRegionReview
 import { editorPanel } from './MarkingPanels';
 import { initialMorphologySession, morphologySessionReducer, MORPHOLOGY_VARIANT_LIMIT } from './morphologySession';
 import {
-  buildCutPlane, buildSimulationLayers, buildSimulationReferenceSurface, createSimulationMesh, deformPositions, meshBounds, nasalProfileExcess,
-  NEUTRAL_SIMULATION, SIMULATION_CONTROLS, SIMULATION_GROUPS, SIMULATION_LAYERS, SIMULATION_NOTICE, vertexNormals,
+  buildCutPlane, buildSimulationLayers, buildSimulationReferenceSurface, composeNasalSymmetryTexture, createSimulationMesh, deformPositions, meshBounds, nasalProfileExcess,
+  nasalTextureDestinationWeights, nasalTextureOverlayIndices,
+  NEUTRAL_SIMULATION, sanitizeSimulation, SIMULATION_CONTROLS, SIMULATION_GROUPS, SIMULATION_LAYERS, SIMULATION_NOTICE, vertexNormals,
   type LayerId, type SimulationCut, type SimulationMesh, type SimulationParameters, type SimulationProtection,
 } from './simulation';
 const SkinRegionEditor = lazy(() => import('./SkinRegionEditor'));
@@ -56,6 +57,7 @@ interface ViewerState {
   hairPatches?: readonly PhotoHairPatch[];
   photoPatches?: readonly PhotoSurfacePatch[];
   skinTexture?: HTMLCanvasElement;
+  nasalTextureWeights?: Float32Array;
   skinRegions: readonly SkinReviewRegion[];
   skinSource?: HTMLCanvasElement;
   skinUVs?: Float32Array;
@@ -92,6 +94,73 @@ const regionCells = buildRegionCells(canonicalRegions, buildFaceTriangleRegions(
 let anatomyCells: ReturnType<typeof buildRegionCells> | undefined;
 const getAnatomyCells = () => anatomyCells ??= buildRegionCells(canonicalRegions, buildFaceTriangleRegions(canonicalRegions, atlas.positions), 3);
 const genericReferenceUVs = buildCanonicalReferenceUVs(atlas.positions);
+
+function NasalSymmetryControls({ parameters, direction, onChange, onCompare, textureAvailable, texturePending, proposed, onConfirm, onDiscard }: {
+  parameters: SimulationParameters;
+  direction: 1 | -1;
+  onChange: (parameters: Partial<SimulationParameters>, direction?: 1 | -1) => void;
+  onCompare: () => void;
+  textureAvailable: boolean;
+  texturePending: boolean;
+  proposed: boolean;
+  onConfirm: () => void;
+  onDiscard: () => void;
+}) {
+  const id = useId();
+  return <div role="group" className="space-y-3 rounded-lg border border-gold/40 p-2" aria-label="Simetría nasal">
+    <h4 className="text-xs font-semibold text-gold">1. Simetría nasal · revisar antes de retocar</h4>
+    <p className="text-xs text-amber-200">Aproximación de superficie, no anatomía exacta. Las fosas son textura y relieve: no se reconstruye su interior.</p>
+    <p role="status" className="text-xs text-stone-200">{proposed
+      ? 'Propuesta sin confirmar: revisa «Después» frente al original. Confirma o descarta antes de otros retoques.'
+      : 'Cambiar estos controles prepara una propuesta; no se aplica al historial hasta confirmar.'}</p>
+    <label className="block text-xs">Origen → destino · lados del paciente
+      <select aria-label="Dirección de simetría nasal" className={`${selectClass} mt-1 w-full`} value={direction} onChange={event => {
+        const next = Number(event.target.value) as 1 | -1;
+        onChange({ noseSymmetry: Math.abs(parameters.noseSymmetry) * next }, next);
+      }}>
+        <option value="1">Derecha → izquierda del paciente</option>
+        <option value="-1">Izquierda → derecha del paciente</option>
+      </select>
+    </label>
+    <p className="text-[11px] text-stone-300">En vista frontal, la derecha del paciente aparece a tu izquierda. La mitad de origen se conserva; revisa el destino de frente y de perfil.</p>
+    <label className="block text-xs">Intensidad de forma · {Math.round(Math.abs(parameters.noseSymmetry) * 100)} %
+      <input aria-label="Intensidad de forma nasal" type="range" min="0" max="1" step="0.01" value={Math.abs(parameters.noseSymmetry)}
+        onChange={event => onChange({ noseSymmetry: Number(event.target.value) * direction })}
+        className="mt-1 block w-full accent-gold focus-visible:outline-gold" />
+    </label>
+    {([{ key: 'noseSymmetryRange', label: 'Alcance nasal' }, { key: 'noseSymmetryMargin', label: 'Margen suave' }] as const).map(({ key, label }) =>
+      <label key={key} className="block text-xs">{label} · {Math.round(parameters[key] * 100)} %
+        <input aria-label={label} type="range" min="0" max="1" step="0.01" value={parameters[key]}
+          onChange={event => onChange({ [key]: Number(event.target.value) })}
+          className="mt-1 block w-full accent-gold focus-visible:outline-gold" />
+      </label>)}
+    <label className="flex items-start gap-2 text-xs">
+      <input type="checkbox" checked={parameters.noseSymmetryTexture === 1} disabled={!textureAvailable}
+        aria-describedby={`${id}-texture-help`} onChange={event => onChange({ noseSymmetryTexture: event.target.checked ? 1 : 0 })}
+        className="mt-0.5 accent-gold focus-visible:outline-gold" />
+      Reflejar también textura nasal (opcional)
+    </label>
+    <p id={`${id}-texture-help`} className="text-[11px] text-amber-200">{textureAvailable
+      ? 'Solo foto frontal, con la misma intensidad. Copia también sombras y marcas; los parches sobre el destino nasal se retiran para mostrarla. No modifica la foto original.'
+      : 'La textura requiere una foto frontal y correspondencias UV válidas.'}</p>
+    {texturePending ? <p role="status" className="text-xs text-stone-200">Preparando textura nasal… Puedes desactivarla o descartar la propuesta.</p> : null}
+    <div className="flex flex-wrap gap-1">
+      <button type="button" className={buttonClass} onClick={() => onChange({ noseSymmetry: direction })}>Replicar mitad (100 %)</button>
+      <button type="button" className={buttonClass} onClick={onCompare}>Comparar con original</button>
+      <button type="button" className={buttonClass} onClick={() => onChange({
+        noseSymmetry: 0, noseSymmetryRange: 0.5, noseSymmetryMargin: 0.5, noseSymmetryTexture: 0,
+      })}>Restaurar simetría</button>
+    </div>
+    <div className="flex flex-wrap gap-1">
+      <button type="button" className={`${buttonClass} disabled:opacity-40`} disabled={!proposed || texturePending} onClick={onConfirm}>Confirmar simetría nasal</button>
+      <button type="button" className={`${buttonClass} disabled:opacity-40`} disabled={!proposed} onClick={onDiscard}>Descartar propuesta nasal</button>
+    </div>
+    <details className="text-[11px] text-stone-300">
+      <summary className="cursor-pointer rounded focus-visible:outline focus-visible:outline-gold">Ayuda técnica de simetría</summary>
+      <p className="mt-2">Reflejo XYZ sobre el plano facial estimado, con correspondencias topológicas y detalle denso local. Alcance amplía o reduce la zona nasal; margen suaviza su borde, no está en milímetros. La textura usa UV, no un espejo de toda la foto. La simetría se calcula antes de los retoques y la protección puede limitarla para evitar inversiones. No corrige oclusiones, iluminación ni errores de orientación de la captura. Deshacer y rehacer incluyen estos ajustes.</p>
+    </details>
+  </div>;
+}
 
 function geometryFrom(data: ReturnType<typeof buildSimulationLayers>[number], mesh: SimulationMesh) {
   const geometry = new THREE.BufferGeometry();
@@ -654,7 +723,12 @@ function mountFacialSimulation(
       if (disposed || failed) return;
       if (state?.skinSource !== next.skinSource || state?.view !== next.view || !drawing.current?.enabled) skinCancel();
       state = next;
-      const parametersChanged = next.parameters !== lastParameters;
+      // La opción fotográfica cambia parámetros de sesión, no XYZ/normales ni referencias.
+      const sameGeometry = (a: SimulationParameters, b?: SimulationParameters) => !!b
+        && (Object.keys(a) as (keyof SimulationParameters)[]).every(key => key === 'noseSymmetryTexture'
+          || (!a.noseSymmetry && !b.noseSymmetry && (key === 'noseSymmetryRange' || key === 'noseSymmetryMargin'))
+          || a[key] === b[key]);
+      const parametersChanged = !sameGeometry(next.parameters, lastParameters);
       if (parametersChanged) {
         morphologyPositions = deformPositions(mesh.positions, mesh.anchors, next.parameters, mesh.indices, onProtection);
         morphologyNormals = undefined;
@@ -670,7 +744,7 @@ function mountFacialSimulation(
       const referencesChanged = previousReferences !== next.references;
       const needsReferences = next.anatomy !== 'skin' || Boolean(revealStage(next.reveal))
         || Object.values(next.referenceLayers).some(layer => layer.visible && layer.opacity > 0);
-      if (needsReferences && (referencesChanged || next.parameters !== referenceParameters)) {
+      if (needsReferences && (referencesChanged || !sameGeometry(next.parameters, referenceParameters))) {
         for (const object of [...referenceGroup.children]) {
           if (object instanceof THREE.Mesh) { object.geometry.dispose(); object.material.dispose(); }
           referenceGroup.remove(object);
@@ -776,6 +850,7 @@ function mountFacialSimulation(
             object.userData.observed = part.observed;
             object.userData.skinSource = patch.source.texture;
             object.userData.originalMap = map;
+            object.userData.originalIndices = part.indices;
             object.userData.skinSelectableTriangles = new Set(Array.from({ length: patch.indices.length / 3 },
               (_, i) => triangleKey(patch.indices[i * 3], patch.indices[i * 3 + 1], patch.indices[i * 3 + 2])));
             // La mezcla «over» exige dibujar las vistas en el mismo orden en que se calcularon los alfas.
@@ -812,7 +887,7 @@ function mountFacialSimulation(
         geometry.getAttribute('position').needsUpdate = true;
         geometry.computeVertexNormals(); geometry.computeBoundingSphere();
       }
-      if (next.showMesh && (!regionState || regionState.parameters !== next.parameters || regionState.anatomy !== next.anatomy
+      if (next.showMesh && (!regionState || !sameGeometry(next.parameters, regionState.parameters) || regionState.anatomy !== next.anatomy
         || regionState.plane !== next.plane || regionState.references !== next.references || regionState.marks !== next.marks)) {
         const referenceObject = referenceGroup.children.find(object => object.userData.kind === next.anatomy);
         const retained: Uint32Array | undefined = referenceObject?.userData.semanticIndices;
@@ -884,6 +959,15 @@ function mountFacialSimulation(
       }
       photoGroup.visible = next.layers.skin.visible && next.layers.skin.opacity > 0;
       for (const group of [photoGroup, beforePhotoGroup]) for (const object of group.children) if (object instanceof THREE.Mesh) {
+        // Los laterales se dibujan encima de la base frontal: retirar SOLO los
+        // triángulos del destino reflejado, también en los márgenes de mezcla.
+        // Antes conserva su topología/mapa; desactivar o descartar restaura todo.
+        if (group === photoGroup && object.userData.nasalTextureWeights !== next.nasalTextureWeights) {
+          const original = object.userData.originalIndices as Uint32Array;
+          object.geometry.setIndex(new THREE.BufferAttribute(next.nasalTextureWeights
+            ? nasalTextureOverlayIndices(original, next.nasalTextureWeights) : original, 1));
+          object.userData.nasalTextureWeights = next.nasalTextureWeights;
+        }
         // El retoque reemplaza sólo la cara observada, nunca las fotos del cabello, orejas o cuello.
         object.visible = true;
         object.material.map = group === photoGroup && object.userData.skinSource === next.skinSource && signalTexture
@@ -948,6 +1032,23 @@ export function FacialSimulationViewer({ surface, photo, hair = DEFAULT_HAIR, ha
   const [skinReviewVersion, setSkinReviewVersion] = useState(0);
   const [morphology, dispatchMorphology] = useReducer(morphologySessionReducer, undefined, initialMorphologySession);
   const { parameters, symmetryDirection, variants } = morphology.present;
+  const [nasalProposal, setNasalProposal] = useState<{
+    parameters: SimulationParameters; direction: 1 | -1; base: SimulationParameters; baseDirection: 1 | -1;
+    surface?: PersonalSurface; photo?: HTMLCanvasElement;
+  } | null>(null);
+  // Una propuesta nunca sobrevive a undo/redo, otra base o una variante aplicada.
+  const activeNasalProposal = nasalProposal && nasalProposal.base === parameters && nasalProposal.baseDirection === symmetryDirection
+    && nasalProposal.surface === surface && nasalProposal.photo === photo
+    ? nasalProposal : null;
+  const previewParameters = activeNasalProposal?.parameters ?? parameters;
+  const proposeNasalChanges = (changes: Partial<SimulationParameters>, direction?: 1 | -1) => {
+    if (!activeNasalProposal) setComparison('split');
+    setNasalProposal({
+      parameters: sanitizeSimulation({ ...previewParameters, ...changes }),
+      direction: direction ?? activeNasalProposal?.direction ?? symmetryDirection,
+      base: parameters, baseDirection: symmetryDirection, surface, photo,
+    });
+  };
   const [variantName, setVariantName] = useState('');
   const [selectedVariantId, setSelectedVariantId] = useState('');
   const [morphologyNotice, setMorphologyNotice] = useState('');
@@ -956,10 +1057,18 @@ export function FacialSimulationViewer({ surface, photo, hair = DEFAULT_HAIR, ha
   const selectedVariant = variants.find(variant => variant.id === selectedVariantId) ?? variants[0];
   const changeMorphology = (parameters: Partial<SimulationParameters>, symmetryDirection?: 1 | -1) =>
     dispatchMorphology({ type: 'change', parameters, symmetryDirection });
+  const confirmNasalProposal = () => {
+    if (!activeNasalProposal) return;
+    dispatchMorphology({ type: 'end' });
+    changeMorphology(activeNasalProposal.parameters, activeNasalProposal.direction);
+    setNasalProposal(null);
+  };
+  const discardNasalProposal = () => setNasalProposal(null);
   useEffect(() => {
     if (morphologySource.current.surface === surface && morphologySource.current.photo === photo) return;
     morphologySource.current = { surface, photo };
     dispatchMorphology({ type: 'restart' });
+    setNasalProposal(null);
     setVariantName(''); setSelectedVariantId('');
     setMorphologyNotice('La base o la foto fuente cambió: se reiniciaron morfología, historial y variantes. «Antes» usa la nueva base recibida.');
   }, [surface, photo]);
@@ -1110,6 +1219,51 @@ export function FacialSimulationViewer({ surface, photo, hair = DEFAULT_HAIR, ha
   }, [surface]);
   // Diagnóstico de la base recibida (no del resultado): explica cuándo «alinear perfil» no tendrá efecto.
   const profileExcess = useMemo(() => prepared.mesh ? nasalProfileExcess(prepared.mesh.positions, prepared.mesh.anchors) : null, [prepared.mesh]);
+  const { noseSymmetry, noseSymmetryRange, noseSymmetryMargin, noseSymmetryTexture } = previewParameters;
+  const nasalTextureRequest = useMemo(() => {
+    if (!photo || !surface?.uvs || !prepared.sourceMesh?.anchors || !noseSymmetryTexture || !noseSymmetry) return undefined;
+    return { photo, uvs: surface.uvs, anchors: prepared.sourceMesh.anchors,
+      parameters: { noseSymmetry, noseSymmetryRange, noseSymmetryMargin, noseSymmetryTexture } };
+  }, [photo, surface?.uvs, prepared.sourceMesh?.anchors, noseSymmetry, noseSymmetryRange, noseSymmetryMargin, noseSymmetryTexture]);
+  const [nasalTextureResult, setNasalTextureResult] = useState<{
+    request: NonNullable<typeof nasalTextureRequest>; canvas?: HTMLCanvasElement; error?: string;
+  }>();
+  useEffect(() => {
+    if (!nasalTextureRequest) { setNasalTextureResult(undefined); return; }
+    // Dejar pintar checkbox/estado antes de rasterizar. Nada pesado dentro de render.
+    // Identidad de request estable: hover/cámara/protección no repiten raster ni subidas GPU.
+    let cancelled = false;
+    let frame = requestAnimationFrame(() => { frame = requestAnimationFrame(() => {
+      if (cancelled) return;
+      try {
+        const { photo, uvs, anchors, parameters } = nasalTextureRequest;
+        const canvas = composeNasalSymmetryTexture(photo, uvs, anchors, parameters);
+        if (!cancelled) setNasalTextureResult({ request: nasalTextureRequest, canvas });
+      } catch {
+        if (!cancelled) setNasalTextureResult({ request: nasalTextureRequest,
+          error: 'No se pudo reflejar la textura nasal. Se conserva la foto original; desactiva la opción o revisa la fuente.' });
+      }
+    }); });
+    return () => { cancelled = true; cancelAnimationFrame(frame); };
+  }, [nasalTextureRequest]);
+  const nasalTexture: { canvas?: HTMLCanvasElement; error?: string } =
+    nasalTextureRequest && nasalTextureResult?.request === nasalTextureRequest ? nasalTextureResult : {};
+  const nasalTexturePending = !!nasalTextureRequest && nasalTextureResult?.request !== nasalTextureRequest;
+  // Un peso por v?rtice de la superficie de origen (no solo 468): refinement.attribute
+  // exige esa longitud. Un fallo aqu? nunca debe desmontar el editor.
+  const nasalTextureOverlay = useMemo<{ weights?: Float32Array; error?: string }>(() => {
+    if (!nasalTexture.canvas || !prepared.sourceMesh) return {};
+    try {
+      const weights = nasalTextureDestinationWeights(prepared.sourceMesh.anchors,
+        { noseSymmetry, noseSymmetryRange, noseSymmetryMargin, noseSymmetryTexture }, prepared.sourceMesh.positions);
+      return { weights: prepared.refinement ? prepared.refinement.attribute(weights, 1) : weights };
+    } catch (cause) {
+      console.error('[FacialSimulationViewer] Textura nasal', cause);
+      return { error: 'No se pudo preparar la textura nasal para esta superficie. Se conserva la foto original; desactiva la opci?n.' };
+    }
+  }, [nasalTexture.canvas, prepared, noseSymmetry, noseSymmetryRange, noseSymmetryMargin, noseSymmetryTexture]);
+  const nasalTextureWeights = nasalTextureOverlay.weights;
+  const nasalTextureError = nasalTexture.error ?? nasalTextureOverlay.error;
   const displayReferences = useMemo(() => prepared.mesh?.source === 'personal' && prepared.refinement
     ? references.map(reference => ({ ...reference, uvs: prepared.refinement!.attribute(reference.uvs, 2) }))
     : references, [prepared, references]);
@@ -1123,7 +1277,7 @@ export function FacialSimulationViewer({ surface, photo, hair = DEFAULT_HAIR, ha
   })), [prepared, photoPatches]);
   const activeCut = tool === 'morphology' || tool === 'skin' ? INITIAL_CUT : cut;
   const activeReveal = tool === 'morphology' || tool === 'skin' ? INITIAL_REVEAL : reveal;
-  const activeSkinTexture = tool === 'skin' ? skinTexture : undefined;
+  const activeSkinTexture = tool === 'skin' ? skinTexture : nasalTextureWeights && nasalTexture.canvas;
   const activeSkinRegions = tool === 'skin' ? skinRegions : EMPTY_SKIN_REGIONS;
   const skinDisplayUVs = useMemo(() => skinPhotoContext?.uvs && prepared.refinement
     ? prepared.refinement.attribute(skinPhotoContext.uvs, 2) : skinPhotoContext?.uvs, [skinPhotoContext, prepared.refinement]);
@@ -1135,12 +1289,13 @@ export function FacialSimulationViewer({ surface, photo, hair = DEFAULT_HAIR, ha
     for (const id of patch.indices) visible[id] = 1;
     return visible;
   }, [displayPhotos, skinPhoto, prepared.mesh]);
-  const state = useMemo<ViewerState>(() => ({ parameters: tool === 'skin' ? NEUTRAL_SIMULATION : parameters, layers, cut: activeCut, view, comparison, navigation, showMesh: meshVisible, plane: activePlane, hair,
+  const state = useMemo<ViewerState>(() => ({ parameters: tool === 'skin' ? NEUTRAL_SIMULATION : previewParameters, layers, cut: activeCut, view, comparison, navigation, showMesh: meshVisible, plane: activePlane, hair,
     hairPatches: displayHair ?? undefined, photoPatches: displayPhotos ?? undefined, skinTexture: activeSkinTexture, skinRegions: activeSkinRegions, references: displayReferences, anatomy,
-    skinSource: tool === 'skin' ? skinPhoto : undefined, skinUVs: skinDisplayUVs, skinSafeMask: skinPhotoContext?.safeMask, skinDirection: skinPhotoContext?.direction,
+    nasalTextureWeights: tool === 'skin' ? undefined : nasalTextureWeights,
+    skinSource: tool === 'skin' ? skinPhoto : photo, skinUVs: skinDisplayUVs, skinSafeMask: skinPhotoContext?.safeMask, skinDirection: skinPhotoContext?.direction,
     skinVisibleVertices,
     referenceLayers, overlay, instantLayers: tool === 'cut', reveal: activeReveal, selection, marks }),
-    [parameters, layers, activeCut, view, comparison, navigation, meshVisible, activePlane, hair, displayHair, displayPhotos, activeSkinTexture, activeSkinRegions, displayReferences, anatomy, referenceLayers, overlay, tool, activeReveal, selection, marks, skinPhoto, skinDisplayUVs, skinPhotoContext, skinVisibleVertices]);
+    [previewParameters, layers, activeCut, view, comparison, navigation, meshVisible, activePlane, hair, displayHair, displayPhotos, activeSkinTexture, activeSkinRegions, displayReferences, anatomy, referenceLayers, overlay, tool, activeReveal, selection, marks, skinPhoto, photo, skinDisplayUVs, skinPhotoContext, skinVisibleVertices, nasalTextureWeights]);
 
   useEffect(() => {
     setError(null); setReady(false);
@@ -1166,6 +1321,7 @@ export function FacialSimulationViewer({ surface, photo, hair = DEFAULT_HAIR, ha
   }, [state, prepared, photo, attempt]);
 
   const reset = () => {
+    setNasalProposal(null);
     changeMorphology({ ...NEUTRAL_SIMULATION }, 1); changeDisplay(initialAnatomyDisplay());
     setCosmetics({ ...NEUTRAL_SKIN_COSMETICS }); setCosmeticTexture(undefined); setSignal(undefined);
     setSkinReview(undefined);
@@ -1310,7 +1466,7 @@ export function FacialSimulationViewer({ surface, photo, hair = DEFAULT_HAIR, ha
             <p className="my-2 text-[11px] text-stone-400">Solo morfología; no incluye piel, marcado ni capas. Se pierden al cerrar el visor. Aplicar sustituye los ajustes actuales y permite compararlos con el original, no dos variantes simultáneas.</p>
             <form className="space-y-2" onSubmit={event => {
               event.preventDefault();
-              if (!variantName.trim() || variants.length >= MORPHOLOGY_VARIANT_LIMIT) return;
+              if (activeNasalProposal || !variantName.trim() || variants.length >= MORPHOLOGY_VARIANT_LIMIT) return;
               const variantId = `${id}-variant-${++variantSequence.current}`;
               dispatchMorphology({ type: 'save', id: variantId, name: variantName });
               setSelectedVariantId(variantId); setVariantName('');
@@ -1320,7 +1476,7 @@ export function FacialSimulationViewer({ surface, photo, hair = DEFAULT_HAIR, ha
                   className={`${selectClass} mt-1 w-full`} placeholder="Ej. Dorso suave" />
               </label>
               <button type="submit" className={`${buttonClass} disabled:opacity-40`}
-                disabled={!variantName.trim() || variants.length >= MORPHOLOGY_VARIANT_LIMIT}>Guardar variante</button>
+                disabled={!!activeNasalProposal || !variantName.trim() || variants.length >= MORPHOLOGY_VARIANT_LIMIT}>Guardar variante</button>
             </form>
             {variants.length ? <div className="mt-2 space-y-2">
               <label className="block">Variante guardada
@@ -1330,11 +1486,11 @@ export function FacialSimulationViewer({ surface, photo, hair = DEFAULT_HAIR, ha
                 </select>
               </label>
               <div className="flex flex-wrap gap-1">
-                <button type="button" className={buttonClass} onClick={() => {
+                <button type="button" className={buttonClass} disabled={!!activeNasalProposal} onClick={() => {
                   if (!selectedVariant) return;
                   dispatchMorphology({ type: 'apply', id: selectedVariant.id }); setComparison('split');
                 }}>Aplicar y comparar con original</button>
-                <button type="button" className={buttonClass} onClick={() => {
+                <button type="button" className={buttonClass} disabled={!!activeNasalProposal} onClick={() => {
                   if (selectedVariant) dispatchMorphology({ type: 'delete', id: selectedVariant.id });
                 }}>Eliminar variante</button>
               </div>
@@ -1347,18 +1503,27 @@ export function FacialSimulationViewer({ surface, photo, hair = DEFAULT_HAIR, ha
           </p> : null}
           <div className="flex flex-wrap gap-1">
             <button type="button" className={buttonClass} onClick={() => chooseAnatomy('skin')}>Mostrar superficie</button>
-            <button type="button" className={buttonClass} onClick={() => changeMorphology({
+            <button type="button" className={buttonClass} disabled={!!activeNasalProposal} onClick={() => changeMorphology({
               ...Object.fromEntries(SIMULATION_CONTROLS.filter(control => control.group === morphologyGroup).map(control => [control.key, 0])),
-              ...(morphologyGroup === 'Nariz' ? { noseSymmetry: 0, noseProfileAlign: 0 } : {}),
+              ...(morphologyGroup === 'Nariz' ? { noseSymmetry: 0, noseProfileAlign: 0, noseSymmetryRange: 0.5, noseSymmetryMargin: 0.5, noseSymmetryTexture: 0 } : {}),
             })}>Restablecer {morphologyGroup.toLocaleLowerCase('es')}</button>
           </div>
           {SIMULATION_GROUPS.map(group => (
             <fieldset key={group} hidden={morphologyGroup !== group} className="space-y-3 rounded-lg border border-slate-700 p-2">
               <legend className="px-1 text-xs font-semibold">{group}</legend>
+              {group === 'Nariz' ? <>
+                <NasalSymmetryControls parameters={previewParameters} direction={activeNasalProposal?.direction ?? symmetryDirection} onChange={proposeNasalChanges}
+                  proposed={!!activeNasalProposal} onConfirm={confirmNasalProposal} onDiscard={discardNasalProposal}
+                  texturePending={nasalTexturePending}
+                  onCompare={() => setComparison('split')} textureAvailable={Boolean(photo && surface && prepared.sourceMesh)} />
+                {nasalTextureError ? <p role="alert" className="text-xs text-amber-200">{nasalTextureError}</p> : null}
+                <p className="text-xs font-semibold text-stone-300">2. Retoques estéticos sobre la simetría</p>
+              </> : null}
               {SIMULATION_CONTROLS.filter(control => control.group === group).map(control => (
                 <label key={control.key} className="block text-xs" htmlFor={`${id}-${control.key}`}>
                   <span className="flex justify-between gap-2"><span>{control.label}</span><output>{Math.round(parameters[control.key] * 100)} % solicitado</output></span>
                   <input id={`${id}-${control.key}`} type="range" min="-1" max="1" step="0.01" value={parameters[control.key]}
+                    disabled={!!activeNasalProposal}
                     aria-describedby={control.hint ? `${id}-${control.key}-hint` : undefined}
                     aria-valuetext={`${Math.round(parameters[control.key] * 100)} por ciento de intensidad visual solicitada${protection.moderatedComponents ? '; protección de superficie activa, rango moderado' : ''}`}
                     onChange={event => changeMorphology({ [control.key]: Number(event.target.value) })}
@@ -1371,6 +1536,7 @@ export function FacialSimulationViewer({ surface, photo, hair = DEFAULT_HAIR, ha
                 <label className="block text-xs" htmlFor={`${id}-noseProfileAlign`}>
                   <span className="flex justify-between gap-2"><span>Dorso · alinear perfil</span><output>{Math.round(parameters.noseProfileAlign * 100)} % solicitado</output></span>
                   <input id={`${id}-noseProfileAlign`} type="range" min="0" max="1" step="0.01" value={parameters.noseProfileAlign}
+                    disabled={!!activeNasalProposal}
                     aria-describedby={`${id}-noseProfileAlign-hint`}
                     aria-valuetext={`${Math.round(parameters.noseProfileAlign * 100)} por ciento de alineación solicitada${protection.moderatedComponents ? '; protección de superficie activa, rango moderado' : ''}`}
                     onChange={event => changeMorphology({ noseProfileAlign: Number(event.target.value) })}
@@ -1383,29 +1549,6 @@ export function FacialSimulationViewer({ surface, photo, hair = DEFAULT_HAIR, ha
                     {' '}Si aparece el aviso de protección, la alineación se materializa solo en parte.
                   </span>
                 </label>
-                <label className="block text-xs">Simetría nasal · lado de origen del paciente
-                  <select className={`${selectClass} mt-1 w-full`} value={symmetryDirection}
-                    onChange={event => {
-                      const direction = Number(event.target.value) as 1 | -1;
-                      changeMorphology({ noseSymmetry: Math.abs(parameters.noseSymmetry) * direction }, direction);
-                    }}>
-                    <option value="1">Derecha → izquierda del paciente</option>
-                    <option value="-1">Izquierda → derecha del paciente</option>
-                  </select>
-                </label>
-                <label className="block text-xs">Intensidad de simetría nasal · {Math.round(Math.abs(parameters.noseSymmetry) * 100)} %
-                  <input type="range" min="0" max="1" step="0.01" value={Math.abs(parameters.noseSymmetry)}
-                    onChange={event => changeMorphology({ noseSymmetry: Number(event.target.value) * symmetryDirection })}
-                    className="block w-full accent-gold focus-visible:outline-gold" />
-                </label>
-                <div className="flex flex-wrap gap-1">
-                  <button type="button" className={buttonClass} onClick={() => changeMorphology({ noseSymmetry: symmetryDirection })}>Replicar mitad (100 %)</button>
-                  <button type="button" className={buttonClass} onClick={() => changeMorphology({ noseSymmetry: 0 })}>Restaurar simetría</button>
-                  <button type="button" className={buttonClass} onClick={() => changeMorphology({
-                    ...Object.fromEntries(SIMULATION_CONTROLS.filter(control => control.group === 'Nariz').map(control => [control.key, 0])), noseSymmetry: 0, noseProfileAlign: 0,
-                  })}>Restaurar nariz</button>
-                </div>
-                <p className="text-[11px] text-slate-400">Replica el hemimallado del lado elegido (alas, altura y relieve denso) sobre el otro, con transición suave en la línea media para evitar costuras. No espeja la foto ni estima un resultado clínico.</p>
               </div> : null}
             </fieldset>
           ))}

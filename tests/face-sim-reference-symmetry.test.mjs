@@ -408,19 +408,84 @@ test('visor independiente: capas no se heredan, selección restaura opacidad y m
 test('visor standalone: simetría reversible sin tocar otros controles ni UV; dirección separada 0..1', () => {
   const app = editor();
   let tree = app.render();
-  const label = prefix => find(tree, n => n.type === 'label' && text(n).startsWith(prefix))[0];
-  const control = (prefix, type) => find(label(prefix), n => n.type === type)[0];
-  control('Intensidad de simetría', 'input').props.onChange({ target: { value: '0.7' } });
-  tree = app.render(); assert.equal(control('Intensidad de simetría', 'input').props.value, 0.7);
-  control('Simetría nasal', 'select').props.onChange({ target: { value: '-1' } });
-  tree = app.render(); assert.equal(control('Simetría nasal', 'select').props.value, -1);
-  assert.equal(control('Intensidad de simetría', 'input').props.value, 0.7);
-  find(tree, n => n.props?.id === 'editor-lipUpper')[0].props.onChange({ target: { value: '0.3' } });
-  tree = app.render();
-  find(tree, n => n.type === 'button' && text(n) === 'Restaurar nariz')[0].props.onClick();
-  tree = app.render();
-  assert.equal(control('Intensidad de simetría', 'input').props.value, 0);
-  assert.equal(find(tree, n => n.props?.id === 'editor-lipUpper')[0].props.value, 0.3);
+  const control = name => {
+    const node = find(tree, n => n.props?.['aria-label'] === name)[0];
+    assert.ok(node, `control accesible: ${name}`);
+    return node;
+  };
+  const button = name => {
+    const node = find(tree, n => n.type === 'button' && text(n) === name)[0];
+    assert.ok(node, `botón: ${name}`);
+    return node;
+  };
+  const render = () => { tree = app.render(); };
+  const intensity = () => control('Intensidad de forma nasal');
+  const direction = () => control('Dirección de simetría nasal');
+  const lip = () => find(tree, n => n.props?.id === 'editor-lipUpper')[0];
+
+  lip().props.onChange({ target: { value: '0.3' } }); render();
+  assert.equal(button('Confirmar simetría nasal').props.disabled, true);
+  assert.equal(intensity().props.min, '0');
+  assert.equal(intensity().props.max, '1');
+  intensity().props.onChange({ target: { value: '0.7' } }); render();
+  assert.equal(app.state.comparison, 'split', 'propuesta comparada con Antes');
+  assert.equal(intensity().props.value, 0.7);
+  assert.match(text(tree), /Propuesta sin confirmar/);
+  direction().props.onChange({ target: { value: '-1' } }); render();
+  assert.equal(direction().props.value, -1);
+  assert.equal(intensity().props.value, 0.7, 'dirección separada de intensidad positiva');
+  assert.equal(app.state.parameters.noseSymmetry, -0.7, 'preview usa signo direccional');
+  control('Alcance nasal').props.onChange({ target: { value: '0.8' } }); render();
+  control('Margen suave').props.onChange({ target: { value: '0.3' } }); render();
+  assert.equal(app.state.parameters.noseSymmetryRange, 0.8);
+  assert.equal(app.state.parameters.noseSymmetryMargin, 0.3);
+  assert.equal(app.state.parameters.lipUpper, 0.3);
+  assert.equal(app.state.parameters.noseSymmetryTexture, 0, 'textura off inicial');
+  assert.equal(lip().props.disabled, true, 'resolver propuesta antes de otros retoques');
+  button('Descartar propuesta nasal').props.onClick(); render();
+  assert.equal(intensity().props.value, 0);
+  assert.equal(direction().props.value, 1, 'descartar recupera dirección aplicada');
+  assert.equal(app.state.parameters.noseSymmetryRange, 0.5);
+  assert.equal(app.state.parameters.noseSymmetryMargin, 0.5);
+  assert.equal(lip().props.value, 0.3);
+
+  intensity().props.onChange({ target: { value: '0.7' } }); render();
+  direction().props.onChange({ target: { value: '-1' } }); render();
+  button('Confirmar simetría nasal').props.onClick(); render();
+  assert.equal(app.state.parameters.noseSymmetry, -0.7);
+  assert.equal(button('Confirmar simetría nasal').props.disabled, true);
+  assert.equal(lip().props.disabled, false);
+
+  const mesh = sim.createSimulationMesh();
+  const uvs = Float32Array.from(Array.from({ length: 468 }, (_, i) =>
+    [0.5 + atlas.positions[i * 3] * 0.3, 0.5 - atlas.positions[i * 3 + 1] * 0.25]).flat());
+  const snapshot = uvs.slice(), original = mesh.anchors.slice();
+  const surface = { positions: mesh.anchors, uvs };
+  const deformed = sim.deformPositions(surface.positions, mesh.anchors, app.state.parameters, Uint32Array.from(atlas.triangles));
+  assert.notDeepEqual(Array.from(deformed), Array.from(original));
+  assert.deepEqual(surface.uvs, snapshot, 'confirmar forma no altera UV');
+  assert.deepEqual(surface.positions, original, 'Antes conserva geometría original');
+
+  button('Deshacer morfología').props.onClick(); render();
+  assert.equal(intensity().props.value, 0, 'confirmación completa es un solo undo');
+  assert.equal(lip().props.value, 0.3);
+  button('Rehacer morfología').props.onClick(); render();
+  assert.equal(intensity().props.value, 0.7);
+  assert.equal(direction().props.value, -1);
+  button('Restaurar simetría').props.onClick(); render();
+  assert.match(text(tree), /Propuesta sin confirmar/, 'reset también se revisa');
+  assert.equal(intensity().props.value, 0);
+  button('Descartar propuesta nasal').props.onClick(); render();
+  assert.equal(intensity().props.value, 0.7, 'cancelar reset conserva lo aplicado');
+  button('Restaurar simetría').props.onClick(); render();
+  button('Confirmar simetría nasal').props.onClick(); render();
+  assert.equal(intensity().props.value, 0);
+  assert.equal(direction().props.value, -1, 'restaurar no cambia la dirección elegida');
+  assert.equal(lip().props.value, 0.3);
+  assert.deepEqual(surface.uvs, snapshot, 'reset e historial no modifican UV');
+  button('Deshacer morfología').props.onClick(); render();
+  assert.equal(intensity().props.value, 0.7, 'restaurar confirmado también es reversible');
+  assert.equal(direction().props.value, -1);
 });
 
 test('simetría nasal densa: copia el relieve del hemimallado origen XY estable y lado origen intacto', () => {

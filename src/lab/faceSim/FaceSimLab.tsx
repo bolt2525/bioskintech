@@ -11,7 +11,6 @@ import {
   type AffineRegistration, type DepthDiagnostic, type PersonalSurface, type PersonalProjection, type CorrectedPoint, type Elem, type ElemKind, type FaceFrame, type Meta, type P2, type PhotoEl, type SimMode, type Vec3, type ViewKind,
 } from './engine';
 import { moveFaceLandmark, refinePhotoContour, extendVisibleForehead, proposeForeheadBoundary, foreheadRatio, foreheadPointFromRatio } from './faceContour';
-import { calibrateProfileDepth, PROFILE_CALIBRATION, type ProfileCalibration } from './profileCalibration';
 import { buildFaceRegionMap, buildFaceTriangleRegions, faceRegionColor, rasterizeFaceRegions, facialZoneAt, isOnObservedFace, faceAttentionColor, FACE_REGION_EDUCATION, FACE_REGION_SEEDS, type FaceRegionMap } from './faceRegions';
 import { buildRegionCells, regionCellAt, regionCellPositions, regionPlanePositions, REGION_PLANES, type RegionPlane } from './regionMesh';
 import { DEFAULT_HAIR, buildPhotoHairPatches, type EstimatedHairSettings, type PhotoHairPatch } from './estimatedHair';
@@ -53,6 +52,7 @@ const MAX_IMAGE_BYTES = 20 * 1024 * 1024;
 const MAX_IMAGE_PIXELS = 40_000_000;
 const FacialSimulationViewer = lazy(() => import('./FacialSimulationViewer'));
 const FaceBoundaryReview = lazy(() => import('./FaceBoundaryReview'));
+const MaskReview = lazy(() => import('./MaskReview'));
 
 const VERT = `attribute vec2 p;varying vec2 uv;void main(){uv=p*0.5+0.5;uv.y=1.0-uv.y;gl_Position=vec4(p,0.0,1.0);}`;
 const FRAG = `precision highp float;
@@ -191,7 +191,13 @@ async function detectFrame(img: HTMLCanvasElement): Promise<{
     if (typeof shared === 'string') return { frame: null, reason: shared };
     landmarker = shared;
     let result = landmarker.detect(img);
-    let detectedLandmarks = result.faceLandmarks[0]?.map(({ x, y, z }) => ({ x, y, z }));
+    let detectedLandmarks: Landmark[] | undefined = result.faceLandmarks[0]?.map(({ x, y, z }) => ({ x, y, z }));
+    const usable = (points: Landmark[] | undefined) => {
+      if (!points || points.length < 468 || points.some(point => ![point.x, point.y, point.z].every(Number.isFinite))) return false;
+      try { frameFromLandmarks(points); return true; }
+      catch { return false; } // Un perfil casi cerrado no ofrece un contorno utilizable.
+    };
+    if (!usable(detectedLandmarks)) detectedLandmarks = undefined;
     let retried = false;
     let rotated = false;
     if (!detectedLandmarks) {
@@ -202,7 +208,9 @@ async function detectFrame(img: HTMLCanvasElement): Promise<{
         result = landmarker.detect(input);
         const candidate = result.faceLandmarks[0];
         if (candidate) {
-          detectedLandmarks = candidate.map(point => restoreDetectionPoint(point, img.width, img.height, transform));
+          const restored = candidate.map(point => restoreDetectionPoint(point, img.width, img.height, transform));
+          if (!usable(restored)) continue;
+          detectedLandmarks = restored;
           retried = true; rotated = transform.angle !== 0;
           break;
         }
@@ -210,7 +218,10 @@ async function detectFrame(img: HTMLCanvasElement): Promise<{
       }
     }
     if (!detectedLandmarks) return { frame: null, reason: 'No se obtuvo una malla fiable tras reintentar encuadre, contraste y giro. La foto queda como referencia; para generar 3D añade una toma a tres cuartos (30–60°), con nariz y mentón completos.' };
-    if (!rotated) detectedLandmarks = refineLandmarksByCrop(landmarker, img, detectedLandmarks) ?? detectedLandmarks;
+    if (!rotated) {
+      const cropped = refineLandmarksByCrop(landmarker, img, detectedLandmarks);
+      if (cropped && usable(cropped)) detectedLandmarks = cropped;
+    }
     const context = img.getContext('2d');
     if (!context) throw new Error('No se pudieron leer los píxeles para revisar el contorno.');
     const pixels = context.getImageData(0, 0, img.width, img.height);
@@ -223,14 +234,16 @@ async function detectFrame(img: HTMLCanvasElement): Promise<{
       contourAdjusted: contour.adjusted, regionMap: buildFaceRegionMap(contour.landmarks, triangles, img.width / img.height, genericFaceAtlas.positions),
       pose: rotated ? undefined : result.facialTransformationMatrixes[0]?.data, reason: '',
       detectionRecovered: retried,
-      captureWarnings: [...quality.warnings, ...(retried ? ['Detección recuperada: revisa contorno y referencias antes de fusionar. Los puntos ocultos de un perfil son estimaciones.'] : [])],
+      captureWarnings: [...quality.warnings, ...(retried ? ['Detección limitada: esta foto sirve para comparar, no para cambiar la forma o textura de la máscara. Prueba otra toma a tres cuartos.'] : [])],
     };
   } catch (error) {
     const detail = error instanceof Error ? ` ${error.message}` : '';
     return { frame: null, reason: `Falló la inicialización o validación del detector facial.${detail}` };
   } finally {
     // El detector se reutiliza entre fotos; solo se restauran los umbrales.
-    if (landmarker && relaxed) await landmarker.setOptions({ minFaceDetectionConfidence: 0.5, minFacePresenceConfidence: 0.5 }).catch(() => undefined);
+    if (landmarker && relaxed) await landmarker.setOptions({ minFaceDetectionConfidence: 0.5, minFacePresenceConfidence: 0.5 }).catch(error => {
+      landmarkerPromise = null; console.error('No se pudieron restaurar los umbrales del detector facial.', error);
+    });
   }
 }
 
@@ -275,6 +288,8 @@ interface PersonalModel {
   regionMap: FaceRegionMap;
   closedHead: boolean;
   photoPatches?: PhotoSurfacePatch[];
+  reviewBase?: PersonalModel;
+  captures?: Partial<Record<PhotoSlotId, Slot>>;
 }
 
 const uid = () => `p-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
@@ -450,7 +465,7 @@ export default function FaceSimLab() {
   const [annotationText, setAnnotationText] = useState('Nota');
   const photoMoveRef = useRef<{ id: string; origin: FaceAddress; binding: AnatomicalBinding } | null>(null);
   const [photoMovePreview, setPhotoMovePreview] = useState<{ id: string; binding: AnatomicalBinding; point?: P2 } | null>(null);
-  const [status, setStatus] = useState('Laboratorio local. Revisa las capturas o abre Simular y marcar para usar el modelo genérico.');
+  const [status, setStatus] = useState('Las fotos y los cambios permanecen en esta sesión local.');
   const [importText, setImportText] = useState('');
   const [modelKind, setModelKind] = useState<ModelKind>('generico');
   const [personal, setPersonal] = useState<PersonalModel | null>(null);
@@ -458,7 +473,7 @@ export default function FaceSimLab() {
   const [buildingPersonal, setBuildingPersonal] = useState(false);
   const [contourIndex, setContourIndex] = useState<number | null>(null);
   const [bindings, setBindings] = useState<AnatomicalBindings>({});
-  const [overlayMode, setOverlayMode] = useState<'none' | 'regions' | 'attention'>('regions');
+  const [overlayMode, setOverlayMode] = useState<'none' | 'regions' | 'attention'>('none');
   const [foreheadPreview, setForeheadPreview] = useState<{ canvas: HTMLCanvasElement; point: P2; confirmed: boolean; reason: string } | null>(null);
   const [pickingForehead, setPickingForehead] = useState(false);
   const [skinReview, setSkinReview] = useState<SkinReview | null>(null);
@@ -468,8 +483,9 @@ export default function FaceSimLab() {
   const [boundaryReview, setBoundaryReview] = useState<PhotoSlotId[]>([]);
   // Altura de frente confirmada (normalizada glabela→mentón); la frontal tiene prioridad.
   const [foreheadReference, setForeheadReference] = useState<{ ratio: number; slot: PhotoSlotId } | null>(null);
-  const [profileCalibration, setProfileCalibration] = useState<{ canvas: HTMLCanvasElement; values: ProfileCalibration } | null>(null);
   const [calibrationVisible, setCalibrationVisible] = useState(false);
+  const [maskReview, setMaskReview] = useState<{ model: PersonalModel; photos: typeof photos } | null>(null);
+  useEffect(() => { setMaskReview(null); }, [photos]);
   const hoverStoreRef = useRef<ZoneStore | null>(null);
   if (!hoverStoreRef.current) hoverStoreRef.current = createZoneStore();
   const hoverStore = hoverStoreRef.current;
@@ -1067,7 +1083,7 @@ export default function FaceSimLab() {
       const skippedCameras: string[] = [];
       const inputs = [...PHOTO_SLOTS].sort((a, b) => Number(b.id === sourceView) - Number(a.id === sourceView)).flatMap(entry => {
         const photo = photos[entry.id];
-        if (!photo?.landmarks || (entry.id !== sourceView && !diagnostics.some(d => d.label === entry.label && d.status !== 'rejected' && d.weight > 0))) return [];
+        if (!photo?.landmarks || (entry.id !== sourceView && !diagnostics.some(d => d.label === entry.label && d.status === 'used' && d.weight > 0))) return [];
         const fitLandmarks = entry.id === sourceView ? photo.landmarks : photo.detectedLandmarks ?? photo.landmarks;
         const cameraReferences = Array.from({ length: 468 }, (_, i) => i)
           .filter(i => (source.detectedLandmarks ?? source.landmarks!)[i].y >= (source.detectedLandmarks ?? source.landmarks!)[9].y);
@@ -1096,12 +1112,6 @@ export default function FaceSimLab() {
         } else if (!profileDetails) profileDetails = ' No se aplicó silueta nasal: no hubo un perfil suficientemente lateral y estable.';
       }
       if (skippedCameras.length) profileDetails += ` Sin textura de ${skippedCameras.join(', ')} por registro de cámara insuficiente.`;
-      const calibration = profileCalibration?.canvas === source.canvas ? profileCalibration.values : {};
-      if (Object.values(calibration).some(value => value)) {
-        const calibrated = calibrateProfileDepth(observedSurface.positions, observedSurface.indices, calibration);
-        observedSurface = { ...observedSurface, positions: calibrated.positions };
-        profileDetails += ` Calibración manual local aplicada desde la base original${calibrated.gain < 0.999 ? `; moderada al ${Math.round(calibrated.gain * 100)} % para conservar orientación` : ''}. No es profundidad medida.`;
-      }
       let surface: PersonalSurface | EstimatedHeadSurface = observedSurface;
       if (closeHead) {
         const [{ sampleScalpColor, sampleColorAt }, { buildTemplateHead }] = await Promise.all([
@@ -1126,11 +1136,10 @@ export default function FaceSimLab() {
       const { personalSurfaceToGlb } = await import('./personalSurfaceGlb');
       const glb = await personalSurfaceToGlb(surface, source.canvas, undefined, [], photoPatches);
       if (requestId !== personalRequestRef.current) return;
-      setPersonal({ view: sourceView, canvas: source.canvas, glb, projection: surface.projection, depth: nextDepth, depthDetails: depthDetails + profileDetails + openingDetails, diagnostics,
-        surface: observedSurface, renderSurface: surface, regionMap: regions, closedHead: closeHead, photoPatches });
-      genericSelected.current = false;
-      setModelKind('personal');
-      setStatus(`Superficie 3D personal generada desde la foto ${VIEWS.find(v => v.id === sourceView)?.label ?? sourceView} (${surface.indices.length / 3} triángulos). ${depthDetails}${profileDetails}${openingDetails} Las marcaciones anatómicas se conservan.`);
+      setMaskReview({ photos, model: { view: sourceView, canvas: source.canvas, glb, projection: surface.projection, depth: nextDepth,
+        depthDetails: depthDetails + profileDetails + openingDetails, diagnostics, captures: photos,
+        surface: observedSurface, renderSurface: surface, regionMap: regions, closedHead: closeHead, photoPatches } });
+      setStatus('Máscara preparada. Revísala antes de usarla; la anterior y tus marcaciones siguen intactas.');
     } catch (error) {
       if (requestId !== personalRequestRef.current) return;
       setDepth(personal?.depth ?? 1);
@@ -1186,9 +1195,7 @@ export default function FaceSimLab() {
     try {
       const c = prepared?.canvas ?? await captureImage(file);
       if (requestId !== uploadRequestRef.current[target]) return;
-      const replacedPersonal = !!personal;
-      if (replacedPersonal) { setPersonal(null); setModelKind('generico'); }
-      const personalNote = replacedPersonal ? ' Se actualizaron las fotos; regenera la superficie. Las marcaciones anatómicas se conservan para revisar su transferencia al nuevo rostro.' : '';
+      const personalNote = personal ? ' La máscara aceptada conserva sus fotos anteriores. Genera y confirma otra para actualizarla; tus marcas se conservan.' : '';
       setPhotos(p => ({ ...p, [target]: { canvas: c, aspect: c.width / c.height, frame: defaultFrame(targetView), previewUrl: c.toDataURL('image/jpeg', 0.6) } }));
       setCalibrating(false);
       setPhotoAnchor(null);
@@ -1239,8 +1246,7 @@ export default function FaceSimLab() {
         landmarks: detected.landmarks, detectedLandmarks: detected.detectedLandmarks,
       }, proposal.point);
       if (uploadRequestRef.current[target] === requestId) setBoundaryReview(queue => automaticContour ? queue.filter(id => id !== target) : [...queue.filter(id => id !== target), target]);
-      setStatus(`Rostro detectado en ${label}. ${automaticContour ? 'Contorno válido aceptado; puedes reeditarlo. Confirma manualmente la persona.' : 'Hay dudas: revisa el contorno y confirma la captura.'}`
-        + ` Contorno: ${detected.contourAdjusted ?? 0} referencias ajustadas por borde visible; revisa mentón y sienes en «Editar contorno».` + personalNote);
+      setStatus(`${label} lista. ${automaticContour ? 'Comprueba la foto y confirma la persona.' : 'Revisa los límites y confirma la captura.'}${personalNote}`);
     } catch (error) {
       if (requestId !== uploadRequestRef.current[target]) return;
       console.error('[FaceSimLab] No se pudo analizar la foto', error);
@@ -1308,7 +1314,6 @@ export default function FaceSimLab() {
       delete next[id];
       return next;
     });
-    setPersonal(null); setModelKind('generico');
     setCalibrating(false); setPhotoAnchor(null); setContourIndex(null);
     setStatus(`Se retiró ${PHOTO_SLOTS.find(v => v.id === id)?.label}. Recalcula la superficie con las fotos restantes. Las marcaciones anatómicas se conservan.`);
   };
@@ -1614,7 +1619,6 @@ export default function FaceSimLab() {
     const registration = target === 'extra_a' || target === 'extra_b' ? null : autoRegistration(target, nextFrame, source.aspect, flipX);
     personalRequestRef.current++;
     setBuildingPersonal(false);
-    setPersonal(null); setModelKind('generico');
     setPhotos(p => p[target]?.canvas === source.canvas ? {
       ...p, [target]: { ...p[target]!, landmarks, contourAdjusted, foreheadReviewed, frame: nextFrame, regionMap: buildFaceRegionMap(landmarks, triangles, source.aspect, genericFaceAtlas.positions),
         modelAnchors: undefined, registration: isRegistrationAccepted(registration) ? registration : undefined,
@@ -2098,7 +2102,7 @@ export default function FaceSimLab() {
       {photos[v.id]?.landmarks && <label className="mt-2 flex items-start gap-1 text-[10px] text-slate-700">
         <input type="checkbox" aria-label={`Confirmar captura ${v.label}`} checked={!!photos[v.id]?.captureConfirmed} onChange={e => {
           const checked = e.target.checked;
-          personalRequestRef.current++; setBuildingPersonal(false); setPersonal(null); setModelKind('generico');
+          personalRequestRef.current++; setBuildingPersonal(false);
           setPhotos(p => p[v.id] ? { ...p, [v.id]: { ...p[v.id]!, captureConfirmed: checked } } : p);
           setStatus('Revisión de captura actualizada. Recalcula la superficie; las marcaciones se conservan. Esta confirmación no verifica identidad automáticamente.');
         }} />
@@ -2110,7 +2114,7 @@ export default function FaceSimLab() {
 
   return (
     <div className={`grid min-w-0 gap-4 ${workspace === 'simulate' && editorGroup === 'annotations'
-      ? 'lg:grid-cols-[264px_minmax(0,1fr)] xl:grid-cols-[256px_minmax(0,1fr)_336px]' : 'lg:grid-cols-[260px_minmax(0,1fr)]'}`}>
+      ? 'lg:grid-cols-[264px_minmax(0,1fr)] xl:grid-cols-[256px_minmax(0,1fr)_336px]' : 'lg:grid-cols-[320px_minmax(0,1fr)]'}`}>
       <header className="col-span-full space-y-2">
         <nav aria-label="Espacios del laboratorio" className="flex flex-wrap gap-2">
           {([['capture', 'Capturas'], ['simulate', 'Simular y marcar']] as const).map(([id, label]) =>
@@ -2129,7 +2133,7 @@ export default function FaceSimLab() {
             }} className="admin-focus-ring min-h-11 rounded-lg border border-slate-300 px-3 text-sm font-semibold aria-pressed:border-sky-700 aria-pressed:bg-sky-50 aria-pressed:text-sky-900">{label}</button>)}
         </nav>}
         <p className="text-sm text-slate-600">{workspace === 'capture'
-          ? 'Carga y revisa fotos o calibra la superficie. Aquí no se registran tratamientos.'
+          ? '1. Revisa las fotos · 2. Genera y confirma la máscara · 3. Simula o marca.'
           : 'Elige una superficie y una herramienta. El registro es común; la dosis no controla el efecto visual.'}</p>
         <p className="text-xs text-slate-600" role="status">{status}</p>
       </header>
@@ -2140,6 +2144,32 @@ export default function FaceSimLab() {
           onApply={(landmarks, reviewed, point) => {
             applyLandmarks(landmarks, [...genericFaceAtlas.triangles], reviewSlot.contourAdjusted, reviewed, reviewId);
             if (point) rememberForehead(reviewId, reviewSlot, point);
+          }} />
+      </Suspense>}
+      {maskReview && maskReview.photos === photos && <Suspense fallback={<p role="status">Abriendo revisión de máscara…</p>}>
+        <MaskReview surface={maskReview.model.renderSurface} photo={maskReview.model.canvas} patches={maskReview.model.photoPatches}
+          warnings={[
+            ...(maskReview.model.captures !== photos ? ['Esta máscara pertenece a capturas anteriores.'] : []),
+            ...maskReview.model.diagnostics.filter(diagnostic => diagnostic.status !== 'used').map(diagnostic =>
+              diagnostic.status === 'limited' ? `${diagnostic.label}: profundidad con aporte reducido; sin textura lateral.`
+                : `${diagnostic.label}: solo comparación, sin aporte a la máscara.`),
+            ...(!maskReview.model.photoPatches?.length ? ['Sin textura lateral fiable: al girar puede verse estirada la foto frontal. Usa otra toma o revisa sin fotografía.'] : []),
+          ]}
+          details={`${maskReview.model.captures !== photos ? 'Esta máscara usa capturas anteriores. ' : ''}${maskReview.model.depthDetails}`} onCancel={() => {
+            setMaskReview(null); setDepth(personal?.depth ?? 1);
+            setStatus('Revisión cancelada. La máscara aceptada y las marcaciones no cambiaron.');
+          }} onAccept={async (positions, settings) => {
+            const review = maskReview, requestId = personalRequestRef.current;
+            const adjusted = Object.values(settings).some(value => value !== 0);
+            const renderSurface = adjusted ? { ...review.model.renderSurface, positions } : review.model.renderSurface;
+            const surface = adjusted ? { ...review.model.surface, positions: positions.slice(0, review.model.surface.positions.length) } : review.model.surface;
+            const { personalSurfaceToGlb } = await import('./personalSurfaceGlb');
+            const glb = adjusted ? await personalSurfaceToGlb(renderSurface, review.model.canvas, undefined, [], review.model.photoPatches) : review.model.glb;
+            if (requestId !== personalRequestRef.current) throw new Error('Las capturas cambiaron. Vuelve a generar la máscara.');
+            setPersonal({ ...review.model, surface, renderSurface, glb, reviewBase: review.model });
+            setDepth(review.model.depth); setModelKind('personal'); genericSelected.current = false;
+            setMaskReview(null); setCalibrationVisible(true);
+            setStatus(adjusted ? 'Máscara ajustada confirmada. Tus marcaciones se conservan.' : 'Máscara generada confirmada sin ajustes. Tus marcaciones se conservan.');
           }} />
       </Suspense>}
       {(workspace === 'capture' || editorGroup === 'annotations') && <aside aria-label={workspace === 'capture' ? 'Revisión de capturas' : 'Herramientas de marcación'} className={`min-w-0 space-y-4 rounded-2xl border p-3 shadow-sm lg:self-start ${workspace === 'simulate' ? `${editorPanel} lg:sticky lg:top-4` : 'border-slate-200 bg-white'}`}>
@@ -2262,13 +2292,13 @@ export default function FaceSimLab() {
         </div>}
         {workspace === 'capture' && <>
         <div>
-          <span className="mb-1 block text-xs font-semibold uppercase text-slate-500">Fotos del paciente</span>
+          <h2 className="mb-2 text-sm font-semibold text-slate-800">1. Cargar y revisar fotos</h2>
           <label className="admin-focus-ring mb-2 flex cursor-pointer items-center justify-center gap-2 rounded-lg bg-slate-800 px-3 py-2 text-xs font-semibold text-white focus-within:ring-2 focus-within:ring-sky-400">
             <ImagePlus className="h-4 w-4" aria-hidden="true" />{batchBusy ? 'Analizando capturas…' : 'Seleccionar hasta 3 fotos'}
             <input type="file" multiple accept="image/*" disabled={hasPendingPhotos} aria-label="Seleccionar hasta 3 fotos" className="sr-only"
               onChange={e => { const files = Array.from(e.target.files ?? []); e.target.value = ''; void loadCaptures(files); }} />
           </label>
-          <p className="mb-2 text-xs text-slate-600">Se clasifican por pose: frontal y laterales A/B. Sin pose fiable podrás asignar la vista.</p>
+          <p className="mb-2 text-xs text-slate-600">Una frontal es obligatoria. Añade ambos lados si tienes tomas claras.</p>
           {captureProgress && <p role="status" aria-live="polite" className="mb-2 break-words text-xs text-slate-700">{captureProgress}</p>}
           {unassignedCaptures.map(candidate => <div key={candidate.digest} className="mb-2 rounded-lg border border-amber-200 bg-amber-50 p-2 text-xs">
             <p className="break-words font-semibold">{candidate.file.name}</p><p>{candidate.reason}</p>
@@ -2319,38 +2349,17 @@ export default function FaceSimLab() {
               void buildPersonal(depth, sourceView);
             }}
             className="mt-2 w-full rounded-lg bg-slate-800 px-2 py-2 text-xs font-semibold text-white disabled:opacity-40">
-            {buildingPersonal ? 'Calculando…' : `Calcular superficie con ${readyPhotos.length} foto(s)`}
+            {buildingPersonal ? 'Generando…' : '2. Generar y revisar máscara'}
           </button>
         </div>
-        {photos.frontal?.landmarks && <details className="space-y-2 rounded-xl border border-sky-200 bg-sky-50 p-3 text-xs" aria-label="Calibración manual de profundidad"
-          onToggle={event => setCalibrationVisible(event.currentTarget.open)}>
-          <summary className="admin-focus-ring cursor-pointer font-semibold text-sky-900">Calibrar perfil base · nariz, filtrum y labios</summary>
-          <p>Compara con la foto lateral desde «Ver». Ajusta la profundidad del prior antes de simular: − retrae / + proyecta. Son porcentajes visuales del alto facial, no milímetros ni una medición de piel bajo la barba.</p>
-          <p>Los controles se combinan suavemente. Los cambios se aplican al pulsar «Aplicar calibración»; no cambian dosis ni coordenadas frontales.</p>
-          {PROFILE_CALIBRATION.map(control => {
-            const value = profileCalibration && profileCalibration.canvas === photos.frontal?.canvas ? profileCalibration.values[control.id] ?? 0 : 0;
-            return <label key={control.id} className="block text-sky-950">{control.label} · {Math.round(value * 1000) / 10} %
-              <input aria-label={`Calibración base ${control.label}`} type="range" min={-0.08} max={0.08} step={0.0025}
-                value={value} disabled={buildingPersonal || hasPendingPhotos}
-                onChange={event => {
-                  const value = Number(event.currentTarget.value), canvas = photos.frontal!.canvas;
-                  setProfileCalibration(current => ({ canvas, values: { ...(current?.canvas === canvas ? current.values : {}), [control.id]: value } }));
-                  setStatus('Calibración base pendiente: pulsa «Aplicar calibración» para recalcular desde el original. No se ha modificado el registro.');
-                }} className="admin-focus-ring block w-full accent-sky-700" />
-            </label>;
-          })}
-          <div className="grid gap-2">
-            <button type="button" disabled={buildingPersonal || hasPendingPhotos || captureBlocked} onClick={() => void buildPersonal(depth, 'frontal', false)}
-              className="admin-focus-ring rounded-lg bg-sky-900 px-2 py-2 font-semibold text-white disabled:opacity-40">Aplicar calibración</button>
-            <button type="button" disabled={buildingPersonal || hasPendingPhotos} onClick={() => {
-              setProfileCalibration({ canvas: photos.frontal!.canvas, values: {} });
-              setStatus('Ajustes de calibración a cero. Pulsa «Aplicar calibración» para recuperar la base sin ajustes manuales.');
-            }} className="admin-focus-ring rounded-lg border border-sky-300 px-2 py-2">Poner calibración a cero</button>
-          </div>
-          <p className="text-amber-900">La simulación hereda esta base al recalcular. Antes compara contra la base calibrada, no contra una profundidad real certificada. Cambiar la frontal descarta sus ajustes.</p>
-        </details>}
+        {personal && <button type="button" disabled={buildingPersonal || hasPendingPhotos} onClick={() => setMaskReview({ model: personal.reviewBase ?? personal, photos })}
+          className="admin-focus-ring min-h-11 w-full rounded-xl border border-sky-300 bg-sky-50 px-3 py-2 text-sm font-semibold">Revisar máscara aceptada</button>}
+        {personal && personal.captures !== photos && <p role="status" className="text-xs font-semibold text-amber-900">La máscara aceptada usa capturas anteriores. Genera y confirma otra para actualizarla.</p>}
+        <p className="text-xs font-semibold text-amber-900">Aproximación visual, no escaneo. Las zonas ocultas y el interior de las fosas no se reconstruyen.</p>
         {slot?.landmarks && <button type="button" onClick={() => setBoundaryReview(queue => [view, ...queue.filter(id => id !== view)])}
           className="admin-focus-ring w-full rounded-xl border border-sky-200 bg-sky-50 px-3 py-2 text-sm font-semibold">Revisar frente, sienes y mentón</button>}
+        <details className="space-y-3 rounded-xl border border-slate-200 p-3 text-xs">
+          <summary className="admin-focus-ring min-h-8 cursor-pointer font-semibold">Herramientas avanzadas y ayuda</summary>
         {slot?.landmarks && <details className="space-y-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs">
           <summary className="cursor-pointer font-semibold">Frente y línea del cabello · revisar cobertura</summary>
           <p>{slot.foreheadReviewed ? 'Contorno validado. Puedes reeditar los límites en cualquier momento; esto no confirma identidad.' : 'Se propone el nacimiento del cabello como fin de la piel visible; confírmalo en «Revisar frente». No presupongas que toda la frente está reconstruida.'}</p>
@@ -2565,7 +2574,7 @@ export default function FaceSimLab() {
           )}
         </fieldset>
         </details>
-
+        </details>
         </>}
         {workspace === 'capture' && <>
         <details className="rounded-xl border border-slate-200 p-2 text-xs">

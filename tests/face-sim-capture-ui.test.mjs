@@ -162,7 +162,13 @@ function photo() {
     })),
   };
 }
-const calculate = tree => findAll(tree, n => n.type === 'button' && text(n).startsWith('Calcular superficie'))[0];
+const calculate = tree => findAll(tree, n => n.type === 'button' && text(n) === '2. Generar y revisar máscara')[0];
+const maskReview = tree => findAll(tree, n => typeof n.props?.onAccept === 'function' && typeof n.props?.onCancel === 'function')[0];
+const acceptGenerated = async app => {
+  const review = maskReview(app.render());
+  assert.ok(review, 'generar abre la revisión, no activa la máscara');
+  await review.props.onAccept(review.props.surface.positions, {});
+};
 const slotIds = ['frontal', 'izquierda', 'derecha', 'extra_a', 'extra_b'];
 const viewers = tree => findAll(tree, n => typeof n.props?.onMarkerPlaced === 'function');
 const renderedMarks = viewer => viewer.props.editablePoints.map(({ id, x, y, z }) => ({ id, position: { x, y, z } }));
@@ -388,7 +394,7 @@ test('captura progresiva: tres entradas principales y dos opcionales, sin exigir
     app.photos(Object.fromEntries(slotIds.slice(0, count).map(id => [id, photo()])));
     const current = app.render();
     assert.equal(calculate(current).props.disabled, false);
-    assert.equal(text(calculate(current)), `Calcular superficie con ${count} foto(s)`);
+    assert.equal(text(calculate(current)), '2. Generar y revisar máscara');
     assert.match(text(current), new RegExp(`${count} de 5 fotos cargadas`));
   }
 });
@@ -460,7 +466,8 @@ test('retirar referencias permite volver de cinco a una foto sin bloquear el cá
     const button = findAll(app.render(), n => n.type === 'button' && n.props['aria-label'] === `Retirar ${label}`)[0];
     button.props.onClick();
     const tree = app.render();
-    assert.equal(text(calculate(tree)), `Calcular superficie con ${expected} foto(s)`);
+    assert.equal(text(calculate(tree)), '2. Generar y revisar máscara');
+    assert.equal(Object.keys(app.state('photos')).length, expected);
     assert.equal(calculate(tree).props.disabled, false);
   }
 });
@@ -470,17 +477,17 @@ test('una foto sin detección conserva su error visible y no se cuenta como refe
   app.render();
   app.photos({ frontal: photo(), extra_a: { ...photo(), landmarks: undefined, detectionError: 'Imagen sin rostro detectable.' } });
   const tree = app.render();
-  assert.equal(text(calculate(tree)), 'Calcular superficie con 1 foto(s)');
+  assert.equal(text(calculate(tree)), '2. Generar y revisar máscara');
   assert.match(text(tree), /2 de 5 fotos cargadas/);
   assert.match(text(tree), /Imagen sin rostro detectable/);
 });
 
-test('retirar la frontal permite calcular desde otra foto principal detectada', () => {
+test('retirar la frontal bloquea la generación aunque queden laterales', () => {
   const app = lab();
   app.render();
   app.photos({ frontal: photo(), izquierda: photo() });
   findAll(app.render(), n => n.type === 'button' && n.props['aria-label'] === 'Retirar Frontal')[0].props.onClick();
-  assert.equal(calculate(app.render()).props.disabled, false);
+  assert.equal(calculate(app.render()).props.disabled, true);
 });
 
 test('una foto puede generar la superficie personal sin esperar referencias complementarias', async () => {
@@ -490,9 +497,11 @@ test('una foto puede generar la superficie personal sin esperar referencias comp
   calculate(app.render()).props.onClick();
   await new Promise(resolve => setImmediate(resolve));
   const tree = app.render();
-  assert.match(text(tree), /Superficie 3D personal generada desde la foto Frontal/);
-  assert.match(text(tree), /Cálculo rápido con una foto/);
+  assert.match(text(tree), /Máscara preparada/);
+  assert.equal(app.state('personal'), null);
+  assert.match(maskReview(tree).props.details, /Base frontal conservada/);
   assert.equal(viewers(tree).length, 0, 'el cálculo no convierte Capturas en editor');
+  await acceptGenerated(app);
   const personalViewer = viewers(openEditor(app))[0];
   assert.equal(personalViewer.props.cameraPreset, 'face-surface');
 });
@@ -531,7 +540,8 @@ test('cabeza estimada se transmite completa a Simular sin reemplazar la superfic
   head.props.onClick();
   await new Promise(resolve => setImmediate(resolve));
   const tree = app.render();
-  assert.match(text(tree), /Cabeza de plantilla anatómica/);
+  assert.match(maskReview(tree).props.details, /Cabeza de plantilla anatómica/);
+  await acceptGenerated(app);
   const simulator = findAll(openAppearance(app), n => n.props && Object.hasOwn(n.props, 'surface') && Object.hasOwn(n.props, 'photo'))[0];
   assert.equal(simulator.props.surface.observedIndexCount, 852 * 3);
   assert.ok(simulator.props.surface.indices.length > 852 * 3 * 2);
@@ -593,6 +603,7 @@ test('la máscara calculada en Capturas llega al grupo avanzado sin sustituirse 
   app.photos({ frontal: { ...photo(), aspect: fixture.aspect, landmarks: fixture.landmarks.map(([x, y, z]) => ({ x, y, z })) } });
   calculate(app.render()).props.onClick();
   await new Promise(resolve => setImmediate(resolve));
+  await acceptGenerated(app);
   const simulator = findAll(openAppearance(app), n => n.props && Object.hasOwn(n.props, 'surface') && Object.hasOwn(n.props, 'photo'))[0];
   assert.ok(simulator.props.surface);
   assert.equal(simulator.props.surface.indices.length, 852 * 3);
@@ -610,4 +621,41 @@ test('editar contorno expone 36 referencias y pasa a foto sin crear un tratamien
   assert.match(text(tree), /Aplicar contorno/);
   assert.equal(app.state('workMode'), 'foto');
   assert.equal(findAll(tree, n => n.type === 'ul' && n.props['aria-label'] === 'Elementos marcados').length, 0);
+});
+
+test('revisión preliminar: generar y cancelar no sustituyen máscara aceptada ni dosis', async () => {
+  const app = lab(); app.render(); app.photos({ frontal: photo() });
+  calculate(app.render()).props.onClick();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(app.state('personal'), null);
+  await acceptGenerated(app);
+  const accepted = app.state('personal'), meta = { saved: { mode: 'toxina', dose: 3 } };
+  app.set('meta', meta);
+  calculate(app.render()).props.onClick();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.ok(maskReview(app.render()));
+  assert.equal(app.state('personal'), accepted);
+  maskReview(app.render()).props.onCancel();
+  assert.equal(maskReview(app.render()), undefined);
+  assert.equal(app.state('personal'), accepted);
+  assert.equal(app.state('meta'), meta);
+  assert.match(app.state('status'), /no cambiaron/);
+});
+
+test('confirmar propuesta conserva base generada; reabrir no acumula ajustes y retirar foto invalida borrador', async () => {
+  const app = lab(); app.render(); app.photos({ frontal: photo() });
+  calculate(app.render()).props.onClick();
+  await new Promise(resolve => setImmediate(resolve));
+  const review = maskReview(app.render()), original = review.props.surface;
+  const positions = original.positions.slice(); positions[1 * 3 + 2] += 0.01;
+  await review.props.onAccept(positions, { tip: 0.01 });
+  const accepted = app.state('personal');
+  assert.notDeepEqual(accepted.surface.positions, original.positions);
+  assert.equal(accepted.reviewBase.renderSurface, original);
+  button(app.render(), 'Revisar máscara aceptada').props.onClick();
+  assert.equal(maskReview(app.render()).props.surface, original);
+  findAll(app.render(), n => n.props?.['aria-label'] === 'Retirar Frontal')[0].props.onClick();
+  assert.equal(maskReview(app.render()), undefined, 'la revisión no sigue vigente tras cambiar capturas');
+  assert.equal(app.state('personal'), accepted, 'la máscara ya aceptada sigue siendo una instantánea válida');
+  assert.match(text(app.render()), /capturas anteriores/);
 });

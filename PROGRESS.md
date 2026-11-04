@@ -1,5 +1,14 @@
 # Progreso de BioSkinTech App
 
+- ✅ 2026-11-04 Máscara: revisión preliminar reversible.
+- ✅ 2026-11-04 Perfil: ajustes en vivo.
+- ✅ 2026-11-04 Capturas: pasos y ayuda agrupada.
+- ✅ 2026-11-04 Detección: candidatos inválidos reintentados.
+- ✅ 2026-11-04 Textura: referencias limitadas excluidas.
+- ✅ 2026-11-04 Nariz: reflejo revisable y textura.
+- QA de revisión: 104 pruebas focales, build y lint focal aprobados. Chromium sintético: 11 casos, 390/1440 px, cero errores JS; confirma/cancela/restaura sin acumulación y mantiene visor/control móviles simultáneos. Detector real local: seis de ocho fotos detectadas; dos recuperadas permanecen solo como referencia.
+- QA con fotos locales: revisión viva/cancelación exacta y propuesta nasal confirmada/descartada/deshecha, cero errores JS. Textura cambia el 8,25 % de la región nasal medida y deja «Antes» idéntico; corregido el fallo de pesos en superficies personales densas. Sin garantías de simetría exacta ni fluidez en GPU física.
+- Límites de revisión: dos perfiles cerrados sin malla fiable; el reflejo puede ser moderado por protección. TypeScript conserva 12 errores externos al Lab; lint global tiene 281 errores/58 avisos ajenos a los archivos modificados. Sin imágenes en Git ni validación de producción.
 - ✅ 2026-11-04 Máscara: frontal y recuperaciones aisladas.
 - ✅ 2026-11-04 Perfil: calibración manual por zona.
 - ✅ 2026-11-04 Perfil: referencia y visor simultáneos.

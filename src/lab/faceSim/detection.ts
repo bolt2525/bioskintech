@@ -11,6 +11,8 @@ export const DETECTION_RETRIES: readonly DetectionTransform[] = [
   { angle: 15, scale: 0.85, enhanced: false },
   { angle: -30, scale: 0.8, enhanced: true },
   { angle: 30, scale: 0.8, enhanced: true },
+  { angle: -45, scale: 0.85, enhanced: true },
+  { angle: 45, scale: 0.85, enhanced: true },
 ];
 
 export function restoreDetectionPoint(
