@@ -54,6 +54,8 @@ export function extendVisibleForehead(landmarks: Landmark[], target: P2, aspect:
   const projection = (p: P2) => (p.x - brow.x) * aspect * axis.x + (p.y - brow.y) * axis.y;
   const browLimit = Math.max(...[70, 63, 105, 66, 107, 336, 296, 334, 293, 300].map(i => projection(landmarks[i])));
   const band = projection(top) - browLimit;
+  // Un centro recuperado por debajo de sus vecinos no es un ancla válida para extrapolar la frente.
+  if (landmarks.some(p => projection(p) > projection(top) + height * 0.035)) return null;
   const dx = (target.x - top.x) * aspect, dy = target.y - top.y;
   if (band < height * 0.025 || Math.hypot(dx, dy) > height * 0.35 || dx * axis.x + dy * axis.y < 0
     || Math.abs(dx * axis.y - dy * axis.x) > height * 0.07) return null;

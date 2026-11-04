@@ -44,8 +44,11 @@ export interface LedgerRow {
   annotationText?: string;
   annotationKind?: 'ellipse' | 'text' | 'ruler';
 }
-export interface LedgerFilter { mode: SimMode | 'all'; zone: string; third: LedgerThird | 'all'; volume: 'all' | 'with' | 'without' }
-export const ALL_ROWS: LedgerFilter = { mode: 'all', zone: 'all', third: 'all', volume: 'all' };
+export interface LedgerFilter {
+  mode: SimMode | 'all'; zone: string; third: LedgerThird | 'all'; volume: 'all' | 'with' | 'without';
+  product?: string; side?: PatientSide | 'all'; search?: string;
+}
+export const ALL_ROWS: LedgerFilter = { mode: 'all', zone: 'all', third: 'all', volume: 'all', product: 'all', side: 'all', search: '' };
 
 export const KIND_LABELS: Record<ElemKind, string> = {
   point: 'Punto', line: 'Línea', arrow: 'Flecha', free: 'Trazo libre', circle: 'Círculo', rect: 'Área', pattern: 'Patrón',
@@ -99,10 +102,44 @@ export function ledgerRows(meta: Record<string, Meta>, bindings: AnatomicalBindi
   return ordered.map((row, i) => ({ ...row, index: i + 1 }));
 }
 
+const searchText = (text: string) => text.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase('es');
 export const filterRows = (rows: readonly LedgerRow[], f: LedgerFilter) => rows.filter(r =>
   (f.mode === 'all' || r.mode === f.mode) && (f.zone === 'all' || r.zone === f.zone)
   && (f.third === 'all' || r.third === f.third)
+  && (!f.product || f.product === 'all' || JSON.stringify([r.mode, r.product]) === f.product)
+  && (!f.side || f.side === 'all' || r.side === f.side)
+  && (!f.search?.trim() || searchText(`${r.product} ${r.zone} ${r.label} ${r.annotationText ?? ''} ${r.plane}`).includes(searchText(f.search.trim())))
   && (f.volume === 'all' || !r.entry && !r.graphicOnly && (f.volume === 'with' ? r.dose > 0 : r.dose <= 0)));
+
+/** Una punta seleccionada incluye su familia completa; nunca duplica dos veces la entrada. */
+export function copySelectionRows(rows: readonly LedgerRow[], ids: readonly string[]): LedgerRow[] {
+  const selected = new Set(ids);
+  const roots = new Set(rows.filter(r => selected.has(r.id)).map(r => r.parent ?? r.id));
+  return rows.filter(r => roots.has(r.id) || !!r.parent && roots.has(r.parent));
+}
+
+/** En edición de dosis/plano la entrada solo selecciona sus puntas, no lleva cantidad propia. */
+export function bulkTargets(rows: readonly LedgerRow[], ids: readonly string[]): LedgerRow[] {
+  const selected = new Set(ids);
+  const entries = new Set(rows.filter(r => selected.has(r.id) && r.entry).map(r => r.id));
+  return rows.filter(r => !r.entry && !r.graphicOnly && (selected.has(r.id) || !!r.parent && entries.has(r.parent)));
+}
+
+export type MarkingBulkChange = { plane: string } | { product: string } | { dose: number };
+export function editMarkingBatch(meta: Record<string, Meta>, rows: readonly LedgerRow[], ids: readonly string[], change: MarkingBulkChange): Record<string, Meta> {
+  const targets = bulkTargets(rows, ids);
+  if (!targets.length) throw new Error('Selecciona puntos de registro; los gráficos no admiten dosis, producto ni plano.');
+  if (new Set(targets.map(r => r.mode)).size !== 1) throw new Error('El lote mezcla categorías. Filtra y selecciona una sola categoría antes de editar.');
+  const mode = targets[0].mode;
+  if ('dose' in change && (!Number.isFinite(change.dose) || change.dose < 0)) throw new Error('La dosis debe ser un número finito mayor o igual a cero.');
+  if ('plane' in change && change.plane && !INJECTION_PLANES[mode].includes(change.plane)) throw new Error('El plano no es válido para la categoría seleccionada.');
+  const next = { ...meta };
+  for (const row of targets) {
+    if (!meta[row.id]) throw new Error('La selección cambió. Vuelve a seleccionar las marcas.');
+    next[row.id] = { ...meta[row.id], ...change };
+  }
+  return next;
+}
 
 export interface VolumeTotal { key: string; mode: SimMode; product: string; total: number; points: number; pending: number }
 /** Totales en tiempo real por inyectable y vial; los puntos sin volumen cuentan como pendientes. */

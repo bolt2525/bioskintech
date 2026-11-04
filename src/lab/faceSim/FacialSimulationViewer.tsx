@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useEffect, useId, useMemo, useRef, useState, type MutableRefObject } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useId, useMemo, useReducer, useRef, useState, type MutableRefObject } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import type { P2, PersonalSurface } from './engine';
@@ -20,8 +20,9 @@ import { NEUTRAL_SKIN_COSMETICS, SKIN_COSMETIC_CONTROLS, type SkinCosmeticParame
 import { composeSkinCosmeticTexture, createSkinSignalMask } from './skinSignalTexture';
 import { applySkinRegionRelief, type SkinReviewRegion } from './skinRegionReview';
 import { editorPanel } from './MarkingPanels';
+import { initialMorphologySession, morphologySessionReducer, MORPHOLOGY_VARIANT_LIMIT } from './morphologySession';
 import {
-  buildCutPlane, buildSimulationLayers, buildSimulationReferenceSurface, createSimulationMesh, deformPositions, meshBounds,
+  buildCutPlane, buildSimulationLayers, buildSimulationReferenceSurface, createSimulationMesh, deformPositions, meshBounds, nasalProfileExcess,
   NEUTRAL_SIMULATION, SIMULATION_CONTROLS, SIMULATION_GROUPS, SIMULATION_LAYERS, SIMULATION_NOTICE, vertexNormals,
   type LayerId, type SimulationCut, type SimulationMesh, type SimulationParameters, type SimulationProtection,
 } from './simulation';
@@ -945,9 +946,36 @@ export function FacialSimulationViewer({ surface, photo, hair = DEFAULT_HAIR, ha
   const [skinOpened, setSkinOpened] = useState(false);
   const [referenceEditorOpened, setReferenceEditorOpened] = useState(false);
   const [skinReviewVersion, setSkinReviewVersion] = useState(0);
-  const [parameters, setParameters] = useState<SimulationParameters>({ ...NEUTRAL_SIMULATION });
+  const [morphology, dispatchMorphology] = useReducer(morphologySessionReducer, undefined, initialMorphologySession);
+  const { parameters, symmetryDirection, variants } = morphology.present;
+  const [variantName, setVariantName] = useState('');
+  const [selectedVariantId, setSelectedVariantId] = useState('');
+  const [morphologyNotice, setMorphologyNotice] = useState('');
+  const morphologySource = useRef({ surface, photo });
+  const variantSequence = useRef(0);
+  const selectedVariant = variants.find(variant => variant.id === selectedVariantId) ?? variants[0];
+  const changeMorphology = (parameters: Partial<SimulationParameters>, symmetryDirection?: 1 | -1) =>
+    dispatchMorphology({ type: 'change', parameters, symmetryDirection });
+  useEffect(() => {
+    if (morphologySource.current.surface === surface && morphologySource.current.photo === photo) return;
+    morphologySource.current = { surface, photo };
+    dispatchMorphology({ type: 'restart' });
+    setVariantName(''); setSelectedVariantId('');
+    setMorphologyNotice('La base o la foto fuente cambió: se reiniciaron morfología, historial y variantes. «Antes» usa la nueva base recibida.');
+  }, [surface, photo]);
+  // El gesto termina incluso si el puntero sale del inspector o se pierde foco.
+  useEffect(() => {
+    const finish = () => dispatchMorphology({ type: 'end' });
+    window.addEventListener('pointerup', finish);
+    window.addEventListener('pointercancel', finish);
+    window.addEventListener('blur', finish);
+    return () => {
+      window.removeEventListener('pointerup', finish);
+      window.removeEventListener('pointercancel', finish);
+      window.removeEventListener('blur', finish);
+    };
+  }, []);
   const [protection, setProtection] = useState<SimulationProtection>({ minimumStrength: 1, moderatedComponents: 0 });
-  const [symmetryDirection, setSymmetryDirection] = useState<1 | -1>(1);
   const [localDisplay, changeDisplay] = useState(initialAnatomyDisplay);
   const skinDisplay = useMemo(initialAnatomyDisplay, []);
   const display = tool === 'morphology' || tool === 'skin' ? skinDisplay : localDisplay;
@@ -1080,6 +1108,8 @@ export function FacialSimulationViewer({ surface, photo, hair = DEFAULT_HAIR, ha
     }); });
     return () => cancelAnimationFrame(frame);
   }, [surface]);
+  // Diagnóstico de la base recibida (no del resultado): explica cuándo «alinear perfil» no tendrá efecto.
+  const profileExcess = useMemo(() => prepared.mesh ? nasalProfileExcess(prepared.mesh.positions, prepared.mesh.anchors) : null, [prepared.mesh]);
   const displayReferences = useMemo(() => prepared.mesh?.source === 'personal' && prepared.refinement
     ? references.map(reference => ({ ...reference, uvs: prepared.refinement!.attribute(reference.uvs, 2) }))
     : references, [prepared, references]);
@@ -1136,7 +1166,7 @@ export function FacialSimulationViewer({ surface, photo, hair = DEFAULT_HAIR, ha
   }, [state, prepared, photo, attempt]);
 
   const reset = () => {
-    setParameters({ ...NEUTRAL_SIMULATION }); setSymmetryDirection(1); changeDisplay(initialAnatomyDisplay());
+    changeMorphology({ ...NEUTRAL_SIMULATION }, 1); changeDisplay(initialAnatomyDisplay());
     setCosmetics({ ...NEUTRAL_SKIN_COSMETICS }); setCosmeticTexture(undefined); setSignal(undefined);
     setSkinReview(undefined);
     setSkinReviewVersion(value => value + 1);
@@ -1159,7 +1189,16 @@ export function FacialSimulationViewer({ surface, photo, hair = DEFAULT_HAIR, ha
   const stage = revealStage(reveal);
 
   return (
-    <section ref={editor} aria-labelledby={`${id}-title`} data-face-editor className={`${editorPanel} flex min-w-0 scroll-mt-2 flex-col gap-3 p-3 text-stone-100 lg:sticky lg:top-2 lg:h-[calc(100dvh-5rem)] lg:min-h-[560px]`}>
+    <section ref={editor} aria-labelledby={`${id}-title`} data-face-editor
+      onKeyDown={event => {
+        if (tool !== 'morphology' || event.defaultPrevented || event.altKey || !(event.ctrlKey || event.metaKey)
+          || (event.target as HTMLElement).closest('input, textarea, select, [contenteditable]:not([contenteditable="false"])')) return;
+        const key = event.key.toLowerCase();
+        if (key !== 'z' && key !== 'y') return;
+        event.preventDefault();
+        if (!event.repeat) dispatchMorphology({ type: key === 'y' || event.shiftKey ? 'redo' : 'undo' });
+      }}
+      className={`${editorPanel} flex min-w-0 scroll-mt-2 flex-col gap-3 p-3 text-stone-100 lg:sticky lg:top-2 lg:h-[calc(100dvh-5rem)] lg:min-h-[560px]`}>
       <header className="flex shrink-0 flex-wrap items-start justify-between gap-2">
         <div>
           <h2 id={`${id}-title`} className="text-sm font-semibold text-gold">Simulación morfológica 3D</h2>
@@ -1213,7 +1252,7 @@ export function FacialSimulationViewer({ surface, photo, hair = DEFAULT_HAIR, ha
             <div ref={host} data-simulation-viewport data-ready={ready} aria-busy={!ready && !failure} className="h-[46dvh] min-h-64 w-full lg:h-full" />
             {comparison === 'split' && !failure ? (
               <div aria-hidden="true" className="pointer-events-none absolute inset-0 grid grid-cols-2 text-center text-xs">
-                <span className="border-r border-slate-400/50 pt-2">Antes · original</span><span className="pt-2">Después · capas</span>
+                <span className="border-r border-slate-400/50 pt-2">Antes · base recibida</span><span className="pt-2">{tool === 'morphology' ? 'Después · morfología' : 'Después · capas'}</span>
               </div>
             ) : null}
             {failure ? (
@@ -1242,7 +1281,65 @@ export function FacialSimulationViewer({ surface, photo, hair = DEFAULT_HAIR, ha
             {tool === 'morphology' ? `Morfología · ${morphologyGroup}` : tool === 'skin' ? 'Piel · revisión y ajustes' : tool === 'layers' ? 'Capas · referencias' : 'Corte · profundidad'}
           </h3>
           <div ref={inspector} data-simulation-inspector className="max-h-[48dvh] min-h-0 space-y-3 overflow-y-auto overscroll-contain p-3 lg:max-h-none lg:flex-1" aria-describedby={`${id}-help`}>
-          <div id={`${id}-tool-morphology`} hidden={tool !== 'morphology'} className="space-y-3">
+          <div id={`${id}-tool-morphology`} hidden={tool !== 'morphology'} className="space-y-3"
+            onPointerDownCapture={event => {
+              if ((event.target as HTMLElement).matches('input[type="range"]')) dispatchMorphology({ type: 'begin' });
+            }}
+            onKeyDownCapture={event => {
+              if ((event.target as HTMLElement).matches('input[type="range"]')
+                && ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End', 'PageUp', 'PageDown'].includes(event.key)) {
+                dispatchMorphology({ type: 'begin' });
+              }
+            }}
+            onKeyUpCapture={event => {
+              if ((event.target as HTMLElement).matches('input[type="range"]')) dispatchMorphology({ type: 'end' });
+            }}
+            onBlurCapture={() => dispatchMorphology({ type: 'end' })}>
+          <div role="group" aria-label="Historial de morfología" className="flex flex-wrap gap-1">
+            <button type="button" className={`${buttonClass} disabled:cursor-not-allowed disabled:opacity-40`}
+              disabled={!morphology.past.length && !morphology.gesture} aria-keyshortcuts="Control+Z Meta+Z"
+              onClick={() => dispatchMorphology({ type: 'undo' })}>Deshacer morfología</button>
+            <button type="button" className={`${buttonClass} disabled:cursor-not-allowed disabled:opacity-40`}
+              disabled={!morphology.future.length} aria-keyshortcuts="Control+Shift+Z Meta+Shift+Z Control+Y"
+              onClick={() => dispatchMorphology({ type: 'redo' })}>Rehacer morfología</button>
+          </div>
+          <p className="text-[11px] text-stone-400">Ctrl/⌘ + Z · Mayús para rehacer. Solo morfología: no revierte piel, marcado, capas ni cámara.</p>
+          {morphologyNotice ? <p role="status" className="text-xs text-amber-200">{morphologyNotice}</p> : null}
+          <details className="rounded-lg border border-white/15 p-2 text-xs">
+            <summary className="cursor-pointer rounded focus-visible:outline focus-visible:outline-gold">Variantes de esta sesión · {variants.length}/{MORPHOLOGY_VARIANT_LIMIT}</summary>
+            <p className="my-2 text-[11px] text-stone-400">Solo morfología; no incluye piel, marcado ni capas. Se pierden al cerrar el visor. Aplicar sustituye los ajustes actuales y permite compararlos con el original, no dos variantes simultáneas.</p>
+            <form className="space-y-2" onSubmit={event => {
+              event.preventDefault();
+              if (!variantName.trim() || variants.length >= MORPHOLOGY_VARIANT_LIMIT) return;
+              const variantId = `${id}-variant-${++variantSequence.current}`;
+              dispatchMorphology({ type: 'save', id: variantId, name: variantName });
+              setSelectedVariantId(variantId); setVariantName('');
+            }}>
+              <label className="block">Nombre de variante
+                <input type="text" maxLength={48} value={variantName} onChange={event => setVariantName(event.target.value)}
+                  className={`${selectClass} mt-1 w-full`} placeholder="Ej. Dorso suave" />
+              </label>
+              <button type="submit" className={`${buttonClass} disabled:opacity-40`}
+                disabled={!variantName.trim() || variants.length >= MORPHOLOGY_VARIANT_LIMIT}>Guardar variante</button>
+            </form>
+            {variants.length ? <div className="mt-2 space-y-2">
+              <label className="block">Variante guardada
+                <select className={`${selectClass} mt-1 w-full`} value={selectedVariant?.id ?? ''}
+                  onChange={event => setSelectedVariantId(event.target.value)}>
+                  {variants.map(variant => <option key={variant.id} value={variant.id}>{variant.name}</option>)}
+                </select>
+              </label>
+              <div className="flex flex-wrap gap-1">
+                <button type="button" className={buttonClass} onClick={() => {
+                  if (!selectedVariant) return;
+                  dispatchMorphology({ type: 'apply', id: selectedVariant.id }); setComparison('split');
+                }}>Aplicar y comparar con original</button>
+                <button type="button" className={buttonClass} onClick={() => {
+                  if (selectedVariant) dispatchMorphology({ type: 'delete', id: selectedVariant.id });
+                }}>Eliminar variante</button>
+              </div>
+            </div> : <p role="status" className="mt-2 text-stone-400">Aún no hay variantes guardadas.</p>}
+          </details>
           <p className="text-[11px] text-stone-400">Rango visual ampliado · 0 conserva el original. No son medidas clínicas.</p>
           {protection.moderatedComponents > 0 ? <p role="status" data-morphology-protection className="rounded-lg border border-amber-400/40 p-2 text-xs text-amber-200">
             Protección de superficie: el rango solicitado se ha moderado en {protection.moderatedComponents} {protection.moderatedComponents === 1 ? 'zona conectada' : 'zonas conectadas'}.
@@ -1250,10 +1347,10 @@ export function FacialSimulationViewer({ surface, photo, hair = DEFAULT_HAIR, ha
           </p> : null}
           <div className="flex flex-wrap gap-1">
             <button type="button" className={buttonClass} onClick={() => chooseAnatomy('skin')}>Mostrar superficie</button>
-            <button type="button" className={buttonClass} onClick={() => setParameters(current => ({
-              ...current, ...Object.fromEntries(SIMULATION_CONTROLS.filter(control => control.group === morphologyGroup).map(control => [control.key, 0])),
-              ...(morphologyGroup === 'Nariz' ? { noseSymmetry: 0 } : {}),
-            }))}>Restablecer {morphologyGroup.toLocaleLowerCase('es')}</button>
+            <button type="button" className={buttonClass} onClick={() => changeMorphology({
+              ...Object.fromEntries(SIMULATION_CONTROLS.filter(control => control.group === morphologyGroup).map(control => [control.key, 0])),
+              ...(morphologyGroup === 'Nariz' ? { noseSymmetry: 0, noseProfileAlign: 0 } : {}),
+            })}>Restablecer {morphologyGroup.toLocaleLowerCase('es')}</button>
           </div>
           {SIMULATION_GROUPS.map(group => (
             <fieldset key={group} hidden={morphologyGroup !== group} className="space-y-3 rounded-lg border border-slate-700 p-2">
@@ -1264,19 +1361,33 @@ export function FacialSimulationViewer({ surface, photo, hair = DEFAULT_HAIR, ha
                   <input id={`${id}-${control.key}`} type="range" min="-1" max="1" step="0.01" value={parameters[control.key]}
                     aria-describedby={control.hint ? `${id}-${control.key}-hint` : undefined}
                     aria-valuetext={`${Math.round(parameters[control.key] * 100)} por ciento de intensidad visual solicitada${protection.moderatedComponents ? '; protección de superficie activa, rango moderado' : ''}`}
-                    onChange={event => setParameters(current => ({ ...current, [control.key]: Number(event.target.value) }))}
+                    onChange={event => changeMorphology({ [control.key]: Number(event.target.value) })}
                     className="mt-1 block w-full accent-gold focus-visible:outline-gold" />
                     {control.hint ? <span id={`${id}-${control.key}-hint`} className="mt-1 block text-[11px] text-stone-400">{control.hint}</span> : null}
                 </label>
               ))}
               {group === 'Nariz' ? <div className="space-y-2 border-t border-slate-700 pt-2">
                 <p className="text-[11px] text-slate-400">− reduce / + aumenta · rotación + eleva la punta</p>
+                <label className="block text-xs" htmlFor={`${id}-noseProfileAlign`}>
+                  <span className="flex justify-between gap-2"><span>Dorso · alinear perfil</span><output>{Math.round(parameters.noseProfileAlign * 100)} % solicitado</output></span>
+                  <input id={`${id}-noseProfileAlign`} type="range" min="0" max="1" step="0.01" value={parameters.noseProfileAlign}
+                    aria-describedby={`${id}-noseProfileAlign-hint`}
+                    aria-valuetext={`${Math.round(parameters.noseProfileAlign * 100)} por ciento de alineación solicitada${protection.moderatedComponents ? '; protección de superficie activa, rango moderado' : ''}`}
+                    onChange={event => changeMorphology({ noseProfileAlign: Number(event.target.value) })}
+                    className="mt-1 block w-full accent-gold focus-visible:outline-gold" />
+                  <span id={`${id}-noseProfileAlign-hint`} data-profile-excess={profileExcess ?? undefined} className="mt-1 block text-[11px] text-stone-400">
+                    0 conserva · 100 % lleva a la línea glabela → suprapunta solo el relieve central que la sobresale. No rellena ni mueve ojos, labios, punta o foto.
+                    {' '}{profileExcess === null ? null : profileExcess < 0.0005
+                      ? 'Esta base no sobresale de esa línea: el control no tendrá efecto visible.'
+                      : `Relieve de la base sobre la línea: ${(profileExcess * 100).toFixed(1)} % de la altura facial (estimación visual, no medida clínica).`}
+                    {' '}Si aparece el aviso de protección, la alineación se materializa solo en parte.
+                  </span>
+                </label>
                 <label className="block text-xs">Simetría nasal · lado de origen del paciente
                   <select className={`${selectClass} mt-1 w-full`} value={symmetryDirection}
                     onChange={event => {
                       const direction = Number(event.target.value) as 1 | -1;
-                      setSymmetryDirection(direction);
-                      setParameters(current => ({ ...current, noseSymmetry: Math.abs(current.noseSymmetry) * direction }));
+                      changeMorphology({ noseSymmetry: Math.abs(parameters.noseSymmetry) * direction }, direction);
                     }}>
                     <option value="1">Derecha → izquierda del paciente</option>
                     <option value="-1">Izquierda → derecha del paciente</option>
@@ -1284,15 +1395,15 @@ export function FacialSimulationViewer({ surface, photo, hair = DEFAULT_HAIR, ha
                 </label>
                 <label className="block text-xs">Intensidad de simetría nasal · {Math.round(Math.abs(parameters.noseSymmetry) * 100)} %
                   <input type="range" min="0" max="1" step="0.01" value={Math.abs(parameters.noseSymmetry)}
-                    onChange={event => setParameters(current => ({ ...current, noseSymmetry: Number(event.target.value) * symmetryDirection }))}
+                    onChange={event => changeMorphology({ noseSymmetry: Number(event.target.value) * symmetryDirection })}
                     className="block w-full accent-gold focus-visible:outline-gold" />
                 </label>
                 <div className="flex flex-wrap gap-1">
-                  <button type="button" className={buttonClass} onClick={() => setParameters(current => ({ ...current, noseSymmetry: symmetryDirection }))}>Replicar mitad (100 %)</button>
-                  <button type="button" className={buttonClass} onClick={() => setParameters(current => ({ ...current, noseSymmetry: 0 }))}>Restaurar simetría</button>
-                  <button type="button" className={buttonClass} onClick={() => setParameters(current => ({
-                    ...current, ...Object.fromEntries(SIMULATION_CONTROLS.filter(control => control.group === 'Nariz').map(control => [control.key, 0])), noseSymmetry: 0,
-                  }))}>Restaurar nariz</button>
+                  <button type="button" className={buttonClass} onClick={() => changeMorphology({ noseSymmetry: symmetryDirection })}>Replicar mitad (100 %)</button>
+                  <button type="button" className={buttonClass} onClick={() => changeMorphology({ noseSymmetry: 0 })}>Restaurar simetría</button>
+                  <button type="button" className={buttonClass} onClick={() => changeMorphology({
+                    ...Object.fromEntries(SIMULATION_CONTROLS.filter(control => control.group === 'Nariz').map(control => [control.key, 0])), noseSymmetry: 0, noseProfileAlign: 0,
+                  })}>Restaurar nariz</button>
                 </div>
                 <p className="text-[11px] text-slate-400">Replica el hemimallado del lado elegido (alas, altura y relieve denso) sobre el otro, con transición suave en la línea media para evitar costuras. No espeja la foto ni estima un resultado clínico.</p>
               </div> : null}

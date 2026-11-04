@@ -1,5 +1,13 @@
 # Progreso de BioSkinTech App
 
+- ✅ 2026-11-04 Máscara: frontal y recuperaciones aisladas.
+- ✅ 2026-11-04 Perfil: calibración manual por zona.
+- ✅ 2026-11-04 Perfil: referencia y visor simultáneos.
+- ✅ 2026-11-04 Nariz: alineación dorsal protegida.
+- ✅ 2026-11-04 Morfología: historial y variantes locales.
+- ✅ 2026-11-04 Marcaciones: selección, lotes y resúmenes.
+- QA Lab3D: 193 pruebas focales aprobadas entre las suites ejecutadas; build y lint sin errores (seis avisos Fast Refresh). Navegador sintético 1440/390: calibración aplicada/restaurada exacta, historial, variantes, lotes y copias; alineación dorsal deja 2,3 % de relieve residual en la malla renderizada. Cero errores JavaScript.
+- Límites Lab3D: TypeScript conserva 12 errores previos fuera del laboratorio; build avisa sobre imports JSON y tamaño de chunks. No se verificaron detector real, fotos clínicas, producción ni fluidez en GPU física; la geometría y los efectos siguen siendo ilustrativos.
 - ✅ 2026-11-04 Agenda: teléfonos internacionales corregidos.
 - ✅ 2026-11-04 Agenda: contacto ausente explicado.
 - ✅ 2026-11-04 Correos: remitentes MIME UTF-8.

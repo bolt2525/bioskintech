@@ -117,6 +117,19 @@ test('barba bajo el subnasal no cambia nariz ni labios; orden bilateral es invar
   assert.deepEqual(a.positions, refineProfileDepth(positions, sources.reverse()).positions);
 });
 
+test('máscara: base nasal y filtrum conservados aunque el borde segmentado sugiera relieve', () => {
+  const { positions } = fixture();
+  const sources = [-1, 1].map(side => profile(positions, side, { delta: y => y < -0.18 ? 0.1 : 0.04 }));
+  const result = refineProfileDepth(positions, sources, { preserveSubnasal: true });
+  assert.ok(result);
+  assert.ok(result.maxDisplacement > 0);
+  for (let i = 0; i < 468; i++) {
+    if (positions[i * 3 + 1] <= positions[2 * 3 + 1]) {
+      assert.deepEqual(result.positions.slice(i * 3, i * 3 + 3), positions.slice(i * 3, i * 3 + 3));
+    }
+  }
+});
+
 test('una fila perdida por muestra no arrastra el borde ni la pendiente del dorso', () => {
   const { positions } = fixture();
   const cleanSources = [-1, 1].map(side => profile(positions, side));
@@ -165,4 +178,11 @@ test('engine permite conservar labios explícitamente durante triangulación mul
   assert.equal(result.used, 1);
   for (const id of lipIds) assert.deepEqual(result.landmarks[id], front.landmarks[id]);
   assert.ok(result.landmarks.some((p, i) => !lipIds.includes(i) && p.z !== front.landmarks[i].z), 'el resto sí aporta relieve');
+  front.landmarks[9].y = 0.3;
+  const protectedForehead = refineDepthFromProfiles(front, [side], { preserveLips: true, preserveForehead: true });
+  assert.equal(protectedForehead.used, 1);
+  for (let i = 0; i < 468; i++) {
+    if (front.landmarks[i].y <= front.landmarks[9].y) assert.deepEqual(protectedForehead.landmarks[i], front.landmarks[i]);
+  }
+  assert.ok(protectedForehead.landmarks.some((p, i) => p.z !== front.landmarks[i].z), 'conserva aporte fuera de la frente');
 });

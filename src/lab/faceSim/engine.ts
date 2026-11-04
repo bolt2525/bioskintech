@@ -271,11 +271,14 @@ function solveLinear(matrix: number[][], rhs: P2[]): P2[] | null {
 }
 
 /** Cámara afín de apoyo para texturizar cabello; no calibra profundidad métrica. */
-export function fitHairPhotoProjection(positions: ArrayLike<number>, landmarks: readonly P2[]) {
+export function fitHairPhotoProjection(positions: ArrayLike<number>, landmarks: readonly P2[], referenceIndices?: readonly number[]) {
   if (positions.length < 468 * 3 || landmarks.length < 468) return null;
+  const references = referenceIndices ?? Array.from({ length: 468 }, (_, i) => i);
+  if (references.length < 20 || new Set(references).size !== references.length
+    || references.some(id => !Number.isInteger(id) || id < 0 || id >= 468)) return null;
   const matrix = Array.from({ length: 4 }, () => new Array<number>(4).fill(0));
   const rhs = Array.from({ length: 4 }, () => ({ x: 0, y: 0 }));
-  for (let id = 0; id < 468; id++) {
+  for (const id of references) {
     const row = [positions[id * 3], positions[id * 3 + 1], positions[id * 3 + 2], 1], p = landmarks[id];
     if (!row.every(Number.isFinite) || !p || !Number.isFinite(p.x) || !Number.isFinite(p.y)) return null;
     for (let i = 0; i < 4; i++) {
@@ -290,13 +293,13 @@ export function fitHairPhotoProjection(positions: ArrayLike<number>, landmarks: 
   const length = Math.hypot(...normal);
   if (length < 1e-10) return null;
   let squaredError = 0;
-  for (let id = 0; id < 468; id++) {
+  for (const id of references) {
     const row = [positions[id * 3], positions[id * 3 + 1], positions[id * 3 + 2], 1];
     squaredError += (row.reduce((sum, p, j) => sum + p * u[j], 0) - landmarks[id].x) ** 2
       + (row.reduce((sum, p, j) => sum + p * v[j], 0) - landmarks[id].y) ** 2;
   }
   const height = Math.hypot(landmarks[10].x - landmarks[152].x, landmarks[10].y - landmarks[152].y);
-  const error = Math.sqrt(squaredError / 468) / height;
+  const error = Math.sqrt(squaredError / references.length) / height;
   return Number.isFinite(error) ? { projection: { u, v, towardCamera: normal.map(value => value / length) }, error } : null;
 }
 
@@ -632,6 +635,7 @@ export interface DepthView {
   landmarks: { x: number; y: number; z: number }[];
   aspect: number;
   pose?: number[];
+  recovered?: boolean;
 }
 
 export interface DepthDiagnostic {
@@ -700,7 +704,7 @@ function poseRotation(pose?: number[]): number[] | null {
  * Por compatibilidad, la reconstrucción general mantiene el comportamiento previo si se omite.
  */
 export function refineDepthFromProfiles(
-  front: DepthView, profiles: DepthView[], options: { preserveLips?: boolean } = {},
+  front: DepthView, profiles: DepthView[], options: { preserveLips?: boolean; preserveForehead?: boolean; preservePerioral?: boolean } = {},
 ): {
   landmarks: DepthView['landmarks']; used: number; rejected: string[];
   diagnostics: DepthDiagnostic[]; coverage: 'monocular' | 'one-sided' | 'bilateral';
@@ -716,6 +720,10 @@ export function refineDepthFromProfiles(
     rejected.push(`Vista ${index + 1}: ${reason}`);
   };
   if (!profiles.length) return unchanged();
+  if (front.recovered) {
+    profiles.forEach((_, i) => reject(i, 'La detección de origen fue recuperada: se conserva su profundidad monocular, sin fusionar perfiles.'));
+    return unchanged();
+  }
   const valid = (v: DepthView) => v.landmarks.length >= 468 && Number.isFinite(v.aspect) && v.aspect > 0
     && v.landmarks.every(p => [p.x, p.y, p.z, p.x * v.aspect, p.z * v.aspect].every(Number.isFinite));
   const rf = poseRotation(front.pose);
@@ -743,6 +751,7 @@ export function refineDepthFromProfiles(
   profiles.forEach((profile, index) => {
     const discard = (reason: string) => reject(index, reason);
     if (index >= 4) { discard('Se admiten hasta cuatro vistas adicionales.'); return; }
+    if (profile.recovered) { discard('Detección recuperada: referencia visual únicamente; calibra el perfil manualmente o carga otra toma.'); return; }
     const rp = poseRotation(profile.pose);
     if (!valid(profile) || !rp) { discard('Landmarks no finitos/incompletos o pose inválidos.'); return; }
     const r = [0, 1, 2].flatMap(row => [0, 1, 2].map(col =>
@@ -867,6 +876,7 @@ export function refineDepthFromProfiles(
   // Un punto local discordante se atenúa aunque el conjunto de la vista sea útil.
   const corrections = front.landmarks.map((_, i) => {
     if (i >= 468 || (options.preserveLips && DEPTH_LIPS.has(i))) return 0;
+    if (options.preserveForehead && front.landmarks[i].y <= front.landmarks[9].y) return 0;
     const reliable = accepted.filter(c => c.weights[i] > 0.001);
     if (!reliable.length) return 0;
     const center = depthMedian(reliable.map(c => c.depths[i]));
@@ -876,7 +886,16 @@ export function refineDepthFromProfiles(
       evidence += w;
       correction += w * (c.depths[i] - prior[i]);
     });
-    return correction / (0.025 + evidence);
+    const distance = Math.min(1, Math.max(0, (front.landmarks[i].y - front.landmarks[9].y) / (faceHeight * 0.06)));
+    const foreheadWeight = options.preserveForehead ? distance * distance * (3 - 2 * distance) : 1;
+    const point = front.landmarks[i];
+    const perioralDistance = Math.max(0,
+      Math.abs((point.x - front.landmarks[2].x) * front.aspect) - faceHeight * 0.15,
+      front.landmarks[2].y - faceHeight * 0.015 - point.y,
+      point.y - front.landmarks[17].y - faceHeight * 0.035);
+    const perioral = Math.min(1, perioralDistance / (faceHeight * 0.04));
+    const perioralWeight = options.preservePerioral ? perioral * perioral * (3 - 2 * perioral) : 1;
+    return correction / (0.025 + evidence) * foreheadWeight * perioralWeight;
   });
   // Barba: en perfil MediaPipe sigue el contorno del vello y adelanta mentón/perioral dejando la boca hundida.
   // Bajo el subnasal, nada que no sea labio avanza más que los labios (+1.5 % de la altura facial).

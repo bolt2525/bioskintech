@@ -11,6 +11,7 @@ import {
   type AffineRegistration, type DepthDiagnostic, type PersonalSurface, type PersonalProjection, type CorrectedPoint, type Elem, type ElemKind, type FaceFrame, type Meta, type P2, type PhotoEl, type SimMode, type Vec3, type ViewKind,
 } from './engine';
 import { moveFaceLandmark, refinePhotoContour, extendVisibleForehead, proposeForeheadBoundary, foreheadRatio, foreheadPointFromRatio } from './faceContour';
+import { calibrateProfileDepth, PROFILE_CALIBRATION, type ProfileCalibration } from './profileCalibration';
 import { buildFaceRegionMap, buildFaceTriangleRegions, faceRegionColor, rasterizeFaceRegions, facialZoneAt, isOnObservedFace, faceAttentionColor, FACE_REGION_EDUCATION, FACE_REGION_SEEDS, type FaceRegionMap } from './faceRegions';
 import { buildRegionCells, regionCellAt, regionCellPositions, regionPlanePositions, REGION_PLANES, type RegionPlane } from './regionMesh';
 import { DEFAULT_HAIR, buildPhotoHairPatches, type EstimatedHairSettings, type PhotoHairPatch } from './estimatedHair';
@@ -31,7 +32,8 @@ import { annotationPhotoLayer, annotationUVs, bindingsOnLayer, buildAnnotationLa
 import { loadDefaultLayers, registerLayers, ANATOMY_PLANES } from './defaultLayers';
 import { AnatomyLayerControls, chooseAnatomyDisplay, depthPeelDisplay, initialAnatomyDisplay } from './anatomyDisplay';
 import { initialQuickRecordSettings, type QuickRecordSettings } from './quickRecord';
-import { EXTENDED_ZONE, KIND_LABELS, formatVolume, ledgerRows, patternTips, volumeTotals } from './markingModel';
+import { EXTENDED_ZONE, KIND_LABELS, editMarkingBatch, formatVolume, ledgerRows, patternTips, volumeTotals, type MarkingBulkChange } from './markingModel';
+import { prepareMarkingCopy, type MarkingCopyIntent, type MarkingCopyOperation } from './markingOperations';
 import { CheckChip, CutControls, EditorTabs, EffectMixer, IconToggle, ModeCards, PatternSetupDialog, NO_CUT, PanelSection, PointLedger, SelectionInspector, ToolDock, VolumeDialog, VolumeHud, ZoneChip, ZoneView, createZoneStore, editorPanel, hudChip, isDepthCut, type MarkingCut, type ZoneStore } from './MarkingPanels';
 import { DEFAULT_PREVIEW, GENERIC_EFFECT_CHART, PREVIEW_DESCRIPTIONS, buildIllustrativeEffects, previewCoverage, previewPixels, previewSurface, type ManualEffectArea, type PreviewSettings } from './injectablePreview';
 import EffectAreaEditor from './EffectAreaEditor';
@@ -180,7 +182,7 @@ function createRenderer(canvas: HTMLCanvasElement, img: HTMLCanvasElement): Rend
 /** Detecta landmarks con MediaPipe si el modelo local existe (npm run lab:face-assets). */
 async function detectFrame(img: HTMLCanvasElement): Promise<{
   frame: FaceFrame | null; landmarks?: Landmark[]; detectedLandmarks?: Landmark[]; contourAdjusted?: number;
-  regionMap?: FaceRegionMap; pose?: number[]; reason: string; captureWarnings?: string[];
+  regionMap?: FaceRegionMap; pose?: number[]; reason: string; captureWarnings?: string[]; detectionRecovered?: boolean;
 }> {
   let landmarker: import('@mediapipe/tasks-vision').FaceLandmarker | null = null;
   let relaxed = false;
@@ -220,6 +222,7 @@ async function detectFrame(img: HTMLCanvasElement): Promise<{
       frame: frameFromLandmarks(contour.landmarks), landmarks: contour.landmarks, detectedLandmarks,
       contourAdjusted: contour.adjusted, regionMap: buildFaceRegionMap(contour.landmarks, triangles, img.width / img.height, genericFaceAtlas.positions),
       pose: rotated ? undefined : result.facialTransformationMatrixes[0]?.data, reason: '',
+      detectionRecovered: retried,
       captureWarnings: [...quality.warnings, ...(retried ? ['Detección recuperada: revisa contorno y referencias antes de fusionar. Los puntos ocultos de un perfil son estimaciones.'] : [])],
     };
   } catch (error) {
@@ -328,6 +331,7 @@ interface Slot {
   regionMap?: FaceRegionMap;
   pose?: number[];
   detectionError?: string;
+  detectionRecovered?: boolean;
   captureWarnings?: string[];
   captureConfirmed?: boolean;
   foreheadReviewed?: boolean;
@@ -464,6 +468,8 @@ export default function FaceSimLab() {
   const [boundaryReview, setBoundaryReview] = useState<PhotoSlotId[]>([]);
   // Altura de frente confirmada (normalizada glabela→mentón); la frontal tiene prioridad.
   const [foreheadReference, setForeheadReference] = useState<{ ratio: number; slot: PhotoSlotId } | null>(null);
+  const [profileCalibration, setProfileCalibration] = useState<{ canvas: HTMLCanvasElement; values: ProfileCalibration } | null>(null);
+  const [calibrationVisible, setCalibrationVisible] = useState(false);
   const hoverStoreRef = useRef<ZoneStore | null>(null);
   if (!hoverStoreRef.current) hoverStoreRef.current = createZoneStore();
   const hoverStore = hoverStoreRef.current;
@@ -536,7 +542,7 @@ export default function FaceSimLab() {
   const reviewId = boundaryReview.find(id => photos[id]?.landmarks);
   const reviewSlot = reviewId ? photos[reviewId] : undefined;
   const reviewReference = useMemo(() => {
-    if (!reviewSlot?.landmarks || !foreheadReference || foreheadReference.slot === reviewId) return null;
+    if (!reviewSlot?.landmarks || reviewSlot.detectionRecovered || !foreheadReference || foreheadReference.slot === reviewId) return null;
     return foreheadPointFromRatio(reviewSlot.detectedLandmarks ?? reviewSlot.landmarks, foreheadReference.ratio, reviewSlot.aspect);
   }, [reviewSlot, reviewId, foreheadReference]);
   const rememberForehead = (target: PhotoSlotId, source: Slot, point: P2) => {
@@ -837,7 +843,7 @@ export default function FaceSimLab() {
   const incompatiblePhotos = photoChecks.blocking;
   const captureBlocked = unreviewedPhotos.length > 0 || incompatiblePhotos.length > 0;
   const hasPendingPhotos = batchBusy || Object.values(pendingPhotos).some(Boolean);
-  const captureSource = photos.frontal?.landmarks ? 'frontal' : photos[view]?.landmarks ? view : VIEWS.find(v => photos[v.id]?.landmarks)?.id;
+  const captureSource = photos.frontal?.landmarks ? 'frontal' : undefined;
   const curMeta = (): Meta => ({ mode, dose, zone, product: product.trim() || undefined });
 
   const photoBindings = useMemo(() => slot?.landmarks ? Object.fromEntries(Object.entries(bindings).filter(([, binding]) =>
@@ -1008,7 +1014,7 @@ export default function FaceSimLab() {
     void buildPersonal();
   };
   const buildPersonal = async (nextDepth = depth, sourceView = view, closeHead = personal?.closedHead ?? false) => {
-    if (closeHead) sourceView = 'frontal';
+    sourceView = 'frontal';
     if (hasPendingPhotos) {
       setStatus('Espera a que termine la detección de las fotos antes de calcular la superficie.');
       return;
@@ -1019,7 +1025,12 @@ export default function FaceSimLab() {
     }
     const source = photos[sourceView];
     if (!source?.landmarks) {
-      setStatus('Para la superficie personal carga una foto con el rostro detectado (landmarks MediaPipe).');
+      setStatus('Carga una foto frontal revisada para generar la máscara. Un perfil recuperado puede servir de referencia, no sustituye la base frontal.');
+      return;
+    }
+    const sourcePose = classifyFacePose({ landmarks: source.detectedLandmarks ?? source.landmarks, aspect: source.aspect, pose: source.pose });
+    if (sourcePose.view === 'izquierda' || sourcePose.view === 'derecha') {
+      setStatus('La captura asignada a Frontal muestra un giro lateral. Carga una toma frontal para la base y conserva este perfil como referencia; no se generó una máscara deformada desde el lateral.');
       return;
     }
     const requestId = ++personalRequestRef.current;
@@ -1029,9 +1040,13 @@ export default function FaceSimLab() {
     try {
       const profiles = PHOTO_SLOTS.filter(v => v.id !== sourceView).flatMap(v => {
         const photo = photos[v.id];
-        return photo?.landmarks ? [{ label: v.label, landmarks: photo.landmarks, aspect: photo.aspect, pose: photo.pose }] : [];
+        return photo?.landmarks ? [{ label: v.label, landmarks: photo.detectedLandmarks ?? photo.landmarks, aspect: photo.aspect, pose: photo.pose,
+          recovered: photo.detectionRecovered }] : [];
       });
-      const refined = refineDepthFromProfiles({ landmarks: source.landmarks, aspect: source.aspect, pose: source.pose }, profiles, { preserveLips: !closeHead });
+      const refined = refineDepthFromProfiles({
+        landmarks: source.detectedLandmarks ?? source.landmarks, aspect: source.aspect, pose: source.pose, recovered: source.detectionRecovered,
+      }, profiles, { preserveLips: !closeHead, preserveForehead: true, preservePerioral: !closeHead });
+      const surfaceLandmarks = source.landmarks.map((point, index) => ({ ...point, z: refined.landmarks[index].z }));
       const diagnostics = refined.diagnostics.map(d => ({ ...d, label: profiles[d.index].label }));
       if (closeHead && (refined.used < 2 || refined.coverage !== 'bilateral')) {
         throw new Error('La cabeza estimada requiere al menos tres fotos útiles que cubran ambos lados. Revisa «Concordancia por foto».');
@@ -1039,12 +1054,13 @@ export default function FaceSimLab() {
       const depthDetails = [
         refined.used ? `Cálculo con ${refined.used + 1} fotos útiles. ${refined.coverage === 'bilateral'
           ? 'Ambos lados aportan profundidad.' : 'La profundidad está contrastada principalmente desde un lado; añade una vista del lado opuesto.'}`
-          : 'Cálculo rápido con una foto: profundidad monocular sin contrastar. Añade otra foto con un ángulo diferente para contrastar nariz y labios.',
+          : 'Base frontal conservada: profundidad monocular sin contrastar. Los perfiles recuperados no se fusionan; calibra manualmente las zonas dudosas.',
         diagnostics.some(d => d.status !== 'used') ? 'Hay referencias de aporte limitado o no utilizables; revisa el detalle por foto.' : '',
+        !closeHead ? 'Frente y región subnasal/perioral conservan el prior frontal; el vello y las sombras no acreditan profundidad de piel.' : '',
         closeHead ? 'Cabeza de plantilla anatómica (cráneo y orejas) deformada a los puntos faciales y ajustada a las siluetas de las tres vistas; cuello acotado. Aproximación, no escaneo.' : '',
       ].join(' ');
       const triangles = await faceTriangles();
-      const baseSurface = buildPersonalSurface(refined.landmarks, source.aspect, triangles, nextDepth);
+      const baseSurface = buildPersonalSurface(surfaceLandmarks, source.aspect, triangles, nextDepth);
       if (!baseSurface) throw new Error('Landmarks insuficientes para construir la malla.');
       let observedSurface = baseSurface, profileDetails = '';
       let photoPatches: PhotoSurfacePatch[] | undefined;
@@ -1052,7 +1068,10 @@ export default function FaceSimLab() {
       const inputs = [...PHOTO_SLOTS].sort((a, b) => Number(b.id === sourceView) - Number(a.id === sourceView)).flatMap(entry => {
         const photo = photos[entry.id];
         if (!photo?.landmarks || (entry.id !== sourceView && !diagnostics.some(d => d.label === entry.label && d.status !== 'rejected' && d.weight > 0))) return [];
-        const fit = fitHairPhotoProjection(baseSurface.positions, photo.landmarks);
+        const fitLandmarks = entry.id === sourceView ? photo.landmarks : photo.detectedLandmarks ?? photo.landmarks;
+        const cameraReferences = Array.from({ length: 468 }, (_, i) => i)
+          .filter(i => (source.detectedLandmarks ?? source.landmarks!)[i].y >= (source.detectedLandmarks ?? source.landmarks!)[9].y);
+        const fit = fitHairPhotoProjection(baseSurface.positions, fitLandmarks, cameraReferences);
         if (!fit || fit.error > 0.08) {
           if (closeHead) throw new Error(`La cámara de ${entry.label} no concuerda con la superficie facial.`);
           skippedCameras.push(entry.label);
@@ -1070,13 +1089,19 @@ export default function FaceSimLab() {
         }
         if (requestId !== personalRequestRef.current) return;
         // El ajuste por silueta nasal modifica Z sin arrastrar XY frontal ni los labios.
-        const profile = refineProfileDepth(baseSurface.positions, sources);
+        const profile = refineProfileDepth(baseSurface.positions, sources, { preserveSubnasal: !closeHead });
         if (profile) {
           observedSurface = { ...baseSurface, positions: profile.positions };
-          profileDetails = ` Perfil nasal: ${profile.points} referencias contrastadas con la silueta lateral, sin modificar XY frontal ni labios.`;
+          profileDetails = ` Perfil nasal: ${profile.points} referencias contrastadas con la silueta lateral; base nasal, filtrum, XY frontal y labios protegidos.`;
         } else if (!profileDetails) profileDetails = ' No se aplicó silueta nasal: no hubo un perfil suficientemente lateral y estable.';
       }
       if (skippedCameras.length) profileDetails += ` Sin textura de ${skippedCameras.join(', ')} por registro de cámara insuficiente.`;
+      const calibration = profileCalibration?.canvas === source.canvas ? profileCalibration.values : {};
+      if (Object.values(calibration).some(value => value)) {
+        const calibrated = calibrateProfileDepth(observedSurface.positions, observedSurface.indices, calibration);
+        observedSurface = { ...observedSurface, positions: calibrated.positions };
+        profileDetails += ` Calibración manual local aplicada desde la base original${calibrated.gain < 0.999 ? `; moderada al ${Math.round(calibrated.gain * 100)} % para conservar orientación` : ''}. No es profundidad medida.`;
+      }
       let surface: PersonalSurface | EstimatedHeadSurface = observedSurface;
       if (closeHead) {
         const [{ sampleScalpColor, sampleColorAt }, { buildTemplateHead }] = await Promise.all([
@@ -1097,7 +1122,7 @@ export default function FaceSimLab() {
       }
       const openingDetails = 'preservedOpenings' in surface && Number(surface.preservedOpenings) > 0
         ? ` ${surface.preservedOpenings} abertura(s) de labios/párpados cerrados conservadas sin tapa artificial; el contorno craneal sí se completa.` : '';
-      const regions = buildFaceRegionMap(refined.landmarks, triangles, source.aspect, genericFaceAtlas.positions);
+      const regions = buildFaceRegionMap(surfaceLandmarks, triangles, source.aspect, genericFaceAtlas.positions);
       const { personalSurfaceToGlb } = await import('./personalSurfaceGlb');
       const glb = await personalSurfaceToGlb(surface, source.canvas, undefined, [], photoPatches);
       if (requestId !== personalRequestRef.current) return;
@@ -1203,7 +1228,7 @@ export default function FaceSimLab() {
         [target]: {
           ...p[target]!, frame: frameFromLandmarks(landmarks), landmarks, detectedLandmarks: detected.detectedLandmarks,
           contourAdjusted: detected.contourAdjusted, regionMap: automaticContour ? buildFaceRegionMap(landmarks, triangles, c.width / c.height, genericFaceAtlas.positions) : detected.regionMap, pose: detected.pose, modelAnchors: undefined,
-          captureWarnings: detected.captureWarnings, captureConfirmed: false,
+          captureWarnings: detected.captureWarnings, detectionRecovered: detected.detectionRecovered, captureConfirmed: false,
           foreheadReviewed: automaticContour,
           previewUrl,
           ...(accepted ? { registration: auto, registrationFlip: flipX, registrationSource: 'auto' as const } : { registration: undefined }),
@@ -1381,16 +1406,36 @@ export default function FaceSimLab() {
     setStatus('Punto en zona extendida: solo existe en el modelo 3D completo y se exporta igual.');
   };
   const isOutsideMask = (p: Vec3) => !locateSkinAnnotation('generico', p);
-  const mirrorSelected = () => {
-    if (!selectedId || !bindings[selectedId] || !meta[selectedId]) return;
-    const source = workMode === 'foto' ? 'foto' : modelKind;
-    const mirrored = mirrorAnnotation(bindings[selectedId], genericFaceAtlas, address => acceptsAddress(source, address));
-    if (!mirrored) { blockedMark(); return; }
-    // updating=true impide que el modo bilateral cree un tercer elemento. Una punta espejada es un punto propio.
-    const { parent: _parent, tip: _tip, ...source0 } = meta[selectedId];
-    void _parent; void _tip;
-    const tipDoses = Object.values(meta).filter(m => m.parent === selectedId).sort((a, b) => (a.tip ?? 0) - (b.tip ?? 0)).map(m => m.dose);
-    if (commitBinding(uid(), mirrored, source, true, source0, tipDoses)) setStatus('Espejo creado; original y registro conservados. Deshacer revierte toda la acción.');
+  const copyMarkings = (ids: string[], operation: MarkingCopyOperation, intent: MarkingCopyIntent): string | null => {
+    try {
+      if (preview.after) throw new Error('Vuelve a editar antes de copiar marcaciones.');
+      const source = workMode === 'foto' ? 'foto' : modelKind;
+      const copied = prepareMarkingCopy({ ids, operation, intent, meta, bindings, markers, lines, atlas: genericFaceAtlas,
+        plane: anatomyDisplay.anatomy, accepts: address => acceptsAddress(source, address), newId: uid });
+      snap();
+      setMarkers(current => [...current, ...copied.markers]);
+      setLines(current => [...current, ...copied.lines]);
+      setBindings(current => ({ ...current, ...copied.bindings }));
+      setMeta(current => ({ ...current, ...copied.meta }));
+      setSelectedId(copied.firstId);
+      setStatus(`${operation === 'mirror' ? 'Reflejo' : 'Duplicación'} confirmado: ${Object.keys(copied.meta).length} marcas; ${copied.excluded} extendidas excluidas. Cantidades e intención registradas. Deshacer revierte toda la operación.`);
+      return null;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'No se pudieron copiar las marcaciones.';
+      setStatus(message); return message;
+    }
+  };
+  const editMarkingsBatch = (ids: string[], change: MarkingBulkChange): string | null => {
+    try {
+      if (preview.after) throw new Error('Vuelve a editar antes de aplicar cambios en lote.');
+      const next = editMarkingBatch(meta, ledgerRows(meta, bindings, markers.flatMap(m => m.id && !bindings[m.id] ? [m.id] : [])), ids, change);
+      snap(); setMeta(next);
+      setStatus('Lote actualizado en una sola operación. Los gráficos y las entradas no reciben dosis ni plano.');
+      return null;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'No se pudo editar el lote.';
+      setStatus(message); return message;
+    }
   };
   const transformSelected = (change: { scale?: number; degrees?: number }) => {
     if (!selectedId || !bindings[selectedId]) return;
@@ -2070,6 +2115,7 @@ export default function FaceSimLab() {
         <nav aria-label="Espacios del laboratorio" className="flex flex-wrap gap-2">
           {([['capture', 'Capturas'], ['simulate', 'Simular y marcar']] as const).map(([id, label]) =>
             <button type="button" key={id} aria-pressed={workspace === id} onClick={() => {
+              if (id !== workspace) setCalibrationVisible(false);
               setWorkspace(id); setDraft(null); dragRef.current = null;
               setCalibrating(false); setPhotoAnchor(null); setContourIndex(null); setPickingForehead(false);
               if (id === 'simulate') setMeshVisible(false);
@@ -2276,6 +2322,33 @@ export default function FaceSimLab() {
             {buildingPersonal ? 'Calculando…' : `Calcular superficie con ${readyPhotos.length} foto(s)`}
           </button>
         </div>
+        {photos.frontal?.landmarks && <details className="space-y-2 rounded-xl border border-sky-200 bg-sky-50 p-3 text-xs" aria-label="Calibración manual de profundidad"
+          onToggle={event => setCalibrationVisible(event.currentTarget.open)}>
+          <summary className="admin-focus-ring cursor-pointer font-semibold text-sky-900">Calibrar perfil base · nariz, filtrum y labios</summary>
+          <p>Compara con la foto lateral desde «Ver». Ajusta la profundidad del prior antes de simular: − retrae / + proyecta. Son porcentajes visuales del alto facial, no milímetros ni una medición de piel bajo la barba.</p>
+          <p>Los controles se combinan suavemente. Los cambios se aplican al pulsar «Aplicar calibración»; no cambian dosis ni coordenadas frontales.</p>
+          {PROFILE_CALIBRATION.map(control => {
+            const value = profileCalibration && profileCalibration.canvas === photos.frontal?.canvas ? profileCalibration.values[control.id] ?? 0 : 0;
+            return <label key={control.id} className="block text-sky-950">{control.label} · {Math.round(value * 1000) / 10} %
+              <input aria-label={`Calibración base ${control.label}`} type="range" min={-0.08} max={0.08} step={0.0025}
+                value={value} disabled={buildingPersonal || hasPendingPhotos}
+                onChange={event => {
+                  const value = Number(event.currentTarget.value), canvas = photos.frontal!.canvas;
+                  setProfileCalibration(current => ({ canvas, values: { ...(current?.canvas === canvas ? current.values : {}), [control.id]: value } }));
+                  setStatus('Calibración base pendiente: pulsa «Aplicar calibración» para recalcular desde el original. No se ha modificado el registro.');
+                }} className="admin-focus-ring block w-full accent-sky-700" />
+            </label>;
+          })}
+          <div className="grid gap-2">
+            <button type="button" disabled={buildingPersonal || hasPendingPhotos || captureBlocked} onClick={() => void buildPersonal(depth, 'frontal', false)}
+              className="admin-focus-ring rounded-lg bg-sky-900 px-2 py-2 font-semibold text-white disabled:opacity-40">Aplicar calibración</button>
+            <button type="button" disabled={buildingPersonal || hasPendingPhotos} onClick={() => {
+              setProfileCalibration({ canvas: photos.frontal!.canvas, values: {} });
+              setStatus('Ajustes de calibración a cero. Pulsa «Aplicar calibración» para recuperar la base sin ajustes manuales.');
+            }} className="admin-focus-ring rounded-lg border border-sky-300 px-2 py-2">Poner calibración a cero</button>
+          </div>
+          <p className="text-amber-900">La simulación hereda esta base al recalcular. Antes compara contra la base calibrada, no contra una profundidad real certificada. Cambiar la frontal descarta sus ajustes.</p>
+        </details>}
         {slot?.landmarks && <button type="button" onClick={() => setBoundaryReview(queue => [view, ...queue.filter(id => id !== view)])}
           className="admin-focus-ring w-full rounded-xl border border-sky-200 bg-sky-50 px-3 py-2 text-sm font-semibold">Revisar frente, sienes y mentón</button>}
         {slot?.landmarks && <details className="space-y-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs">
@@ -2444,7 +2517,8 @@ export default function FaceSimLab() {
               className="rounded-lg border border-slate-300 px-2 py-1.5 aria-pressed:border-sky-600 aria-pressed:bg-sky-100 aria-pressed:font-semibold disabled:opacity-40">Cabeza estimada · 3+ fotos</button>
           </details>
           <p role="status" className="font-semibold text-sky-800">{modelKind === 'generico' ? 'Vista activa: cabeza genérica' : personal ? personal.closedHead ? 'Vista activa: cabeza estimada' : 'Vista activa: superficie facial abierta' : 'Sin superficie personal calculada'}</p>
-          <p className="text-slate-500">Frontal + ambos laterales: máscara aproximada, perfil nasal y textura lateral de la piel. No reconstruye cabello ni una cabeza completa.</p>
+          <p className="text-slate-500">La frontal define siempre la máscara. Solo perfiles con detección directa y pose concordante aportan profundidad y textura; una detección recuperada queda como referencia visual. No reconstruye cabello ni una cabeza completa.</p>
+          {!photos.frontal?.landmarks && <p role="status" className="text-amber-800">Falta una frontal detectada y revisada. Un lateral no puede sustituir la base de la máscara.</p>}
           {personal?.closedHead ? <>
           <label className="flex items-center gap-2"><input type="checkbox" checked={hair.enabled} onChange={e => setHair(current => ({ ...current, enabled: e.target.checked }))} />Relieve adicional del cabello · misma superficie</label>
           {hair.enabled && <div className="space-y-2">
@@ -2693,7 +2767,8 @@ export default function FaceSimLab() {
             onSelect={(nextMode, nextProduct) => { setMode(nextMode); setProduct(nextProduct); setDose(0); setStatus(`${nextProduct || SIM_MODES[nextMode].label} activo para nuevas marcas. El registro anterior no cambia.`); }} />
             : <span className={`${hudChip} text-stone-400`}><Gauge className="h-3.5 w-3.5" aria-hidden="true" />0 {SIM_MODES[mode].unit}</span>}
         </div>}
-      <div className={`grid min-w-0 content-start gap-4 ${workspace === 'simulate' && workMode === '3d' && splitAnnotations ? 'lg:grid-cols-2' : ''}`}>
+      <div className={`grid min-w-0 content-start gap-4 ${(workspace === 'simulate' && workMode === '3d' && splitAnnotations)
+        || (workspace === 'capture' && calibrationVisible && personal) ? 'lg:grid-cols-2' : ''}`}>
         {workspace === 'simulate' && editorGroup === 'annotations' && markTab === 'revisar' && comparison !== 'actual' && <CaptureComparison mode={comparison} split={split}
           before={workMode === '3d' ? renderViewer(modelKind, 'before') : slot ? <ComparisonPhoto source={slot.canvas} prepared={preparedPhoto} after={false} /> : <p role="status">Carga una foto en Capturas.</p>}
           after={workMode === '3d' ? renderViewer(modelKind, 'after') : slot ? <ComparisonPhoto source={slot.canvas} prepared={preparedPhoto} after /> : <p role="status">Carga una foto en Capturas.</p>} />}
@@ -2701,6 +2776,12 @@ export default function FaceSimLab() {
           ? <>{renderViewer('generico')}{renderViewer('personal')}</>
           : renderViewer(modelKind))}
         {workspace === 'capture' && calibrating && renderViewer('generico')}
+        {workspace === 'capture' && calibrationVisible && personal && !calibrating && <section aria-label="Perfil base calibrado en 3D" className="min-w-0 overflow-hidden rounded-2xl bg-slate-950 text-slate-100">
+          <h2 className="px-3 py-2 text-sm font-semibold">Base calibrada · solo inspección</h2>
+          <Clinical3DViewer markers={[]} selectedPathology="filler" readOnly modelData={personal.glb} cameraPreset="face-surface"
+            height={VIEWER_HEIGHT} interactionHint="Gira para comparar con la foto lateral · sin marcaciones" />
+          <p className="px-3 py-2 text-xs text-slate-300">Vista de la base aplicada, sin efectos, capas ni registros. Gira y desplaza para contrastar el perfil con la referencia.</p>
+        </section>}
         <section className={`min-w-0 overflow-hidden rounded-2xl border border-slate-200 bg-slate-900 p-3 ${workspace === 'simulate' && (workMode !== 'foto' || markTab === 'revisar' && comparison !== 'actual') ? 'hidden' : ''}`}>
           <h2 className="mb-2 text-center text-sm font-semibold text-slate-200">Foto referencial {VIEWS.find(v => v.id === view)?.label.toLowerCase()} · registro compartido</h2>
           {overlayMode === 'attention' && <p className="mb-2 rounded bg-amber-100 px-3 py-2 text-xs font-semibold text-amber-950">SIMULACIÓN · No detecta vasos ni certifica zonas seguras.</p>}
@@ -2794,7 +2875,7 @@ export default function FaceSimLab() {
       </div>
       </div>
       {workspace === 'simulate' && editorGroup === 'annotations' && <div className="flex min-w-0 flex-col lg:col-span-2 xl:sticky xl:top-4 xl:col-span-1 xl:h-[calc(100dvh-7rem)] xl:self-start">
-        <PointLedger rows={rows} selectedId={selectedId}
+        <PointLedger rows={rows} selectedId={selectedId} onCopy={copyMarkings} onBatch={editMarkingsBatch} readOnly={preview.after}
           onSelect={row => {
             setSelectedId(row.id); beginEditing();
             const binding = bindings[row.id];
@@ -2806,14 +2887,9 @@ export default function FaceSimLab() {
           }}
           onHover={row => setHoveredZone(row ? `${row.zone} · ${row.side}` : null)}
           onDose={editDose} onDelete={id => { snap(); removeEl(id); }}
-          onPlane={(ids, plane) => {
-            const targets = ids.filter(id => meta[id] && !meta[id].graphicOnly && !meta[id].entry);
-            if (!targets.length) { setStatus('Selecciona puntos de registro antes de aplicar un plano.'); return; }
-            snap(); setMeta(m => ({ ...m, ...Object.fromEntries(targets.map(id => [id, { ...m[id], plane: plane || undefined }])) }));
-            setStatus(`Plano ${plane || 'sin registrar'} aplicado a ${targets.length} punto(s).`);
-          }}
+          onPlane={(ids, plane) => { editMarkingsBatch(ids, { plane }); }}
           header={selectedRow && meta[selectedRow.id] && <SelectionInspector row={selectedRow} onDose={editDose}
-            onDelete={id => { snap(); removeEl(id); setSelectedId(null); }} onMirror={mirrorSelected} mirrorDisabled={preview.after || !bindings[selectedRow.id]}
+            onDelete={id => { snap(); removeEl(id); setSelectedId(null); }} onCopy={copyMarkings} copyRows={rows} mirrorDisabled={preview.after}
             onTransform={bindings[selectedRow.id] && !preview.after ? transformSelected : undefined}
             tipDose={(() => { const tips = rows.filter(row => row.parent === selectedRow.id); return tips.length && tips.every(row => row.dose === tips[0].dose) ? tips[0].dose : null; })()}
             strokeColor={meta[selectedRow.id].strokeColor ?? SIM_MODES[selectedRow.mode].color}

@@ -10,6 +10,8 @@ export interface SimulationParameters {
   noseWidth: number;
   /** 0 neutro; + derecha→izquierda del paciente; − izquierda→derecha. Solo geometría. */
   noseSymmetry: number;
+  /** 0..1: lleva hacia la línea glabela(9)→suprapunta(5) solo el relieve que la supera. */
+  noseProfileAlign: number;
   chinProjection: number;
   chinHeight: number;
   chinWidth: number;
@@ -26,7 +28,7 @@ export interface SimulationParameters {
 }
 
 export const NEUTRAL_SIMULATION: Readonly<SimulationParameters> = Object.freeze({
-  noseRadix: 0, noseBridge: 0, noseTip: 0, noseRotation: 0, noseWidth: 0, noseSymmetry: 0,
+  noseRadix: 0, noseBridge: 0, noseTip: 0, noseRotation: 0, noseWidth: 0, noseSymmetry: 0, noseProfileAlign: 0,
   chinProjection: 0, chinHeight: 0, chinWidth: 0, jawWidth: 0,
   noseHump: 0, noseTipWidth: 0, lipUpper: 0, lipLower: 0, lipProjection: 0, lipCorners: 0,
   cheekbone: 0, cheekVolume: 0, buccal: 0,
@@ -37,8 +39,8 @@ export const SIMULATION_GROUPS: ReadonlyArray<SimulationGroup> = ['Nariz', 'Labi
 export const SIMULATION_CONTROLS: ReadonlyArray<{
   key: keyof SimulationParameters; label: string; group: SimulationGroup; hint?: string;
 }> = [
-  { key: 'noseRadix', label: 'Raíz · relieve', group: 'Nariz', hint: '− retrae / + adelanta la raíz entre los ojos, sin moverlos.' },
-  { key: 'noseBridge', label: 'Dorso · proyección', group: 'Nariz', hint: '− retrae / + adelanta el dorso y acompaña la raíz; transición suave hacia la punta.' },
+  { key: 'noseRadix', label: 'Raíz · relieve', group: 'Nariz', hint: '− rebaja / + realza la raíz y el inicio del dorso, con transición continua entre los ojos, sin moverlos.' },
+  { key: 'noseBridge', label: 'Dorso · proyección', group: 'Nariz', hint: '− retrae / + adelanta el dorso, incluido su inicio superior; se desvanece hacia raíz y punta.' },
   { key: 'noseHump', label: 'Dorso · giba (− rebaja)', group: 'Nariz', hint: '− rebaja / + realza solo la giba central; no hunde ni proyecta toda la nariz.' },
   { key: 'noseTip', label: 'Punta · proyección', group: 'Nariz', hint: '− acerca / + aleja la punta del rostro, sin elevarla.' },
   { key: 'noseRotation', label: 'Punta · rotación', group: 'Nariz', hint: '− baja / + eleva la punta alrededor de un pivote posterior; no es proyección.' },
@@ -118,7 +120,30 @@ export function sanitizeSimulation(input: Partial<SimulationParameters>): Simula
   for (const { key } of SIMULATION_CONTROLS) out[key] = clamp(input[key] ?? 0, -1, 1);
   // Control direccional aparte: no es un campo de aumento/reducción como los anteriores.
   out.noseSymmetry = clamp(input.noseSymmetry ?? 0, -1, 1);
+  // Unidireccional: solo rebaja lo que sobresale; no rellena un perfil cóncavo.
+  out.noseProfileAlign = clamp(input.noseProfileAlign ?? 0, 0, 1);
   return out;
+}
+
+/** Referencia rectilínea del perfil central 9→5, en el frame canónico de las anclas. */
+function nasalProfileLine(anchors: ArrayLike<number>) {
+  const h = Math.hypot(anchors[30] - anchors[456], anchors[31] - anchors[457], anchors[32] - anchors[458]);
+  const top = point(anchors, 9), bottom = point(anchors, 5);
+  const axis = (anchors[30] + anchors[456] + anchors[3]) / 3;
+  const span = Math.max(top.y - bottom.y, h * 0.02);
+  return { h, axis, top, bottom, span,
+    chord: (y: number) => bottom.z + (top.z - bottom.z) * (y - bottom.y) / span };
+}
+
+/** Máximo relieve central sobre la línea 9→5, en fracción de altura facial (0 si no sobresale). */
+export function nasalProfileExcess(positions: ArrayLike<number>, anchors: ArrayLike<number>): number {
+  const { h, axis, top, bottom, chord } = nasalProfileLine(anchors);
+  let excess = 0;
+  for (let i = 0; i < positions.length / 3; i++) {
+    const x = positions[i * 3], y = positions[i * 3 + 1], z = positions[i * 3 + 2];
+    if (Math.abs(x - axis) < h * 0.012 && y > bottom.y && y < top.y) excess = Math.max(excess, z - chord(y));
+  }
+  return excess / h;
 }
 
 /**
@@ -433,8 +458,13 @@ export function deformPositions(
   const fields: Field[] = [];
   const jawAnchors = [152, 175, 199, 172, 136, 150, 149, 176, 148, 397, 365, 379, 378, 400, 377];
   const softAnchors = [0, 13, 14, 17, 61, 291, 117, 50, 346, 280, 205, 187, 425, 411, 214, 192, 434, 416];
-  const eyeAnchors = [33, 263, 159, 386, 145, 374];
-  const nasalProtectedAnchors = [...eyeAnchors, 0, 13, 14, 17, 61, 291];
+  // Proteger el borde completo de cada abertura, no solo seis muestras del ojo.
+  const eyeAnchors = [
+    33, 7, 163, 144, 145, 153, 154, 155, 133, 173, 157, 158, 159, 160, 161, 246,
+    263, 249, 390, 373, 374, 380, 381, 382, 362, 398, 384, 385, 386, 387, 388, 466,
+  ];
+  const nasalProtectedAnchors = [...eyeAnchors, 0, 17, 61, 291,
+    78, 191, 80, 81, 82, 13, 312, 311, 310, 415, 308, 324, 318, 402, 317, 14, 87, 178, 88, 95];
   const add = (
     ids: number[], radius: [number, number, number], delta: Field['delta'],
     protect: number[] = [], protectNasal = false,
@@ -460,12 +490,16 @@ export function deformPositions(
       delta: p => {
         const t = clamp((p.y - supratip.y) / humpSpan, 0, 1);
         const humpWeight = 64 * (t * (1 - t)) ** 3;
-        const radixWeight = ramp((p.y - supratip.y) / Math.max(radix.y - supratip.y, h * 0.08))
+        // El inicio del dorso (6) pertenece también a la raíz. Antes quedaba
+        // entre una giba de soporte corto y una traslación dorsal casi uniforme.
+        const radixWeight = ramp((p.y - supratip.y) / Math.max(upperBridge.y - supratip.y, h * 0.08))
           * ramp((radix.y + h * 0.18 - p.y) / (h * 0.18));
+        const bridgeWeight = 1 - 0.55 * ramp((p.y - upperBridge.y + h * 0.07)
+          / Math.max(radix.y - upperBridge.y + h * 0.07, h * 0.12));
         return {
           x: 0, y: 0,
-          // Giba localizada: ampliar relieve, no extenderlo a raíz o punta.
-          z: h * (params.noseBridge * 0.055 + params.noseRadix * 0.03 * radixWeight)
+          // Raíz y dorso se solapan C2, pero no son dos traslaciones idénticas.
+          z: h * (params.noseBridge * 0.065 * bridgeWeight + params.noseRadix * 0.045 * radixWeight)
             + params.noseHump * Math.min(h * 0.014, humpSpan * 0.12) * humpWeight,
         };
       },
@@ -473,15 +507,60 @@ export function deformPositions(
       influence: dorsalEnvelope,
     });
   }
-  const angle = params.noseRotation * 0.34, sin = Math.sin(angle), cos = Math.cos(angle);
-  if (params.noseTip || params.noseRotation) add([1, 4], [0.18, 0.22, 0.28], p => {
-    // Pivot posterior a la punta, no giro global de la nariz.
-    const y = p.y - tip.y, z = p.z - (tip.z - h * 0.065);
-    return {
-      x: 0, y: y * (cos - 1) + z * sin,
-      z: params.noseTip * h * 0.065 - y * sin + z * (cos - 1),
+  if (params.noseProfileAlign) {
+    // Rebaje tipo «escofina» hacia la cuerda glabela 9 → suprapunta 5. Se mide en la
+    // BASE recibida el exceso de la cresta central por altura y se baja la banda
+    // dorsal como una lámina suave. Recortar vértice a vértice cizallaba cresta contra
+    // flancos y disparaba la protección aunque el resultado fuese seguro. XY (y por
+    // tanto UV/foto) no cambia; donde la cresta ya está bajo la cuerda (raíz cóncava,
+    // punta, perfil recto) el exceso es 0 y nada se mueve.
+    const line = nasalProfileLine(anchors), k = h * 0.0008, bins = 32;
+    const soft = (e: number) => e <= 0 ? 0 : e >= k ? e - k / 2 : e * e / (2 * k);
+    const crest = new Float64Array(bins + 1).fill(-Infinity);
+    for (let i = 0; i < original.length / 3; i++) {
+      const x = original[i * 3], y = original[i * 3 + 1];
+      if (Math.abs(x - axis) >= h * 0.012 || y <= line.bottom.y || y >= line.top.y) continue;
+      const t = (y - line.bottom.y) / line.span * bins, excess = original[i * 3 + 2] - line.chord(y);
+      // Cada muestra alimenta sus dos nodos: la interpolación nunca subestima su exceso.
+      for (const node of [Math.floor(t), Math.ceil(t)]) crest[node] = Math.max(crest[node], excess);
+    }
+    crest[0] = Math.max(crest[0], 0); crest[bins] = Math.max(crest[bins], 0);
+    for (let node = 1, last = 0; node <= bins; node++) {
+      if (crest[node] === -Infinity) continue;
+      for (let gap = last + 1; gap < node; gap++) crest[gap] = crest[last] + (crest[node] - crest[last]) * (gap - last) / (node - last);
+      last = node;
+    }
+    const crestExcess = (y: number) => {
+      const t = clamp((y - line.bottom.y) / line.span * bins, 0, bins), node = Math.min(Math.floor(t), bins - 1);
+      return Math.max(0, crest[node] + (crest[node + 1] - crest[node]) * (t - node));
     };
-  }, [], true);
+    fields.push({
+      center: tip, radius: { x: h, y: h, z: h }, protectedCenters: [], protectNasal: true,
+      influence: p => ramp((p.y - line.bottom.y) / (line.span * 0.06))
+        * ramp((line.top.y - p.y) / (line.span * 0.06))
+        * ramp((h * 0.11 - Math.abs(p.x - axis)) / (h * 0.08)) * ramp((p.z - (line.chord(p.y) - h * 0.24)) / (h * 0.10)),
+      delta: p => ({ x: 0, y: 0, z: -params.noseProfileAlign * soft(crestExcess(p.y)) }),
+    });
+  }
+  const angle = params.noseRotation * 0.52, sin = Math.sin(angle), cos = Math.cos(angle);
+  if (params.noseTip || params.noseRotation) {
+    const subnasal = average([2, 94]), radius = { x: h * 0.18, y: h * 0.22, z: h * 0.28 };
+    fields.push({
+      center: tip, radius, protectedCenters: [], protectNasal: true,
+      // Un giro fuerte no debe arrastrar el filtrum ni conectar su protección
+      // topológica con los labios cuando se editan ambas regiones.
+      influence: p => localInfluence(p, tip, radius)
+        * ramp((p.y - subnasal.y + h * 0.025) / (h * 0.07)),
+      delta: p => {
+        // Pivot posterior a la punta, no giro global de la nariz.
+        const y = p.y - tip.y, z = p.z - (tip.z - h * 0.105);
+        return {
+          x: 0, y: y * (cos - 1) + z * sin,
+          z: params.noseTip * h * 0.065 - y * sin + z * (cos - 1),
+        };
+      },
+    });
+  }
   if (params.noseTipWidth) add([1, 4], [0.12, 0.11, 0.16], p => ({ x: params.noseTipWidth * (p.x - tip.x) * 0.85, y: 0, z: 0 }), [], true);
   if (params.noseWidth) for (const id of [98, 327]) add([id], [0.13, 0.14, 0.18], p => ({
     x: params.noseWidth * (p.x - axis) * 0.55, y: 0, z: 0,

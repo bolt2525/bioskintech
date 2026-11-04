@@ -1,6 +1,8 @@
 import { importInjectable, type ElemKind, type Meta, type SimMode, type Vec3 } from './engine';
 import { validateQuickRecord, type QuickRecordSettings } from './quickRecord';
 import type { AnatomyPlane } from './defaultLayers';
+import type { MarkingCopyRecord } from './markingOperations';
+import type { VolumeTotal } from './markingModel';
 
 type JsonRecord = Record<string, unknown>;
 const object = (value: unknown): JsonRecord | null =>
@@ -8,6 +10,39 @@ const object = (value: unknown): JsonRecord | null =>
 const modes: SimMode[] = ['toxina', 'relleno_ha', 'hidratacion', 'bioestimulador'];
 const kinds: ElemKind[] = ['point', 'line', 'arrow', 'free', 'pattern', 'circle', 'rect'];
 const planes: AnatomyPlane[] = ['skin', 'muscle', 'vessels', 'bone'];
+
+/** Intención histórica de copia, no una autorización para ejecutar otra operación al importar. */
+function validateCopyIntent(value: unknown): MarkingCopyRecord {
+  const record = object(value);
+  const identifier = (v: unknown): v is string => typeof v === 'string' && v.trim().length > 0 && v.length <= 1000;
+  const count = (v: unknown): v is number => typeof v === 'number' && Number.isSafeInteger(v) && v >= 0;
+  const isMode = (v: unknown): v is SimMode => typeof v === 'string' && modes.includes(v as SimMode);
+  if (!record || record.confirmedQuantities !== true || typeof record.discardExtended !== 'boolean'
+    || record.operation !== 'duplicate' && record.operation !== 'mirror'
+    || !identifier(record.sourceId) || !identifier(record.transactionId)
+    || typeof record.confirmedAt !== 'string'
+    || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(record.confirmedAt)
+    || !Number.isFinite(Date.parse(record.confirmedAt)) || new Date(record.confirmedAt).toISOString() !== record.confirmedAt
+    || !Array.isArray(record.totals) || record.totals.length > 500) {
+    throw new Error('La intención de copia registrada es inválida; no se ha importado el registro.');
+  }
+  const totals: VolumeTotal[] = [], keys = new Set<string>();
+  for (const raw of record.totals) {
+    const total = object(raw);
+    if (!total || !isMode(total.mode) || typeof total.key !== 'string' || typeof total.product !== 'string' || total.product.length > 500
+      || total.product !== total.product.trim() || total.key !== JSON.stringify([total.mode, total.product])
+      || typeof total.total !== 'number' || !Number.isFinite(total.total) || total.total < 0
+      || !count(total.points) || total.points === 0 || !count(total.pending) || total.pending > total.points
+      || keys.has(total.key)) {
+      throw new Error('El resumen de cantidades de la copia es inválido; no se ha importado el registro.');
+    }
+    keys.add(total.key);
+    totals.push({ key: total.key, mode: total.mode, product: total.product, total: total.total, points: total.points, pending: total.pending });
+  }
+  // sourceId y transactionId son procedencia histórica: no se remapean a las nuevas identidades.
+  return { confirmedQuantities: true, discardExtended: record.discardExtended, operation: record.operation,
+    sourceId: record.sourceId, transactionId: record.transactionId, confirmedAt: record.confirmedAt, totals };
+}
 
 /** Extensión local opcional. Inyectables sigue recibiendo su mapping_data habitual. */
 export function importLocalRecord(text: string, zones: string[]) {
@@ -65,7 +100,9 @@ export function importLocalRecord(text: string, zones: string[]) {
       || value.annotationKind !== undefined && !['ellipse', 'text', 'ruler'].includes(String(value.annotationKind))) {
       throw new Error('Los metadatos locales son inválidos; no se ha importado el registro.');
     }
+    const markingCopyIntent = value.markingCopyIntent === undefined ? undefined : validateCopyIntent(value.markingCopyIntent);
     result.meta[id] = { mode: value.mode, dose: value.dose, zone: value.zone, product: value.product,
+      ...(markingCopyIntent ? { markingCopyIntent } : {}),
       ...(value.plane ? { plane: value.plane } : {}),
       ...(value.entry ? { entry: true } : {}), ...(value.technique ? { technique: value.technique } : {}),
       ...(value.graphicOnly ? { graphicOnly: true } : {}),

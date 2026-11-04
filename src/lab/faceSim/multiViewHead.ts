@@ -272,11 +272,13 @@ export interface ProfileDepthResult {
  * no se normaliza una vista rasante hasta convertirla en evidencia plena.
  * No estima rotación vertical moviendo Y: la curva Z(Y) cambia la pendiente aparente de punta/columela.
  */
-export function refineProfileDepth(positions: Float32Array, sources: readonly HeadPhotoSource[]): ProfileDepthResult | null {
+export function refineProfileDepth(
+  positions: Float32Array, sources: readonly HeadPhotoSource[], options: { preserveSubnasal?: boolean } = {},
+): ProfileDepthResult | null {
   if (positions.length < 468 * 3 || positions.length % 3 || !positions.every(Number.isFinite)) return null;
   const P = (i: number) => [positions[i * 3], positions[i * 3 + 1], positions[i * 3 + 2]];
   const faceH = Math.hypot(P(10)[0] - P(152)[0], P(10)[1] - P(152)[1]);
-  const root = P(168), base = P(164), lip = P(0);
+  const root = P(168), base = P(options.preserveSubnasal ? 2 : 164), lip = P(0);
   // Borde superior completo del bermellón, no solo el centro: los arcos de Cupido quedan fuera del soporte.
   lip[1] = Math.max(...[0, 37, 39, 40, 267, 269, 270].map(id => P(id)[1]));
   if (!(faceH > 1e-6 && root[1] > base[1] && base[1] > lip[1])) return null;
@@ -300,6 +302,7 @@ export function refineProfileDepth(positions: Float32Array, sources: readonly He
     const limit = Math.ceil(Math.abs(U[2]) * W * faceH * 0.085);
     const inside = (x: number, y: number) => x >= 0 && x < W && y >= 0 && y < H && mask[y * W + x] > 0.6;
     for (const id of PROFILE_MIDLINE) {
+      if (options.preserveSubnasal && P(id)[1] <= base[1]) continue;
       const p = P(id), u = project(p, source.projection.u), v = project(p, source.projection.v);
       const y0 = Math.floor(v * H), x0 = Math.floor(u * W);
       if (!(y0 >= 2 && y0 < H - 2 && x0 >= 1 && x0 < W - 1)) continue;
@@ -338,7 +341,8 @@ export function refineProfileDepth(positions: Float32Array, sources: readonly He
     return [{ id, y: P(id)[1], delta, s: delta * confidence, bilateral: sides.size > 1 }];
   }).sort((a, b) => a.y - b.y);
   if (samples.length < 5 || !samples.some(s => [168, 6, 197].includes(s.id))
-    || !samples.some(s => [4, 1].includes(s.id)) || !samples.some(s => [19, 94, 2, 164].includes(s.id))) return null;
+    || !samples.some(s => [4, 1].includes(s.id))
+    || (!options.preserveSubnasal && !samples.some(s => [19, 94, 2, 164].includes(s.id)))) return null;
   const at = (y: number) => {
     const j = samples.findIndex(e => e.y >= y);
     if (j <= 0) return samples[j === 0 ? 0 : samples.length - 1].s;
@@ -354,7 +358,8 @@ export function refineProfileDepth(positions: Float32Array, sources: readonly He
     const x = Math.abs(p[0] - axisX) / faceH;
     // Meseta central: no concentrar toda la corrección en un ápice afilado.
     const lateral = 1 - smooth((x - 0.025) / 0.095);
-    const vertical = smooth((p[1] - lip[1]) / (base[1] - lip[1]))
+    const lower = options.preserveSubnasal ? base[1] : lip[1];
+    const vertical = smooth((p[1] - lower) / (options.preserveSubnasal ? faceH * 0.04 : base[1] - lip[1]))
       * (1 - smooth((p[1] - root[1]) / (faceH * 0.04)));
     const s = at(p[1]) * lateral * vertical;
     out[i * 3 + 2] += s;

@@ -227,7 +227,7 @@ function editor({ runEffects = false, loadLayers } = {}) {
   const exports = {};
   vm.runInNewContext(compile('FacialSimulationViewer.tsx'), {
     exports, console, Error, requestAnimationFrame: () => 1, cancelAnimationFrame() {},
-    window: { matchMedia: () => ({ matches: false }) }, require: name => {
+    window: { matchMedia: () => ({ matches: false }), addEventListener() {}, removeEventListener() {} }, require: name => {
       if (name === 'react') return { ...React, useId: () => 'editor',
         useRef: initial => {
           const i = refCursor++;
@@ -244,6 +244,11 @@ function editor({ runEffects = false, loadLayers } = {}) {
           return value;
         },
         useCallback: fn => fn,
+        useReducer(reducer, initial, initialize) {
+          const i = cursor++;
+          if (!(i in states)) states[i] = initialize ? initialize(initial) : initial;
+          return [states[i], action => { states[i] = reducer(states[i], action); }];
+        },
         useState(initial) {
           const i = cursor++;
           if (!(i in states)) states[i] = typeof initial === 'function' ? initial() : initial;

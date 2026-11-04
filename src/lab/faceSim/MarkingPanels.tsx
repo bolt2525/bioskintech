@@ -1,9 +1,10 @@
 import { useEffect, useId, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
-import { Check, Droplets, FlipHorizontal2, Gem, Maximize2, Minimize2, RotateCcw, RotateCw, Scissors, SlidersHorizontal, Sparkles, Syringe, Trash2, type LucideIcon } from 'lucide-react';
+import { Check, Copy, Droplets, FlipHorizontal2, Gem, Maximize2, Minimize2, RotateCcw, RotateCw, Scissors, SlidersHorizontal, Sparkles, Syringe, Trash2, type LucideIcon } from 'lucide-react';
 import { COLORS } from '../../constants/theme';
 import { SIM_MODES, type SimMode } from './engine';
 import { MAX_LEVEL, PREVIEW_DESCRIPTIONS, PREVIEW_FILTERS, type PreviewSettings } from './injectablePreview';
-import { ALL_ROWS, INJECTION_PLANES, QUICK_VOLUMES, filterRows, formatVolume, type LedgerFilter, type LedgerRow, type LedgerThird, type VolumeTotal } from './markingModel';
+import { ALL_ROWS, INJECTION_PLANES, QUICK_VOLUMES, bulkTargets, copySelectionRows, filterRows, formatVolume, volumeTotals, type MarkingBulkChange, type LedgerFilter, type LedgerRow, type LedgerThird, type VolumeTotal } from './markingModel';
+import type { MarkingCopyIntent, MarkingCopyOperation } from './markingOperations';
 
 export const MODE_ICONS: Record<SimMode, LucideIcon> = { toxina: Syringe, relleno_ha: Gem, hidratacion: Droplets, bioestimulador: Sparkles };
 const MODES = Object.keys(SIM_MODES) as SimMode[];
@@ -438,12 +439,78 @@ export function EffectMixer({ value, onChange }: { value: CoveragePreviewSetting
   );
 }
 
+export type CopyMarkings = (ids: string[], operation: MarkingCopyOperation, intent: MarkingCopyIntent) => string | null;
+
+function ProductSummary({ totals, label }: { totals: VolumeTotal[]; label: string }) {
+  return <section aria-label={label} className="space-y-1 rounded-lg border border-white/10 bg-black/20 p-2 text-xs">
+    <p className="font-bold text-stone-200">{label}</p>
+    {!totals.length && <p className="text-stone-300">Sin cantidades: solo gráficos o entradas.</p>}
+    <dl className="max-h-28 space-y-1 overflow-y-auto">
+      {totals.map(t => <div key={t.key} className="break-words text-stone-300">
+        <dt className="inline font-bold">{t.product || 'Sin vial'} · {SIM_MODES[t.mode].label}: </dt>
+        <dd className="inline"><b>{unitLabel(t.mode, t.total)}</b> · {t.points} puntos · {t.pending} pendientes</dd>
+      </div>)}
+    </dl>
+  </section>;
+}
+
+/** Confirmación explícita: la copia conserva las cantidades, nunca las prescribe. */
+export function MarkingCopyControls({ rows, ids, onCopy, disabled }: { rows: LedgerRow[]; ids: string[]; onCopy: CopyMarkings; disabled?: boolean }) {
+  const [operation, setOperation] = useState<MarkingCopyOperation | null>(null);
+  const [confirmed, setConfirmed] = useState(false), [discardExtended, setDiscardExtended] = useState(false);
+  const [error, setError] = useState('');
+  const trigger = useRef<HTMLButtonElement | null>(null);
+  const selection = copySelectionRows(rows, ids), extended = selection.filter(r => r.extended).length;
+  const transferable = selection.filter(r => !r.extended);
+  const signature = JSON.stringify(selection);
+  useEffect(() => { setOperation(null); setConfirmed(false); setDiscardExtended(false); setError(''); }, [signature]);
+  const close = () => { setOperation(null); setError(''); trigger.current?.focus(); };
+  return <div className="space-y-2">
+    <div role="group" aria-label="Copiar selección" className="grid grid-cols-2 gap-1">
+      {([['duplicate', 'Duplicar selección', Copy], ['mirror', 'Reflejar selección', FlipHorizontal2]] as const).map(([op, label, Icon]) =>
+        <button key={op} type="button" disabled={disabled || !ids.length} aria-pressed={operation === op}
+          onClick={e => { trigger.current = e.currentTarget; setOperation(op); setConfirmed(false); setDiscardExtended(false); setError(''); }}
+          className="admin-focus-ring flex min-h-11 items-center justify-center gap-1 rounded-lg border border-gold/30 px-2 text-xs font-bold text-gold disabled:opacity-40 aria-pressed:bg-gold/15">
+          <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />{label}
+        </button>)}
+    </div>
+    {operation && <form aria-label="Confirmar copia de marcaciones" className="space-y-2 rounded-xl border border-gold/30 p-2"
+      onKeyDown={e => { if (e.key === 'Escape') { e.preventDefault(); close(); } }}
+      onSubmit={e => {
+        e.preventDefault();
+        if (!confirmed || extended > 0 && !discardExtended) { setError('Confirma las cantidades y la exclusión de marcas extendidas.'); return; }
+        const message = onCopy(ids, operation, { confirmedQuantities: true, discardExtended });
+        if (message) setError(message); else close();
+      }}>
+      <p className="text-xs text-stone-200">{operation === 'mirror' ? 'Reflejo anatómico al lado opuesto' : 'Copia en la misma ubicación; podrás moverla después'} · {transferable.length} marcas.</p>
+      <p className="text-[11px] text-stone-300">Seleccionar una punta incluye su entrada y hermanas, una sola vez. No cambia la superficie.</p>
+      {!transferable.length && <p role="status" className="text-xs text-amber-200">No hay marcas transferibles en esta selección. Las zonas extendidas solo existen en el modelo completo.</p>}
+      <ProductSummary totals={volumeTotals(transferable)} label="Cantidades que se añadirán" />
+      {extended > 0 && <label className="flex min-h-11 items-center gap-2 text-xs text-stone-200">
+        <input type="checkbox" checked={discardExtended} onChange={e => setDiscardExtended(e.target.checked)} className="h-4 w-4 shrink-0 accent-gold" />
+        Excluir {extended} marcas extendidas no transferibles; conservar originales.
+      </label>}
+      <label className="flex min-h-11 items-center gap-2 text-xs text-stone-200">
+        <input autoFocus type="checkbox" checked={confirmed} onChange={e => setConfirmed(e.target.checked)} className="h-4 w-4 shrink-0 accent-gold" />
+        Confirmo duplicar estas cantidades como registro explícito de mi intención, no como recomendación clínica.
+      </label>
+      {error && <p role="alert" className="break-words text-xs text-red-300">{error}</p>}
+      <div className="grid grid-cols-2 gap-2">
+        <button type="button" onClick={close} className="admin-focus-ring min-h-11 rounded-lg border border-white/20 text-xs">Cancelar copia</button>
+        <button type="submit" disabled={disabled || !confirmed || !transferable.length || extended > 0 && !discardExtended}
+          className="admin-focus-ring min-h-11 rounded-lg bg-gold px-2 text-xs font-bold text-stone-950 disabled:opacity-40">Confirmar {operation === 'mirror' ? 'reflejo' : 'duplicación'}</button>
+      </div>
+    </form>}
+  </div>;
+}
+
 /** Edición inmediata de la marca seleccionada (clic en el visor o en el listado). */
-export function SelectionInspector({ row, onDose, onDelete, onMirror, mirrorDisabled, onTransform, tipDose, onStyle, strokeColor, strokeWidth, onText, children }: {
+export function SelectionInspector({ row, onDose, onDelete, onMirror, mirrorDisabled, onCopy, copyRows, onTransform, tipDose, onStyle, strokeColor, strokeWidth, onText, children }: {
   row: LedgerRow; onDose: (id: string, dose: number) => void; onDelete: (id: string) => void;
-  onMirror: () => void; mirrorDisabled?: boolean; onTransform?: (change: { scale?: number; degrees?: number }) => void; children?: ReactNode;
+  onMirror?: () => void; mirrorDisabled?: boolean; onTransform?: (change: { scale?: number; degrees?: number }) => void; children?: ReactNode;
   tipDose?: number | null; onStyle?: (style: { color?: string; thickness?: number }) => void;
   strokeColor?: string; strokeWidth?: number; onText?: (text: string) => void;
+  onCopy?: CopyMarkings; copyRows?: LedgerRow[];
 }) {
   const { color, label } = SIM_MODES[row.mode], Icon = MODE_ICONS[row.mode], [, sideLong] = SIDE[row.side];
   const appliedDose = row.entry ? tipDose ?? null : row.dose;
@@ -480,7 +547,7 @@ export function SelectionInspector({ row, onDose, onDelete, onMirror, mirrorDisa
         </label>
       </div>}
       <div className="flex flex-wrap gap-1">
-        <IconToggle label="Espejar selección" icon={FlipHorizontal2} disabled={mirrorDisabled} onClick={onMirror}>Espejo</IconToggle>
+        {!onCopy && onMirror && <IconToggle label="Espejar selección" icon={FlipHorizontal2} disabled={mirrorDisabled} onClick={onMirror}>Espejo</IconToggle>}
         {onTransform && row.kind !== 'point' && <>
           <IconToggle label="Reducir figura" icon={Minimize2} onClick={() => onTransform({ scale: 0.9 })} />
           <IconToggle label="Ampliar figura" icon={Maximize2} onClick={() => onTransform({ scale: 1.1 })} />
@@ -488,6 +555,7 @@ export function SelectionInspector({ row, onDose, onDelete, onMirror, mirrorDisa
           <IconToggle label="Rotar a la derecha" icon={RotateCw} onClick={() => onTransform({ degrees: -15 })} />
         </>}
       </div>
+      {onCopy && <MarkingCopyControls rows={copyRows ?? [row]} ids={[row.id]} onCopy={onCopy} disabled={mirrorDisabled} />}
       {row.kind !== 'point' && <p className="text-[11px] text-stone-500">Con «Seleccionar / editar» arrastra extremos para alargar o el trazo para moverlo.</p>}
       {children}
     </section>
@@ -507,24 +575,34 @@ function LedgerPatternList({ label, count, entry, children }: { label: string; c
   </div>;
 }
 
-export function PointLedger({ rows, selectedId, onSelect, onHover, onDose, onDelete, onPlane, header, children }: {
+export function PointLedger({ rows, selectedId, onSelect, onHover, onDose, onDelete, onPlane, onBatch, onCopy, readOnly, header, children }: {
   rows: LedgerRow[]; selectedId: string | null;
   onSelect: (row: LedgerRow) => void; onHover: (row: LedgerRow | null) => void;
   onDose: (id: string, dose: number) => void; onDelete: (id: string) => void;
   onPlane: (ids: string[], plane: string) => void; header?: ReactNode; children?: ReactNode;
+  onBatch?: (ids: string[], change: MarkingBulkChange) => string | null; onCopy?: CopyMarkings; readOnly?: boolean;
 }) {
   const [filter, setFilter] = useState<LedgerFilter>(ALL_ROWS);
   const [checked, setChecked] = useState<ReadonlySet<string>>(new Set());
   const [bulkPlane, setBulkPlane] = useState('');
+  const [bulkProduct, setBulkProduct] = useState(''), [bulkDose, setBulkDose] = useState('');
+  const [batchError, setBatchError] = useState('');
   const [panel, setPanel] = useState<'list' | 'edit'>('list');
   const visible = useMemo(() => filterRows(rows, filter), [rows, filter]);
   const zones = useMemo(() => [...new Set(rows.map(r => r.zone))].sort((a, b) => a.localeCompare(b, 'es')), [rows]);
   const picked = rows.filter(r => checked.has(r.id));
   const visiblePicked = visible.filter(r => checked.has(r.id));
   // Una entrada en lote arrastra sus puntas; la entrada no lleva dosis ni plano propio.
-  const targets = picked.flatMap(r => r.entry ? rows.filter(t => t.parent === r.id) : [r])
-    .filter((r, i, all) => !r.graphicOnly && !r.entry && all.findIndex(x => x.id === r.id) === i);
-  const planes = [...new Set(targets.flatMap(r => INJECTION_PLANES[r.mode]))];
+  const targets = bulkTargets(rows, picked.map(r => r.id));
+  const mixed = new Set(targets.map(r => r.mode)).size > 1;
+  const planes = targets.length && !mixed ? INJECTION_PLANES[targets[0].mode] : [];
+  const products = [...new Map(rows.map(r => [JSON.stringify([r.mode, r.product]), r])).entries()];
+  const applyBatch = (change: MarkingBulkChange) => {
+    if (!targets.length) { setBatchError('Selecciona puntos de registro antes de aplicar cambios.'); return; }
+    if (readOnly || mixed) { setBatchError('Selecciona una sola categoría y vuelve al modo de edición.'); return; }
+    if (onBatch) setBatchError(onBatch(picked.map(r => r.id), change) ?? '');
+    else if ('plane' in change) onPlane(targets.map(r => r.id), change.plane);
+  };
   const groups = useMemo(() => {
     const vials = new Map<string, LedgerVialGroup>();
     const byId = new Map(rows.map(r => [r.id, r]));
@@ -554,7 +632,7 @@ export function PointLedger({ rows, selectedId, onSelect, onHover, onDose, onDel
       <div hidden={panel !== 'edit'} className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
         {header || <p className="p-3 text-xs text-stone-400">Selecciona una marca en el visor o en el listado.</p>}
       </div>
-      <div hidden={panel !== 'list'} className="min-h-0 flex-1 flex-col gap-2 data-[active=true]:flex" data-active={panel === 'list'}>
+      <div hidden={panel !== 'list'} className="min-h-0 flex-1 flex-col gap-2 overflow-y-auto overscroll-contain data-[active=true]:flex" data-active={panel === 'list'}>
       <header className="flex flex-wrap items-center gap-2">
         <h2 className="flex-1 whitespace-nowrap text-xs font-black uppercase tracking-[0.16em]">Marcas <span className="text-gold tabular-nums">{visible.length}/{rows.length}</span></h2>
         <div role="group" aria-label="Filtrar por inyectable" className="flex gap-1">
@@ -565,6 +643,22 @@ export function PointLedger({ rows, selectedId, onSelect, onHover, onDose, onDel
           </button>)}
         </div>
       </header>
+      <div className="grid shrink-0 grid-cols-2 gap-1.5">
+        <input type="search" aria-label="Buscar marcaciones" value={filter.search ?? ''} onChange={e => set('search', e.target.value)}
+          placeholder="Buscar zona, producto o texto" className={`${compact} col-span-2`} />
+        <select aria-label="Filtrar por producto" value={filter.product ?? 'all'} onChange={e => set('product', e.target.value)} className={compact}>
+          <option value="all">Todo producto</option>
+          {products.map(([key, r]) => <option key={key} value={key}>{r.product || 'Sin vial'} · {SIM_MODES[r.mode].label}</option>)}
+        </select>
+        <select aria-label="Filtrar por lado" value={filter.side ?? 'all'} onChange={e => set('side', e.target.value as LedgerFilter['side'])} className={compact}>
+          <option value="all">Todo lado</option>{Object.entries(SIDE).map(([key, [, label]]) => <option key={key} value={key}>{label}</option>)}
+        </select>
+        <button type="button" aria-pressed={filter.volume === 'without'} onClick={() => set('volume', filter.volume === 'without' ? 'all' : 'without')}
+          className={`${compact} min-h-11 aria-pressed:border-gold aria-pressed:text-gold`}>Solo pendientes</button>
+        <button type="button" onClick={() => setFilter(ALL_ROWS)} className={`${compact} min-h-11`}>Limpiar filtros</button>
+      </div>
+      <ProductSummary totals={volumeTotals(visible)} label="Totales visibles por producto" />
+      {readOnly && <p role="status" className="shrink-0 text-xs text-stone-300">Vista de resultado: vuelve a editar para copiar o modificar el lote.</p>}
       <details className="shrink-0 rounded-lg border border-white/10 p-2">
         <summary className="admin-focus-ring cursor-pointer text-xs font-semibold text-stone-300">Filtros de zona, tercio y volumen</summary>
       <div className="mt-2 grid grid-cols-2 gap-1.5">
@@ -580,7 +674,7 @@ export function PointLedger({ rows, selectedId, onSelect, onHover, onDose, onDel
       </div>
       </details>
       {rows.length > 0 && <details className="shrink-0 rounded-xl border border-white/5 bg-black/30 p-2">
-        <summary className="admin-focus-ring cursor-pointer text-xs font-semibold text-stone-300">Selección y plano en lote · {picked.length}</summary>
+        <summary className="admin-focus-ring cursor-pointer text-xs font-semibold text-stone-300">Selección y edición en lote · {picked.length}</summary>
         <div className="mt-2 grid grid-cols-2 items-center gap-1.5">
         <label className="flex min-h-9 items-center gap-1.5 text-[11px] font-semibold text-stone-300">
           <input type="checkbox" aria-label="Seleccionar todos los puntos visibles" checked={visible.length > 0 && visiblePicked.length === visible.length}
@@ -593,13 +687,30 @@ export function PointLedger({ rows, selectedId, onSelect, onHover, onDose, onDel
         <button type="button" onClick={() => setChecked(new Set(rows.map(r => r.id)))} className={`${compact} hover:bg-stone-800`}>Todo el registro</button>
         <button type="button" onClick={() => setChecked(new Set())} disabled={!picked.length} className={`${compact} disabled:opacity-40 hover:bg-stone-800`}>Deseleccionar todo</button>
         <span role="status" className="text-right text-[11px] text-stone-300">{picked.length} seleccionadas</span>
-        <select aria-label="Plano para el lote" disabled={!targets.length} value={bulkPlane} onChange={e => setBulkPlane(e.target.value)} className={`${compact} col-span-2 min-w-0 disabled:opacity-40`}>
+        <p className="col-span-2 text-[11px] text-stone-300">{picked.length - visiblePicked.length} seleccionadas fuera del filtro. Las entradas incluyen sus puntas; los gráficos quedan excluidos de la edición clínica.</p>
+        {mixed && <p role="alert" className="col-span-2 text-xs text-amber-200">Categorías mezcladas: selecciona una sola para editar producto, dosis o plano.</p>}
+        <select aria-label="Plano para el lote" disabled={readOnly || mixed || !targets.length} value={bulkPlane} onChange={e => setBulkPlane(e.target.value)} className={`${compact} col-span-2 min-w-0 disabled:opacity-40`}>
           <option value="">Sin plano</option>{planes.map(p => <option key={p}>{p}</option>)}
         </select>
-        <button type="button" disabled={!targets.length} onClick={() => { if (targets.length) onPlane(targets.map(r => r.id), bulkPlane); }}
+        <button type="button" disabled={readOnly || mixed || !targets.length} onClick={() => applyBatch({ plane: bulkPlane })}
           className="admin-focus-ring col-span-2 min-h-9 rounded-lg bg-gold px-2.5 text-[11px] font-black text-stone-950 disabled:opacity-40">Aplicar plano a {targets.length} punto(s)</button>
+        {onBatch && <>
+          <label className="col-span-2 text-xs text-stone-300">Producto / vial para el lote
+            <input value={bulkProduct} onChange={e => setBulkProduct(e.target.value)} className={`${compact} mt-1`} />
+          </label>
+          <button type="button" disabled={readOnly || mixed || !targets.length} onClick={() => applyBatch({ product: bulkProduct.trim() })}
+            className={`${compact} col-span-2 min-h-11 disabled:opacity-40`}>Aplicar producto (vacío = sin vial)</button>
+          <label className="col-span-2 text-xs text-stone-300">Dosis por punto {targets.length && !mixed ? `(${SIM_MODES[targets[0].mode].unit})` : ''}
+            <input type="number" min={0} step="any" inputMode="decimal" value={bulkDose} onChange={e => setBulkDose(e.target.value)} className={`${compact} mt-1`} />
+          </label>
+          <button type="button" disabled={readOnly || mixed || !targets.length || bulkDose === '' || !Number.isFinite(Number(bulkDose)) || Number(bulkDose) < 0}
+            onClick={() => applyBatch({ dose: Number(bulkDose) })} className={`${compact} col-span-2 min-h-11 disabled:opacity-40`}>Aplicar dosis a cada punto</button>
+        </>}
+        {batchError && <p role="alert" className="col-span-2 break-words text-xs text-red-300">{batchError}</p>}
         {!picked.length && <p className="col-span-2 text-[11px] text-stone-300">Selecciona marcas para aplicar un plano.</p>}
-      </div></details>}
+      </div>
+      {onCopy && <div className="mt-2"><MarkingCopyControls rows={rows} ids={picked.map(r => r.id)} onCopy={onCopy} disabled={readOnly} /></div>}
+      </details>}
       {header && <button type="button" onClick={() => setPanel('edit')}
         className="admin-focus-ring min-h-9 shrink-0 rounded-lg border border-gold/30 bg-gold/10 px-2 text-left text-xs font-semibold text-gold">Editar marca seleccionada · #{rows.find(row => row.id === selectedId)?.index}</button>}
       {!rows.length && <p className="rounded-xl border border-dashed border-white/15 p-5 text-center text-sm text-stone-400">Elige una herramienta y marca sobre el rostro.</p>}
