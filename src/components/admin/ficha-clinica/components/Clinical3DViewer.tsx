@@ -94,7 +94,7 @@ export interface AnatomicalSurfaceOverlay {
   depthTest?: boolean;
   zoneAt?: (point: { x: number; y: number; z: number }) => string | null;
   selectedZone?: string | null;
-  /** 'mesh': resalta la zona bajo el cursor como mallado con su color (por defecto, relleno azul). */
+  /** 'mesh': relleno translúcido continuo con el color de la zona. */
   highlight?: 'fill' | 'mesh';
   /** Capas visuales auxiliares; no participan en el raycast ni cambian la superficie canónica. */
   references?: readonly {
@@ -1123,7 +1123,7 @@ const ThreeEngine: React.FC<AnnotationInteractionProps & {
     geometry.setAttribute('position', new THREE.BufferAttribute(anatomicalOverlay.positions, 3));
     geometry.setAttribute('color', new THREE.BufferAttribute(anatomicalOverlay.colors, 3));
     const material = new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, opacity: anatomicalOverlay.opacity ?? (anatomicalOverlay.wireframe ? 0.32 : 0.28),
-      wireframe: anatomicalOverlay.wireframe, polygonOffset: true, polygonOffsetFactor: -2,
+      wireframe: anatomicalOverlay.wireframe, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2,
       side: THREE.FrontSide, depthTest: anatomicalOverlay.depthTest ?? true, depthWrite: false });
     const mesh = new THREE.Mesh(geometry, material);
     mesh.name = 'ANATOMICAL_REFERENCE_OVERLAY';
@@ -1132,11 +1132,13 @@ const ThreeEngine: React.FC<AnnotationInteractionProps & {
     const meshHighlight = anatomicalOverlay.highlight === 'mesh';
     const highlightGeometry = new THREE.BufferGeometry();
     const highlightMaterial = new THREE.MeshBasicMaterial({ color: meshHighlight ? '#ffffff' : '#38bdf8', vertexColors: meshHighlight,
-      wireframe: meshHighlight, transparent: true, opacity: meshHighlight ? 0.95 : 0.3,
-      side: THREE.FrontSide, depthTest: anatomicalOverlay.depthTest ?? true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -3 });
+      transparent: true, opacity: meshHighlight ? 0.38 : 0.3,
+      side: THREE.FrontSide, depthTest: anatomicalOverlay.depthTest ?? true, depthWrite: false,
+      polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4 });
     const highlight = new THREE.Mesh(highlightGeometry, highlightMaterial);
     highlight.renderOrder = 13;
     scene.add(highlight);
+    // Solo relleno: las líneas WebGL no tienen descarte de caras posteriores.
     const raycaster = new THREE.Raycaster(), cursor = new THREE.Vector2();
     let active: string | null = null, frame = 0, pending: PointerEvent | null = null;
     const select = (zone: string | null) => {
@@ -1184,7 +1186,8 @@ const ThreeEngine: React.FC<AnnotationInteractionProps & {
     return () => {
       if (frame) cancelAnimationFrame(frame);
       element?.removeEventListener('pointermove', hover); element?.removeEventListener('pointerleave', leave);
-      scene.remove(mesh, highlight); geometry.dispose(); material.dispose(); highlightGeometry.dispose(); highlightMaterial.dispose();
+      scene.remove(mesh, highlight);
+      geometry.dispose(); material.dispose(); highlightGeometry.dispose(); highlightMaterial.dispose();
     };
   }, [anatomicalOverlay, modelVersion]);
   // Track two-point step inside engine for cursor feedback

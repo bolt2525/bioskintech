@@ -1,5 +1,13 @@
 # Progreso de BioSkinTech App
 
+- ✅ 2026-11-04 Piel: revisión multivista local.
+- ✅ 2026-11-04 Perfiles: áreas y alineación manual.
+- ✅ 2026-11-04 Hover: regiones continuas con oclusión.
+- QA multivista sintético: 13 casos en 1440/390 px, cero errores JS; último recorrido analiza tres fotos en 2,8 s y verifica contraste del botón 14,6:1. Dos repeticiones con GC dejan incrementos de 1,3–14,2 MiB de heap JS entre recorridos, no RAM total/GPU. Revisión, descarte, restablecer, invalidación y proyección sobre máscara comprobados.
+- QA real local: tres fotos autorizadas, detector sin sustitución y red externa bloqueada; revisión de ambos lados aunque uno no tenga detección, seis referencias manuales aceptadas y un indicador lateral transferido. Inspección visual desktop/móvil, sin errores JS ni imágenes en Git. Corregida afín sin TPS con clics imperfectos y botón de análisis ilegible.
+- QA hover WebGL: cobertura 100% en ambas mejillas/mentón a dos tamaños; oclusor sin cambios y cero fuga posterior tras retirar retícula. No equivale a fluidez en GPU física ni a prueba táctil.
+- QA integración: 157 pruebas focales únicas y build aprobados; lint de lógica/UI nueva, geometría y pruebas limpio. Clinical3DViewer conserva 49 errores/5 avisos idénticos a HEAD, ninguno en líneas añadidas; TypeScript conserva 12 errores fuera del Lab. Validación exclusivamente local.
+- Límites de piel: candidatos RGB experimentales, no identificación de lesiones ni diagnóstico; perfiles sin detección solo 2D o indicadores manuales validados, no nueva reconstrucción ni textura. Procesamiento secuencial a 384 px, sin API externa, modelos/dependencias nuevas ni tokens. Investigación pública de Perfect Corp sin enviar fotos.
 - ✅ 2026-11-04 Máscara: revisión preliminar reversible.
 - ✅ 2026-11-04 Perfil: ajustes en vivo.
 - ✅ 2026-11-04 Capturas: pasos y ayuda agrupada.

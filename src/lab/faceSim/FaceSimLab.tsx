@@ -37,6 +37,7 @@ import { CheckChip, CutControls, EditorTabs, EffectMixer, IconToggle, ModeCards,
 import { DEFAULT_PREVIEW, GENERIC_EFFECT_CHART, PREVIEW_DESCRIPTIONS, buildIllustrativeEffects, previewCoverage, previewPixels, previewSurface, type ManualEffectArea, type PreviewSettings } from './injectablePreview';
 import EffectAreaEditor from './EffectAreaEditor';
 import { importLocalRecord, localRecord } from './injectableLocalRecord';
+import type { SkinPhotoSource } from './skinMultiView';
 
 const modelPoint = (...args: Parameters<typeof tryModelPoint>): Vec3 => requireMappedPoint(tryModelPoint(...args));
 const photoPoint = (...args: Parameters<typeof tryPhotoPoint>): P2 => requireMappedPoint(tryPhotoPoint(...args));
@@ -53,6 +54,7 @@ const MAX_IMAGE_PIXELS = 40_000_000;
 const FacialSimulationViewer = lazy(() => import('./FacialSimulationViewer'));
 const FaceBoundaryReview = lazy(() => import('./FaceBoundaryReview'));
 const MaskReview = lazy(() => import('./MaskReview'));
+const SkinMultiViewReview = lazy(() => import('./SkinMultiViewReview'));
 
 const VERT = `attribute vec2 p;varying vec2 uv;void main(){uv=p*0.5+0.5;uv.y=1.0-uv.y;gl_Position=vec4(p,0.0,1.0);}`;
 const FRAG = `precision highp float;
@@ -217,7 +219,7 @@ async function detectFrame(img: HTMLCanvasElement): Promise<{
         await new Promise<void>(resolve => setTimeout(resolve, 0));
       }
     }
-    if (!detectedLandmarks) return { frame: null, reason: 'No se obtuvo una malla fiable tras reintentar encuadre, contraste y giro. La foto queda como referencia; para generar 3D añade una toma a tres cuartos (30–60°), con nariz y mentón completos.' };
+    if (!detectedLandmarks) return { frame: null, reason: 'No hay malla fiable. Puedes revisar esta foto en «Piel · fotos y máscara». Para mejorar la reconstrucción 3D, añade otra toma a tres cuartos (30–60°).' };
     if (!rotated) {
       const cropped = refineLandmarksByCrop(landmarker, img, detectedLandmarks);
       if (cropped && usable(cropped)) detectedLandmarks = cropped;
@@ -492,6 +494,7 @@ export default function FaceSimLab() {
   const setHoveredZone = hoverStore.set;
   const [markTab, setMarkTab] = useState<'inyectable' | 'capas' | 'revisar'>('inyectable');
   const [workspace, setWorkspace] = useState<'capture' | 'simulate'>('capture');
+  const [skinMultiViewOpen, setSkinMultiViewOpen] = useState(false);
   const [editorGroup, setEditorGroup] = useState<'annotations' | 'appearance'>('annotations');
   const [appearanceOpened, setAppearanceOpened] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -737,28 +740,39 @@ export default function FaceSimLab() {
   const planePositions = useMemo(() => ({
     generic: regionPlanePositions(genericFaceAtlas.positions, genericFaceAtlas.triangles, regionPlane),
     personal: personal && regionPlanePositions(personal.surface.positions, genericFaceAtlas.triangles, regionPlane),
+    genericSurface: regionPlane === 'superficial' ? genericFaceAtlas.surface : undefined,
+    personalSurface: regionPlane === 'superficial' && personal ? {
+      positions: personal.renderSurface.positions,
+      triangles: personal.renderSurface.indices.subarray(0, 'observedIndexCount' in personal.renderSurface
+        ? personal.renderSurface.observedIndexCount : personal.renderSurface.indices.length),
+    } : undefined,
   }), [regionPlane, personal]);
   const regionOverlays = useMemo(() => {
     const positions: number[] = [], personalPositions: number[] = [], colors: number[] = [], labels: string[] = [];
+    const personalColors: number[] = [], personalLabels: string[] = [];
     for (const cell of regionCells) {
       const label = cell.label;
       const weights = [0, 1, 2].map(axis => cell.corners.reduce((sum, corner) => sum + corner[axis] / 3, 0)) as [number, number, number];
-      labels.push(patientZone(label, { triangle: cell.triangle, weights })!);
-      positions.push(...regionCellPositions(cell, genericFaceAtlas.triangles, planePositions.generic));
-      if (planePositions.personal) personalPositions.push(...regionCellPositions(cell, genericFaceAtlas.triangles, planePositions.personal));
-      for (let j = 0; j < 3; j++) {
-        const color = overlayMode === 'attention' ? faceAttentionColor(label) : faceRegionColor(label);
-        const rgb = [1, 3, 5].map(k => parseInt(color.slice(k, k + 2), 16) / 255);
-        colors.push(...rgb);
+      const zone = patientZone(label, { triangle: cell.triangle, weights })!;
+      const color = overlayMode === 'attention' ? faceAttentionColor(label) : faceRegionColor(label);
+      const rgb = [1, 3, 5].map(k => parseInt(color.slice(k, k + 2), 16) / 255);
+      const append = (xyz: number[], target: number[], tints: number[], zones: string[]) => {
+        target.push(...xyz);
+        for (let i = 0; i < xyz.length / 9; i++) zones.push(zone);
+        for (let i = 0; i < xyz.length / 3; i++) tints.push(...rgb);
+      };
+      append(regionCellPositions(cell, genericFaceAtlas.triangles, planePositions.generic, planePositions.genericSurface), positions, colors, labels);
+      if (planePositions.personal) {
+        append(regionCellPositions(cell, genericFaceAtlas.triangles, planePositions.personal, planePositions.personalSurface), personalPositions, personalColors, personalLabels);
       }
     }
     return {
       generic: { positions: Float32Array.from(positions), colors: Float32Array.from(colors), labels, wireframe: true, opacity: showRegions ? 0.32 : 0, onHover: setHoveredZone, highlight: 'mesh' as const,
-        depthTest: false, zoneAt: (point: Vec3) => {
+        depthTest: regionPlane === 'superficial', zoneAt: (point: Vec3) => {
           const address = locateModelPoint(point, genericFaceAtlas);
           return address ? patientZone(regionCellAt(address, regionCells), address) : null;
         } },
-      personal: personal ? { positions: Float32Array.from(personalPositions), colors: Float32Array.from(colors), labels, wireframe: true, opacity: showRegions ? 0.32 : 0, onHover: setHoveredZone, highlight: 'mesh' as const,
+      personal: personal ? { positions: Float32Array.from(personalPositions), colors: Float32Array.from(personalColors), labels: personalLabels, wireframe: true, opacity: showRegions ? 0.32 : 0, onHover: setHoveredZone, highlight: 'mesh' as const,
         depthTest: regionPlane === 'superficial', zoneAt: (point: Vec3) => {
           if (!isOnObservedFace(point, personal.surface, personal.regionMap)) return null;
           const address = locatePhotoPoint(projectPersonal(point, personal.projection), personal.regionMap.landmarks, genericFaceAtlas);
@@ -1219,7 +1233,7 @@ export default function FaceSimLab() {
       captureDigests.current[target] = prepared?.digest ?? await captureDigest(file);
       if (!detected.frame) {
         setPhotos(p => p[target]?.canvas === c ? { ...p, [target]: { ...p[target]!, detectionError: detected.reason } } : p);
-        setStatus(`${detected.reason} Sin rostro detectado no se permite marcar ni proyectar sobre esta foto. Usa una foto nítida con el rostro descubierto.${personalNote}`);
+        setStatus(`${label}: ${detected.reason} Sin rostro detectado no se usa automáticamente para reconstruir o texturizar. Puedes revisar piel en 2D y alinear indicadores manualmente desde «Piel · fotos y máscara».${personalNote}`);
         return;
       }
       const auto = target === 'extra_a' || target === 'extra_b' ? null : autoRegistration(target, detected.frame, c.width / c.height, flipX);
@@ -2099,7 +2113,7 @@ export default function FaceSimLab() {
       )}
       {photos[v.id]?.detectionError && <p className="mt-1 break-words text-[10px] text-amber-800">{photos[v.id]?.detectionError}</p>}
       {photos[v.id]?.previewUrl && <img src={photos[v.id]?.previewUrl} alt={`Revisar captura ${v.label}`} className="mt-1 h-20 w-full rounded object-contain bg-slate-100" />}
-      {photos[v.id]?.landmarks && <label className="mt-2 flex items-start gap-1 text-[10px] text-slate-700">
+      {photos[v.id]?.canvas && <label className="mt-2 flex items-start gap-1 text-[10px] text-slate-700">
         <input type="checkbox" aria-label={`Confirmar captura ${v.label}`} checked={!!photos[v.id]?.captureConfirmed} onChange={e => {
           const checked = e.target.checked;
           personalRequestRef.current++; setBuildingPersonal(false);
@@ -2111,6 +2125,20 @@ export default function FaceSimLab() {
       {photos[v.id]?.captureWarnings?.map(w => <p key={w} className="mt-1 text-[10px] text-amber-800">{w}</p>)}
     </div>
   );
+
+  const skinSources = useMemo<SkinPhotoSource[]>(() => PHOTO_SLOTS.flatMap(({ id, label }) => {
+    const capture = photos[id];
+    if (!capture) return [];
+    const accepted = personal?.captures?.[id]?.canvas === capture.canvas;
+    const patch = accepted ? personal?.photoPatches?.find(item => item.source.texture === capture.canvas) : undefined;
+    const mapping = accepted && personal && id === 'frontal'
+      ? { landmarks: Array.from({ length: 468 }, (_, i) => ({ x: personal.surface.uvs[i * 2], y: personal.surface.uvs[i * 2 + 1] })), direction: [0, 0, 1], manual: false }
+      : patch ? { landmarks: Array.from({ length: 468 }, (_, i) => ({ x: patch.uvs[i * 2], y: patch.uvs[i * 2 + 1] })),
+        direction: patch.source.projection.towardCamera, manual: false } : undefined;
+    return [{ id, label, canvas: capture.canvas, confirmed: !!capture.captureConfirmed,
+      group: id === 'frontal' ? 'front' as const : id === 'izquierda' ? 'a' as const : id === 'derecha' ? 'b' as const : 'extra' as const,
+      landmarks: !capture.detectionRecovered && !capture.detectionError ? capture.landmarks : undefined, mapping }];
+  }), [photos, personal]);
 
   return (
     <div className={`grid min-w-0 gap-4 ${workspace === 'simulate' && editorGroup === 'annotations'
@@ -2124,6 +2152,8 @@ export default function FaceSimLab() {
               setCalibrating(false); setPhotoAnchor(null); setContourIndex(null); setPickingForehead(false);
               if (id === 'simulate') setMeshVisible(false);
             }} className={`admin-focus-ring min-h-11 rounded-lg px-4 text-sm font-semibold ${workspace === id ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-700'}`}>{label}</button>)}
+          <button type="button" className="admin-focus-ring min-h-11 rounded-lg border border-sky-700 px-4 text-sm font-semibold text-sky-900"
+            onClick={() => setSkinMultiViewOpen(true)}>Piel · fotos y máscara</button>
         </nav>
         {workspace === 'simulate' && <nav aria-label="Grupos del editor" className="flex flex-wrap gap-2">
           {([['annotations', 'Marcaciones e inyectables'], ['appearance', 'Morfología, piel y capas']] as const).map(([id, label]) =>
@@ -2137,6 +2167,13 @@ export default function FaceSimLab() {
           : 'Elige una superficie y una herramienta. El registro es común; la dosis no controla el efecto visual.'}</p>
         <p className="text-xs text-slate-600" role="status">{status}</p>
       </header>
+      {skinMultiViewOpen && <Suspense fallback={<p role="status">Abriendo revisión de piel…</p>}>
+        <SkinMultiViewReview sources={skinSources} surface={personal?.surface} onClose={() => setSkinMultiViewOpen(false)}
+          renderMask={personal ? points => <Clinical3DViewer markers={[]} modelData={personal.glb} readOnly occludeAnnotations height="380px"
+            editablePoints={points.map(point => ({ id: point.id, type: 'free', ...point.point, lineIds: [],
+              name: `${point.label}${point.manual ? ' · manual' : ''}`, color: point.candidate.channel === 'redness' ? '#ef4444' : point.candidate.channel === 'contrast' ? '#f59e0b' : '#22d3ee' }))}
+            interactionHint="Gira para revisar indicadores aproximados de piel. No son diagnósticos." /> : undefined} />
+      </Suspense>}
       {reviewId && reviewSlot?.landmarks && <Suspense fallback={<p role="status">Abriendo revisión de límites…</p>}>
         <FaceBoundaryReview key={`${reviewId}-${reviewSlot.previewUrl?.length}`} canvas={reviewSlot.canvas} landmarks={reviewSlot.landmarks}
           title={PHOTO_SLOTS.find(v => v.id === reviewId)?.label} reference={reviewReference}
@@ -2695,6 +2732,7 @@ export default function FaceSimLab() {
             {modelKind === 'personal' && !personal ? <p role="status" className="rounded-xl border p-4">
               {buildingPersonal ? 'Calculando superficie fotografiada…' : 'Calcula la superficie personal en Capturas o selecciona el modelo genérico.'}
             </p> : <FacialSimulationViewer
+              onMultiViewReview={() => setSkinMultiViewOpen(true)}
               surface={modelKind === 'personal' ? personal?.renderSurface : undefined}
               photo={modelKind === 'personal' ? personal?.canvas : undefined}
               photoPatches={modelKind === 'personal' ? personal?.photoPatches : undefined}

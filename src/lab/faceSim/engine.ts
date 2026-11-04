@@ -167,7 +167,7 @@ export function updateRegistrationAnchor(
 }
 
 /** Ajusta modelo→foto por mínimos cuadrados; requiere referencias no colineales y mide residuos en alturas faciales. */
-export function fitAffineRegistration(source: P2[], target: P2[], aspect: number, faceHeight: number): AffineRegistration | null {
+export function fitAffineRegistration(source: P2[], target: P2[], aspect: number, faceHeight: number, withWarp = true): AffineRegistration | null {
   if (source.length < 5 || source.length !== target.length || !Number.isFinite(aspect) || aspect <= 0
     || !Number.isFinite(faceHeight) || faceHeight <= 0) return null;
   if ([...source, ...target].some(p => !Number.isFinite(p.x) || !Number.isFinite(p.y))) return null;
@@ -209,7 +209,9 @@ export function fitAffineRegistration(source: P2[], target: P2[], aspect: number
   const determinant = x[0] * y[1] - x[1] * y[0];
   if (!Number.isFinite(determinant) || Math.abs(determinant) < 0.0025 || Math.abs(determinant) > 25
     || [...x, ...y].some(value => Math.abs(value) > 20) || errors.some(error => !Number.isFinite(error))) return null;
-  const base = { a: x[0], b: x[1], c: x[2], d: y[0], e: y[1], f: y[2], rmse: 0, maxError: 0 };
+  const base = { a: x[0], b: x[1], c: x[2], d: y[0], e: y[1], f: y[2],
+    rmse: Math.sqrt(errors.reduce((sum, error) => sum + error * error, 0) / errors.length), maxError: Math.max(...errors) };
+  if (!withWarp) return base;
   const n = source.length;
   const residuals = source.map((p, i) => {
     const mapped = applyRegistration(p, base);

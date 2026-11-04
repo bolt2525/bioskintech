@@ -36,6 +36,7 @@ export interface FacialSimulationViewerProps {
   hair?: EstimatedHairSettings;
   hairPatches?: readonly PhotoHairPatch[];
   photoPatches?: readonly PhotoSurfacePatch[];
+  onMultiViewReview?: () => void;
 }
 
 type View = 'front' | 'left' | 'right' | 'orbit';
@@ -1017,7 +1018,7 @@ function mountFacialSimulation(
 }
 
 /** API de integración: <FacialSimulationViewer surface={surface} photo={photo} /> */
-export function FacialSimulationViewer({ surface, photo, hair = DEFAULT_HAIR, hairPatches, photoPatches }: FacialSimulationViewerProps) {
+export function FacialSimulationViewer({ surface, photo, hair = DEFAULT_HAIR, hairPatches, photoPatches, onMultiViewReview }: FacialSimulationViewerProps) {
   const id = useId(), host = useRef<HTMLDivElement>(null), runtime = useRef<ViewerRuntime | null>(null);
   const inspector = useRef<HTMLDivElement>(null);
   const editor = useRef<HTMLElement>(null);
@@ -1555,6 +1556,10 @@ export function FacialSimulationViewer({ surface, photo, hair = DEFAULT_HAIR, ha
           <p className="text-[11px] text-amber-200">{SIMULATION_NOTICE}</p>
           </div>
           <div id={`${id}-tool-skin`} hidden={tool !== 'skin'} className="space-y-3">
+              {onMultiViewReview && <div className="space-y-2 rounded-lg border border-gold/40 p-2">
+                <p className="text-xs text-stone-200">Busca candidatos automáticamente en las mejores fotos y compáralos sobre la máscara.</p>
+                <button type="button" className={buttonClass} onClick={onMultiViewReview}>Analizar piel en varias fotos</button>
+              </div>}
               {skinOpened && skinPhoto && skinPhotoContext ? <Suspense fallback={<p role="status" className="text-xs text-gold">Preparando revisión por zonas…</p>}>
                 <SkinRegionEditor key={`${skinReviewVersion}-${view}`} canvas={skinPhoto} landmarks={skinPhotoContext.landmarks}
                   sourceLabel={skinPhotoContext.label} modelDrawingRef={modelDrawingRef} onTexture={onSignalTexture} onRegionsChange={onSkinRegions} />

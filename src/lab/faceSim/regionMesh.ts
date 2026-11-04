@@ -71,10 +71,89 @@ export function regionCellAt(address: FaceAddress, cells: readonly RegionCell[])
   return null;
 }
 
-export function regionCellPositions(cell: RegionCell, triangles: readonly number[], positions: ArrayLike<number>): number[] {
+interface RegionSurface {
+  positions: ArrayLike<number>;
+  triangles: ArrayLike<number>;
+}
+type Point3 = [number, number, number];
+interface SurfaceChart {
+  faces: Point3[][];
+  bins: Map<string, Set<number>>;
+  bin: (x: number, y: number) => [number, number];
+}
+const surfaceCharts = new WeakMap<RegionSurface, SurfaceChart>();
+const side = (a: Point3, b: Point3, p: Point3) => (b[0] - a[0]) * (p[1] - a[1]) - (b[1] - a[1]) * (p[0] - a[0]);
+
+/** Índice del chart frontal, igual que modelPoint: no proyecta sobre nuca/caras invertidas. */
+function surfaceChart(surface: RegionSurface): SurfaceChart {
+  const cached = surfaceCharts.get(surface);
+  if (cached) return cached;
+  const { positions, triangles } = surface;
+  let left = Infinity, bottom = Infinity, right = -Infinity, top = -Infinity;
+  for (let i = 0; i < positions.length; i += 3) {
+    left = Math.min(left, positions[i]); right = Math.max(right, positions[i]);
+    bottom = Math.min(bottom, positions[i + 1]); top = Math.max(top, positions[i + 1]);
+  }
+  const bin = (x: number, y: number): [number, number] => [
+    Math.max(0, Math.min(31, Math.floor((x - left) / (right - left || 1) * 32))),
+    Math.max(0, Math.min(31, Math.floor((y - bottom) / (top - bottom || 1) * 32))),
+  ];
+  const faces: Point3[][] = [], bins = new Map<string, Set<number>>();
+  for (let i = 0; i < triangles.length; i += 3) {
+    const face = [0, 1, 2].map(j => [0, 1, 2].map(axis => positions[triangles[i + j] * 3 + axis]) as Point3);
+    if (!face.flat().every(Number.isFinite) || side(face[0], face[1], face[2]) <= 1e-12) continue;
+    const id = faces.length; faces.push(face);
+    const lo = bin(Math.min(...face.map(p => p[0])), Math.min(...face.map(p => p[1])));
+    const hi = bin(Math.max(...face.map(p => p[0])), Math.max(...face.map(p => p[1])));
+    for (let x = lo[0]; x <= hi[0]; x++) for (let y = lo[1]; y <= hi[1]; y++) {
+      const key = `${x}:${y}`, bucket = bins.get(key) ?? new Set<number>();
+      bucket.add(id); bins.set(key, bucket);
+    }
+  }
+  const chart = { faces, bins, bin };
+  surfaceCharts.set(surface, chart);
+  return chart;
+}
+
+/**
+ * Recorta triángulos REALES por el dominio XY de la celda, no una cuerda que
+ * atraviesa la piel. Interpola XYZ sobre cada cara densa: conserva agujeros,
+ * contornos y profundidad, sin puente sobre zonas sin superficie observada.
+ */
+export function regionCellPositions(cell: RegionCell, triangles: readonly number[], positions: ArrayLike<number>, surface?: RegionSurface): number[] {
   const ids = triangles.slice(cell.triangle * 3, cell.triangle * 3 + 3);
-  return cell.corners.flatMap(weights => [0, 1, 2].map(axis =>
-    ids.reduce((sum, id, j) => sum + positions[id * 3 + axis] * weights[j], 0)));
+  const corners = cell.corners.map(weights => [0, 1, 2].map(axis =>
+    ids.reduce((sum, id, j) => sum + positions[id * 3 + axis] * weights[j], 0)) as Point3);
+  if (!surface) return corners.flat();
+  const area = side(corners[0], corners[1], corners[2]);
+  if (Math.abs(area) <= 1e-12) return [];
+  const chart = surfaceChart(surface), candidates = new Set<number>(), result: number[] = [];
+  const lo = chart.bin(Math.min(...corners.map(p => p[0])), Math.min(...corners.map(p => p[1])));
+  const hi = chart.bin(Math.max(...corners.map(p => p[0])), Math.max(...corners.map(p => p[1])));
+  for (let x = lo[0]; x <= hi[0]; x++) for (let y = lo[1]; y <= hi[1]; y++) {
+    chart.bins.get(`${x}:${y}`)?.forEach(id => candidates.add(id));
+  }
+  const orientation = Math.sign(area);
+  for (const id of candidates) {
+    let polygon = chart.faces[id];
+    for (let edge = 0; edge < 3 && polygon.length; edge++) {
+      const a = corners[edge], b = corners[(edge + 1) % 3], clipped: Point3[] = [];
+      for (let j = 0; j < polygon.length; j++) {
+        const p = polygon[j], q = polygon[(j + 1) % polygon.length];
+        const dp = side(a, b, p) * orientation, dq = side(a, b, q) * orientation;
+        if (dp >= 0) clipped.push(p);
+        if ((dp >= 0) !== (dq >= 0)) {
+          const t = dp / (dp - dq);
+          clipped.push(p.map((value, axis) => value + (q[axis] - value) * t) as Point3);
+        }
+      }
+      polygon = clipped;
+    }
+    for (let j = 1; j + 1 < polygon.length; j++) {
+      if (side(polygon[0], polygon[j], polygon[j + 1]) > 1e-12) result.push(...polygon[0], ...polygon[j], ...polygon[j + 1]);
+    }
+  }
+  return result;
 }
 
 /** Capas de referencia relativas, nunca profundidades medidas ni planos de inyección. */
