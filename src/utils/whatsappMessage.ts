@@ -3,6 +3,39 @@ const templateTitles: Record<string, string> = {
   agenda_diaria_staff: 'Resumen de agenda',
 };
 
+export function normalizeAppointmentPhone(value: string) {
+  const phone = value.trim();
+  if (!/^(?:\+|00)?[0-9][0-9 ().-]*$/.test(phone)) return '';
+  let digits = phone.replace(/\D/g, '');
+  const international = phone.startsWith('+') || phone.startsWith('00');
+  if (phone.startsWith('00')) digits = digits.slice(2);
+  if (!international) {
+    if (/^09\d{8}$/.test(digits) || /^0[2-7]\d{7}$/.test(digits)) {
+      digits = `593${digits.slice(1)}`;
+    } else if (/^9\d{8}$/.test(digits)) {
+      digits = `593${digits}`;
+    } else if (!/^[1-9]\d{9,14}$/.test(digits)) {
+      return '';
+    }
+  }
+  return /^[1-9]\d{6,14}$/.test(digits) ? digits : '';
+}
+
+export function appointmentContact(description = '') {
+  const text = description
+    .replace(/<br\s*\/?>|<\/(?:p|div|li)>/gi, '\n')
+    .replace(/<[^>]*>/g, '')
+    .replace(/&nbsp;|&#160;/gi, ' ');
+  const phone = text.match(/^[ \t]*(?:[📞☎📱][ \t]*)?(?:tel[eé]fono|tel\.?|celular|m[oó]vil|phone|whatsapp)(?:[ \t]*\/[ \t]*whatsapp)?[ \t]*:[ \t]*([^\r\n]*)/imu)?.[1]?.trim() || '';
+  const internationalPhone = normalizeAppointmentPhone(phone);
+  const issue = !phone
+    ? 'Sin teléfono registrado en Google Calendar. Edita la descripción y añade «Teléfono: +código de país y número».'
+    : !internationalPhone
+      ? 'Revisa el teléfono en la descripción. Para otros países usa +código de país y número; para Ecuador puedes usar el formato local.'
+      : '';
+  return { phone, internationalPhone, issue };
+}
+
 const fieldLabels: Record<string, string> = {
   nombre_paciente: 'Paciente',
   nombre_clinica: 'Clínica',

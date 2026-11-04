@@ -1,5 +1,6 @@
 import crypto from 'crypto';
 import nodemailer from 'nodemailer';
+import { buildGmailRaw } from '../lib/email-mime.js';
 import { google } from 'googleapis';
 import { sql } from '@vercel/postgres';
 import { buildAppointmentSystemNote, resolvePatientReminderContactPhone, sendWhatsAppText, sendWhatsAppTemplate } from '../lib/whatsapp-service.js';
@@ -809,15 +810,9 @@ async function sendEmailAsUser(userId, { fromName, to, subject, html }) {
   const oauth = await getUserGmailClient(userId);
   if (!oauth) throw new Error('no tienes una cuenta Gmail conectada');
   const gmail = google.gmail({ version: 'v1', auth: oauth.client });
-  const raw = Buffer.from([
-    `From: ${fromName} <${oauth.email}>`,
-    `To: ${to}`,
-    `Subject: =?UTF-8?B?${Buffer.from(subject).toString('base64')}?=`,
-    'MIME-Version: 1.0',
-    'Content-Type: text/html; charset=UTF-8',
-    '',
-    html,
-  ].join('\r\n')).toString('base64url');
+  const raw = await buildGmailRaw({
+    from: { name: fromName, address: oauth.email }, to, subject, html,
+  });
   await gmail.users.messages.send({ userId: 'me', requestBody: { raw } });
   return oauth.email;
 }
@@ -934,33 +929,6 @@ export function resolveFinancePeriodChoice(value) {
   return null;
 }
 
-function buildRawEmailWithCsvAttachment({ from, to, subject, html, attachmentName, attachmentContent }) {
-  const boundary = `bioskin_${crypto.randomBytes(8).toString('hex')}`;
-  const attachmentB64 = Buffer.from(attachmentContent, 'utf8').toString('base64').replace(/(.{76})/g, '$1\r\n');
-  const msg = [
-    `From: ${from}`,
-    `To: ${to}`,
-    `Subject: =?UTF-8?B?${Buffer.from(subject).toString('base64')}?=`,
-    'MIME-Version: 1.0',
-    `Content-Type: multipart/mixed; boundary="${boundary}"`,
-    '',
-    `--${boundary}`,
-    'Content-Type: text/html; charset=UTF-8',
-    '',
-    html,
-    '',
-    `--${boundary}`,
-    `Content-Type: text/csv; name="${attachmentName}"`,
-    'Content-Transfer-Encoding: base64',
-    `Content-Disposition: attachment; filename="${attachmentName}"`,
-    '',
-    attachmentB64,
-    '',
-    `--${boundary}--`,
-  ].join('\r\n');
-  return Buffer.from(msg).toString('base64url');
-}
-
 async function getUserGmailClient(userId) {
   const clientId = (process.env.GOOGLE_CLIENT_ID || '').trim();
   const clientSecret = (process.env.GOOGLE_CLIENT_SECRET || '').trim();
@@ -1010,13 +978,16 @@ async function sendFinanceReportToUser(clinicUser, period, from) {
 
   const csv = buildFinanceCsv(recordsRes.rows);
   const gmail = google.gmail({ version: 'v1', auth: oauth.client });
-  const raw = buildRawEmailWithCsvAttachment({
-    from: `${clinicName} <${oauth.email}>`,
+  const raw = await buildGmailRaw({
+    from: { name: clinicName, address: oauth.email },
     to: recipientEmail,
     subject: `Reporte financiero (${range.periodLabel}) — ${clinicName}`,
-    html: `<p>Adjunto el reporte financiero de <strong>${clinicName}</strong> (${range.periodLabel}, ${range.startDate} a ${range.endDate}).</p><p>Registros incluidos: ${recordsRes.rows.length}</p>`,
-    attachmentName: `finanzas_${range.startDate}_${range.endDate}.csv`,
-    attachmentContent: csv,
+    html: `<p>Adjunto el reporte financiero de <strong>${escapeHtml(clinicName)}</strong> (${escapeHtml(range.periodLabel)}, ${escapeHtml(range.startDate)} a ${escapeHtml(range.endDate)}).</p><p>Registros incluidos: ${recordsRes.rows.length}</p>`,
+    attachments: [{
+      filename: `finanzas_${range.startDate}_${range.endDate}.csv`,
+      content: csv,
+      contentType: 'text/csv; charset=utf-8',
+    }],
   });
 
   await gmail.users.messages.send({ userId: 'me', requestBody: { raw } });

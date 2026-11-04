@@ -1,4 +1,5 @@
 import { google } from 'googleapis';
+import { buildGmailRaw } from '../lib/email-mime.js';
 import { sql } from '@vercel/postgres';
 import { getPool } from '../lib/neon-clinical-db.js';
 import { loadSubscriptionLifecycle } from '../lib/subscription-lifecycle.js';
@@ -266,19 +267,6 @@ function clinicNotificationHtml({ clinicName, patientName, patientEmail, phone, 
   `;
 }
 
-function buildRawEmail({ from, to, subject, html }) {
-  const message = [
-    `From: ${from}`,
-    `To: ${to}`,
-    `Subject: =?UTF-8?B?${Buffer.from(subject).toString('base64')}?=`,
-    'MIME-Version: 1.0',
-    'Content-Type: text/html; charset=UTF-8',
-    '',
-    html,
-  ].join('\r\n');
-  return Buffer.from(message).toString('base64url');
-}
-
 export default async function handler(req, res) {
   if (req.method === 'GET') return getPublicAvailability(req, res);
   if (req.method !== 'POST') return res.status(405).json({ success: false, message: 'Método no permitido' });
@@ -450,17 +438,14 @@ export default async function handler(req, res) {
 
   try {
     const gmail = google.gmail({ version: 'v1', auth: oauth.client });
-    const from = `${professional.clinic_name} <${oauth.email}>`;
+    const from = { name: professional.clinic_name, address: oauth.email };
     await Promise.all([
-      gmail.users.messages.send({
-        userId: 'me',
-        requestBody: { raw: buildRawEmail({ from, to: email, subject: `Confirmación de cita en ${professional.clinic_name}`, html }) },
-      }),
-      gmail.users.messages.send({
-        userId: 'me',
-        requestBody: { raw: buildRawEmail({ from, to: oauth.email, subject: `Nueva cita pública: ${name} - ${service}`, html: clinicHtml }) },
-      }),
-    ]);
+      { to: email, subject: `Confirmación de cita en ${professional.clinic_name}`, html },
+      { to: oauth.email, subject: `Nueva cita pública: ${name} - ${service}`, html: clinicHtml },
+    ].map(async (message) => gmail.users.messages.send({
+      userId: 'me',
+      requestBody: { raw: await buildGmailRaw({ from, ...message }) },
+    })));
   } catch (error) {
     if (isGoogleAuthError(error)) {
       await sql`DELETE FROM clinic_oauth_tokens WHERE clinic_user_id = ${professional.id}`;

@@ -4,6 +4,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Clock, User, Phone, Mail, MessageSquare, Save, ArrowLeft, ChevronLeft, ChevronRight, UserCheck, MessageCircle, X, CheckSquare, Square, AlertTriangle } from 'lucide-react';
 import recordsFetch from '../utils/recordsFetch';
+import { normalizeAppointmentPhone } from '../utils/whatsappMessage';
 import { services } from '../data/services';
 import { useAuth } from '../context/AuthContext';
 import type { StaffResource, AgendaResourceOption } from '../types';
@@ -755,12 +756,15 @@ const AdminAppointment: React.FC<AdminAppointmentProps> = ({ onBack }) => {
                     name="phone" 
                     type="tel" 
                     placeholder="Teléfono" 
+                    aria-label="Teléfono del paciente"
+                    aria-describedby="appointment-phone-help"
                     required
                     value={formData.phone}
                     onChange={e => setFormData(f => ({ ...f, phone: e.target.value }))}
                     className="w-full pl-10 p-3 rounded border border-gray-200 focus:border-[#deb887] focus:ring-2 focus:ring-[#deb887] focus:ring-opacity-20"
                   />
                 </div>
+                <p id="appointment-phone-help" className="text-xs text-gray-500">Ecuador: 0991234567. Otros países: +código de país y número, por ejemplo +34 612 345 678. Tener teléfono no garantiza que tenga WhatsApp.</p>
 
                 <select
                   name="service"
@@ -994,21 +998,22 @@ const AdminAppointment: React.FC<AdminAppointmentProps> = ({ onBack }) => {
             <p className="text-green-800 font-medium">
               La cita ha sido registrada en el calendario y se ha enviado la confirmación por email.
             </p>
-            {formData.phone && (() => {
-              const phoneClean = formData.phone.replace(/[\s\-+]/g, '').replace(/^0/, '');
+            {normalizeAppointmentPhone(formData.phone) && (() => {
+              const phoneClean = normalizeAppointmentPhone(formData.phone);
               const waText = encodeURIComponent(
                 `Hola ${formData.name}, ¡gracias por agendar tu cita! 🧴✨\n` +
                 `Hemos registrado tu cita para el servicio "${formData.service}" el ${selectedDay} a las ${selectedHour}.\n` +
                 `Si tienes alguna pregunta, responde este mensaje.\n¡Nos vemos pronto!`
               );
               return (
-                <a href={`https://wa.me/593${phoneClean}?text=${waText}`} target="_blank" rel="noopener noreferrer"
+                <a href={`https://wa.me/${phoneClean}?text=${waText}`} target="_blank" rel="noopener noreferrer"
                   className="mt-3 flex items-center justify-center gap-2 w-full py-2.5 rounded-lg bg-green-500 hover:bg-green-600 text-white font-medium text-sm transition-colors">
                   <MessageCircle className="w-4 h-4" />
                   Enviar mensaje de WhatsApp al paciente
                 </a>
               );
             })()}
+            {!normalizeAppointmentPhone(formData.phone) && <p className="mt-3 text-sm text-amber-800">No se puede abrir WhatsApp: revisa el teléfono en la cita. Para números extranjeros incluye +código de país.</p>}
           </div>
           
           <div className="space-y-3 mb-6">

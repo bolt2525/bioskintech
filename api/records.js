@@ -1,5 +1,6 @@
 import crypto from 'crypto';
 import nodemailer from 'nodemailer';
+import { buildGmailRaw } from '../lib/email-mime.js';
 import { google } from 'googleapis';
 import { sql } from '@vercel/postgres';
 import { initClinicalDatabase, getPool, getAppPool } from '../lib/neon-clinical-db.js';
@@ -598,7 +599,7 @@ async function sendConsentEmail({ oauth, fromName, to, subject, text, html, sign
       auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS },
     });
     await transporter.sendMail({
-      from: `${fromName || 'BIOSKIN'} <${process.env.EMAIL_USER}>`,
+      from: { name: fromName || 'BIOSKIN', address: process.env.EMAIL_USER },
       to,
       subject,
       text,
@@ -816,34 +817,6 @@ async function getUserGmailClient(userId) {
   return { client: oAuth2, email };
 }
 
-/** Arma un mensaje MIME multipart (HTML + adjunto CSV) codificado para la Gmail API. */
-function buildRawEmailWithCsvAttachment({ from, to, subject, html, attachmentName, attachmentContent }) {
-  const boundary = `bioskin_${crypto.randomBytes(8).toString('hex')}`;
-  const attachmentB64 = Buffer.from(attachmentContent, 'utf8').toString('base64').replace(/(.{76})/g, '$1\r\n');
-  const msg = [
-    `From: ${from}`,
-    `To: ${to}`,
-    `Subject: =?UTF-8?B?${Buffer.from(subject).toString('base64')}?=`,
-    'MIME-Version: 1.0',
-    `Content-Type: multipart/mixed; boundary="${boundary}"`,
-    '',
-    `--${boundary}`,
-    'Content-Type: text/html; charset=UTF-8',
-    '',
-    html,
-    '',
-    `--${boundary}`,
-    `Content-Type: text/csv; name="${attachmentName}"`,
-    'Content-Transfer-Encoding: base64',
-    `Content-Disposition: attachment; filename="${attachmentName}"`,
-    '',
-    attachmentB64,
-    '',
-    `--${boundary}--`,
-  ].join('\r\n');
-  return Buffer.from(msg).toString('base64url');
-}
-
 /** Genera el CSV del rango pedido y lo envía por Gmail al correo de administración financiera configurado. */
 async function sendFinanceCsvToAdmin({ pool, clinicId, userId, financeScope = 'all', startDate, endDate, periodLabel }) {
   const settingsRes = await sql`SELECT finanzas, general FROM clinic_settings WHERE clinic_id = ${clinicId}`;
@@ -871,13 +844,16 @@ async function sendFinanceCsvToAdmin({ pool, clinicId, userId, financeScope = 'a
     );
   const csv = buildFinanceCsv(recordsRes.rows);
   const gmail = google.gmail({ version: 'v1', auth: oauth.client });
-  const raw = buildRawEmailWithCsvAttachment({
-    from: `${clinicName} <${oauth.email}>`,
+  const raw = await buildGmailRaw({
+    from: { name: clinicName, address: oauth.email },
     to: adminEmail,
     subject: `Reporte financiero (${periodLabel}) — ${clinicName}`,
-    html: `<p>Adjunto el reporte financiero de <strong>${clinicName}</strong> (${periodLabel}, ${startDate} a ${endDate}).</p><p>Registros incluidos: ${recordsRes.rows.length}</p>`,
-    attachmentName: `finanzas_${startDate}_${endDate}.csv`,
-    attachmentContent: csv,
+    html: `<p>Adjunto el reporte financiero de <strong>${escapeConsentHtml(clinicName)}</strong> (${escapeConsentHtml(periodLabel)}, ${escapeConsentHtml(startDate)} a ${escapeConsentHtml(endDate)}).</p><p>Registros incluidos: ${recordsRes.rows.length}</p>`,
+    attachments: [{
+      filename: `finanzas_${startDate}_${endDate}.csv`,
+      content: csv,
+      contentType: 'text/csv; charset=utf-8',
+    }],
   });
   await gmail.users.messages.send({ userId: 'me', requestBody: { raw } });
   return { recordCount: recordsRes.rows.length, adminEmail };

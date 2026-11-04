@@ -1,5 +1,6 @@
 
 import nodemailer from 'nodemailer';
+import { buildGmailRaw } from '../lib/email-mime.js';
 import { google } from 'googleapis';
 import { sql } from '@vercel/postgres';
 import { authenticateRequest } from '../lib/admin-auth.js';
@@ -424,7 +425,7 @@ export default async function handler(req, res) {
 
     const staffEmailHtml = `
       <h2 style="color:#ba9256;margin-bottom:4px;">Nueva cita registrada</h2>
-      <p>Hola ${clinic.from_name}, se ha recibido una nueva solicitud de cita.</p>
+      <p>Hola ${escapeHtml(clinic.from_name)}, se ha recibido una nueva solicitud de cita.</p>
       <table style="width:100%;border-collapse:collapse;margin-bottom:14px;">
         <tr><td style="padding:8px 0;border-bottom:1px solid #eee;"><b>Paciente:</b></td><td>${escapeHtml(paciente)}</td></tr>
         <tr><td style="padding:8px 0;border-bottom:1px solid #eee;"><b>Email:</b></td><td>${escapeHtml(email)}</td></tr>
@@ -470,7 +471,7 @@ export default async function handler(req, res) {
     const staffTo = clinic.staff_email || process.env.EMAIL_TO || '';
     const doctorEmailHtml = selected_staff_name
       ? staffEmailHtml.replace(
-          `Hola ${clinic.from_name}`,
+          `Hola ${escapeHtml(clinic.from_name)}`,
           `Hola ${escapeHtml(selected_staff_name)} — has sido asignado/a a esta cita`
         )
       : staffEmailHtml;
@@ -479,30 +480,18 @@ export default async function handler(req, res) {
       // Gmail API con OAuth del usuario autenticado
       console.log('📧 Enviando vía Gmail API OAuth:', clinicOAuth.email);
       const gmail = google.gmail({ version: 'v1', auth: clinicOAuth.client });
-      const fromAddr = `${clinic.from_name} <${clinicOAuth.email}>`;
-
-      const makeRaw = (to, subject, html, from) => {
-        const msg = [
-          `From: ${from}`,
-          `To: ${to}`,
-          `Subject: =?UTF-8?B?${Buffer.from(subject).toString('base64')}?=`,
-          'MIME-Version: 1.0',
-          'Content-Type: text/html; charset=UTF-8',
-          '',
-          html,
-        ].join('\r\n');
-        return Buffer.from(msg).toString('base64url');
-      };
+      const fromAddr = { name: clinic.from_name, address: clinicOAuth.email };
+      const makeRaw = (to, subject, html, from) => buildGmailRaw({ from, to, subject, html });
 
       if (staffTo) {
         await gmail.users.messages.send({ userId: 'me', requestBody: {
-          raw: makeRaw(staffTo, `🗓️ Nueva cita - ${paciente}${fecha ? ` (${fecha})` : ''}`, staffEmailWithFooter, fromAddr)
+          raw: await makeRaw(staffTo, `🗓️ Nueva cita - ${paciente}${fecha ? ` (${fecha})` : ''}`, staffEmailWithFooter, fromAddr)
         }});
       }
       // Enviar también al médico/staff seleccionado si es diferente del staff_email general
       if (selected_staff_email && selected_staff_email !== staffTo) {
         await gmail.users.messages.send({ userId: 'me', requestBody: {
-          raw: makeRaw(selected_staff_email, `🗓️ [Tu cita] ${paciente}${fecha ? ` — ${fecha}` : ''}`, `${doctorEmailHtml}${platformFooterHtml}`, fromAddr)
+          raw: await makeRaw(selected_staff_email, `🗓️ [Tu cita] ${paciente}${fecha ? ` — ${fecha}` : ''}`, `${doctorEmailHtml}${platformFooterHtml}`, fromAddr)
         }});
         console.log('📧 Copia enviada al médico seleccionado:', selected_staff_email);
       }
@@ -511,13 +500,13 @@ export default async function handler(req, res) {
         for (const ccEmail of additional_notify_emails) {
           if (ccEmail && ccEmail !== staffTo && ccEmail !== selected_staff_email) {
             await gmail.users.messages.send({ userId: 'me', requestBody: {
-              raw: makeRaw(ccEmail, `🗓️ Copia: cita ${paciente}${fecha ? ` (${fecha})` : ''}`, staffEmailWithFooter, fromAddr)
+              raw: await makeRaw(ccEmail, `🗓️ Copia: cita ${paciente}${fecha ? ` (${fecha})` : ''}`, staffEmailWithFooter, fromAddr)
             }});
           }
         }
       }
       await gmail.users.messages.send({ userId: 'me', requestBody: {
-        raw: makeRaw(email, `¡Hemos recibido tu cita en ${clinic.name}!`, patientEmailWithFooter, fromAddr)
+        raw: await makeRaw(email, `¡Hemos recibido tu cita en ${clinic.name}!`, patientEmailWithFooter, fromAddr)
       }});
       emailSuccess = true;
       console.log('✅ Correos enviados vía Gmail API');

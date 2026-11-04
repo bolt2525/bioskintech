@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import recordsFetch from '../utils/recordsFetch';
+import { appointmentContact } from '../utils/whatsappMessage';
 import { useClinicSettings } from '../hooks/useClinicSettings';
 import { useAuth } from '../context/AuthContext';
 import type { StaffResource } from '../types';
@@ -315,19 +316,8 @@ const CalendarManager: React.FC<CalendarManagerProps> = ({ onBack }) => {
   const getWhatsAppLink = (event: CalendarEvent) => {
     if (event.eventType !== 'appointment') return null;
 
-    // Intentar extraer teléfono de la descripción
-    // Formato esperado en descripción: "Teléfono: 09..."
-    const phoneMatch = event.description?.match(/Teléfono:\s*([\d+\s-]+)/);
-    let phone = phoneMatch ? phoneMatch[1].replace(/\D/g, '') : '';
-    
+    const phone = appointmentContact(event.description).internationalPhone;
     if (!phone) return null;
-    
-    // Formatear a 593 (Ecuador)
-    if (phone.startsWith('0')) {
-      phone = '593' + phone.substring(1);
-    } else if (!phone.startsWith('593') && phone.length === 9) {
-       phone = '593' + phone;
-    }
 
     // Extraer nombre
     let patientName = "Paciente";
@@ -375,13 +365,21 @@ const CalendarManager: React.FC<CalendarManagerProps> = ({ onBack }) => {
     let patientName = event.summary;
     if (event.summary.startsWith('Cita: ')) patientName = event.summary.substring(6).split(' - ')[0];
     const service = event.description?.match(/Servicio:\s*([^\n]+)/)?.[1]?.trim() || '';
-    const phone = event.description?.match(/Teléfono:\s*([\d+\s-]+)/)?.[1]?.trim() || '';
+    const contact = appointmentContact(event.description);
+    const phone = contact.phone;
+    const whatsAppLink = getWhatsAppLink(event);
     const professional = event.description?.match(/Profesional:\s*([^\n]+)/)?.[1]?.trim() || '';
 
     return (
       <div key={event.id}
         onClick={() => openEventDetails(event)}
-        onKeyDown={(keyboardEvent) => { if (keyboardEvent.key === 'Enter' || keyboardEvent.key === ' ') openEventDetails(event); }}
+        onKeyDown={(keyboardEvent) => {
+          if (keyboardEvent.target !== keyboardEvent.currentTarget) return;
+          if (keyboardEvent.key === 'Enter' || keyboardEvent.key === ' ') {
+            keyboardEvent.preventDefault();
+            openEventDetails(event);
+          }
+        }}
         role="button"
         tabIndex={0}
         className={`flex items-center gap-3 p-3 rounded-xl border transition-all hover:shadow-sm ${
@@ -406,11 +404,16 @@ const CalendarManager: React.FC<CalendarManagerProps> = ({ onBack }) => {
             {service && <span className="text-xs text-[#deb887] font-medium truncate">{service}</span>}
             {professional && <span className="text-xs text-gray-400 truncate">· {professional}</span>}
             {phone && !isBlock && <span className="text-xs text-gray-400 truncate">· {phone}</span>}
+            {!isBlock && contact.issue && <span className="text-xs text-amber-700">{phone ? 'Revisar teléfono' : 'Sin teléfono'}</span>}
             {!service && !professional && !phone && <span className="text-xs text-gray-400 truncate">{event.summary}</span>}
           </div>
         </div>
         <div className="flex items-center gap-1 flex-shrink-0">
-          {getWhatsAppLink(event) && <a onClick={(clickEvent) => clickEvent.stopPropagation()} href={getWhatsAppLink(event)!} target="_blank" rel="noopener noreferrer" className="p-2 rounded-lg bg-green-50 text-green-600 hover:bg-green-100 transition-colors" title="Enviar recordatorio por WhatsApp"><MessageCircle className="w-4 h-4" /></a>}
+          {!isBlock && (whatsAppLink ? (
+            <a onClick={(clickEvent) => clickEvent.stopPropagation()} href={whatsAppLink} target="_blank" rel="noopener noreferrer" className="p-2 rounded-lg bg-green-50 text-green-600 hover:bg-green-100 transition-colors" title="Abrir WhatsApp (cuenta no verificada)" aria-label="Abrir WhatsApp (cuenta no verificada)"><MessageCircle className="w-4 h-4" /></a>
+          ) : (
+            <button onClick={(clickEvent) => { clickEvent.stopPropagation(); openEventDetails(event); }} className="p-2 rounded-lg bg-amber-50 text-amber-700 hover:bg-amber-100" title={contact.issue} aria-label={phone ? 'Revisar teléfono para WhatsApp' : 'Añadir teléfono para WhatsApp'}><MessageCircle className="w-4 h-4" /></button>
+          ))}
           <button onClick={(clickEvent) => { clickEvent.stopPropagation(); openEventDetails(event); }} className="p-2 rounded-lg text-gray-400 hover:bg-gray-100 hover:text-gray-700 transition-colors" title="Ver detalles"><Edit3 className="w-4 h-4" /></button>
           <button onClick={(clickEvent) => { clickEvent.stopPropagation(); deleteEvent(event); }} disabled={deletingEvents.has(event.id)} className="p-2 rounded-lg text-red-400 hover:bg-red-50 hover:text-red-600 transition-colors disabled:opacity-40" title={isBlock ? 'Eliminar bloqueo' : 'Cancelar cita'}>
             {deletingEvents.has(event.id) ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
@@ -701,6 +704,18 @@ const CalendarManager: React.FC<CalendarManagerProps> = ({ onBack }) => {
                 <>
                   <div className="flex items-center gap-3 rounded-xl bg-gray-50 p-4"><Clock className="h-5 w-5 text-[#deb887]" /><span className="capitalize text-sm text-gray-700">{formatEventDateTime(selectedEvent)}</span></div>
                   {selectedEvent.description && <p className="whitespace-pre-line text-sm leading-6 text-gray-600">{selectedEvent.description}</p>}
+                  {selectedEvent.eventType === 'appointment' && (
+                    <div className="space-y-2 rounded-xl bg-gray-50 p-3 text-sm text-gray-600">
+                      {appointmentContact(selectedEvent.description).issue ? (
+                        <p role="status">{appointmentContact(selectedEvent.description).issue}</p>
+                      ) : (
+                        <>
+                          <a href={getWhatsAppLink(selectedEvent)!} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2 font-medium text-green-700"><MessageCircle className="h-4 w-4" />Abrir WhatsApp</a>
+                          <p>El enlace no verifica si el número tiene WhatsApp. Si no tiene cuenta, contacta por llamada o correo.</p>
+                        </>
+                      )}
+                    </div>
+                  )}
                   {selectedEvent.location && <p className="text-sm text-gray-600">Ubicación: {selectedEvent.location}</p>}
                   <div className="flex flex-wrap justify-end gap-2 border-t border-gray-100 pt-4"><button onClick={() => setEditMode('reschedule')} className="rounded-lg border border-[#deb887] px-4 py-2 text-sm font-medium text-[#99652f] hover:bg-[#deb887]/10">Reprogramar</button><button onClick={() => setEditMode('details')} className="rounded-lg bg-[#deb887] px-4 py-2 text-sm font-medium text-white hover:bg-[#d4a574]">Editar</button><button onClick={() => { setSelectedEvent(null); deleteEvent(selectedEvent); }} className="rounded-lg border border-red-200 px-4 py-2 text-sm font-medium text-red-600 hover:bg-red-50">Eliminar</button></div>
                 </>

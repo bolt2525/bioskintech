@@ -1,5 +1,10 @@
 # Progreso de BioSkinTech App
 
+- ✅ 2026-11-04 Agenda: teléfonos internacionales corregidos.
+- ✅ 2026-11-04 Agenda: contacto ausente explicado.
+- ✅ 2026-11-04 Correos: remitentes MIME UTF-8.
+- QA: 71 pruebas, build y sintaxis aprobados; Chromium 1440/390 verifica enlaces, estados y edición con datos ficticios. Lint: cero errores, tres avisos previos; TypeScript conserva los mismos 12 diagnósticos de HEAD. Sin envíos reales ni verificación de buzones de producción.
+
 - ✅ 2026-10-31 Piel: marcado sobre máscara.
 - ✅ 2026-10-31 Piel: foto ampliada; correcciones combinables.
 - ✅ 2026-10-31 Morfología: rango y espesor labial.
