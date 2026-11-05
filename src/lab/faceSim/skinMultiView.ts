@@ -1,4 +1,4 @@
-import { applyRegistration, fitAffineRegistration, type P2, type PersonalSurface } from './engine.ts';
+import { applyRegistration, fitAffineRegistration, fitHairPhotoProjection, type P2, type PersonalSurface } from './engine.ts';
 import { locatePhotoPoint, surfacePoint } from './faceTransfer.ts';
 import atlas from './genericFaceAtlas.json' with { type: 'json' };
 import type { SkinVisualCandidate } from './skinAppearance.ts';
@@ -18,6 +18,15 @@ export interface SkinPhotoMapping {
   direction: readonly number[];
   manual: boolean;
 }
+
+/** La transferencia de puntos no depende de aprobar una foto como textura lateral. */
+export function detectedSkinMapping(surface: PersonalSurface, landmarks: readonly P2[]): SkinPhotoMapping | undefined {
+  const references = Array.from({ length: 468 }, (_, i) => i).filter(i =>
+    surface.positions[i * 3 + 1] <= surface.positions[9 * 3 + 1]);
+  const fit = fitHairPhotoProjection(surface.positions, landmarks, references);
+  if (!fit || fit.error > .045) return undefined;
+  return { landmarks, direction: fit.projection.towardCamera, manual: false };
+}
 export interface SkinPhotoResult {
   sourceId: string;
   candidates: SkinVisualCandidate[];
@@ -35,6 +44,18 @@ export interface SkinMappedCandidate {
   observationIds: string[];
   label: string;
   manual: boolean;
+}
+
+export function replaceSkinFocusCandidates(previous: readonly SkinVisualCandidate[], next: readonly SkinVisualCandidate[], rectangle: readonly P2[]) {
+  if (!isValidSkinPolygon(rectangle)) throw new Error('La zona de búsqueda no es válida.');
+  const left = Math.min(...rectangle.map(p => p.x)), right = Math.max(...rectangle.map(p => p.x));
+  const top = Math.min(...rectangle.map(p => p.y)), bottom = Math.max(...rectangle.map(p => p.y));
+  const outside = previous.filter(candidate => {
+    const x = candidate.x + candidate.width / 2, y = candidate.y + candidate.height / 2;
+    return x < left || x > right || y < top || y > bottom;
+  });
+  if (outside.length + next.length > 112) throw new Error('Esta foto alcanzó el límite de revisión. Usa Analizar fotos para reiniciar antes de buscar más zonas; se conserva el resultado anterior.');
+  return { outside, candidates: [...outside, ...next] };
 }
 
 export const PROFILE_SKIN_ANCHORS = [
@@ -69,7 +90,7 @@ export function alignSkinProfile(
 }
 
 export function skinPolygonMask(width: number, height: number, polygons: readonly (readonly P2[])[]): Uint8Array {
-  if (!Number.isInteger(width) || !Number.isInteger(height) || width < 1 || height < 1 || width > 384 || height > 384
+  if (!Number.isInteger(width) || !Number.isInteger(height) || width < 1 || height < 1 || width > 768 || height > 768
     || polygons.length > 8 || polygons.some(p => !isValidSkinPolygon(p))) throw new Error('Delimita áreas de piel válidas, sin cruzar el trazado.');
   const mask = new Uint8Array(width * height);
   for (const polygon of polygons) {

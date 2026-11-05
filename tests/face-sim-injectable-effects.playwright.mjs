@@ -291,6 +291,8 @@ try {
     .getByRole('button', { name: 'Morfología, piel y capas', exact: true }).click();
   const appearance = page.locator('[data-face-appearance-group]');
   await appearance.getByRole('button', { name: 'Piel', exact: true }).click();
+  await appearance.getByRole('group', { name: 'Flujo de piel' }).getByText('Avanzados', { exact: true }).click();
+  await appearance.getByRole('button', { name: 'Retoque y zonas', exact: true }).click();
   const regionEditor = appearance.getByRole('region', { name: 'Revisión visual manual por zonas', exact: true });
   const roi = regionEditor.getByRole('application', { name: 'Área para delimitar una zona de piel' });
   await roi.waitFor();

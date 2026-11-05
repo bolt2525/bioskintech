@@ -64,11 +64,15 @@ try {
   await page.getByRole('button', { name: 'Usar generada sin ajustes', exact: true }).click();
   await page.getByRole('button', { name: 'Simular y marcar', exact: true }).click();
   await page.waitForFunction(() => window.__skinBasePositions);
-  await page.getByRole('button', { name: 'Piel · fotos y máscara', exact: true }).click();
-  const dialog = page.getByRole('dialog', { name: 'Revisión de piel · fotos y máscara' });
+  await page.getByRole('button', { name: 'Morfología, piel y capas', exact: true }).click();
+  await page.locator('[data-face-editor]').getByRole('button', { name: 'Piel', exact: true }).click();
+  const dialog = page.getByRole('region', { name: 'Revisión de piel · fotos y máscara' });
   await dialog.waitFor();
+  assert.equal(await page.getByRole('dialog').count(), 0, 'la revisión pertenece a Piel, no a otro modal');
+  await dialog.getByText('Avanzados · áreas, sensibilidad y alineación', { exact: true }).click();
   const source = label => dialog.getByRole('group', { name: 'Fotos de piel' }).getByRole('button', { name: new RegExp(`^${label}`) });
   const coordinates = async point => {
+    if (!await dialog.getByLabel('X (%)', { exact: true }).isVisible()) await dialog.getByText('Introducir punto con teclado', { exact: true }).click();
     await dialog.getByLabel('X (%)', { exact: true }).fill(`${point.x * 100}`);
     await dialog.getByLabel('Y (%)', { exact: true }).fill(`${point.y * 100}`);
     await dialog.getByRole('button', { name: 'Añadir punto', exact: true }).click();
@@ -80,7 +84,7 @@ try {
     await dialog.getByRole('button', { name: 'Cerrar área', exact: true }).click();
     await dialog.getByLabel('Las áreas contienen solo piel visible, sin ojos, labios, pelo ni fondo.').check();
   }
-  const analyze = dialog.getByRole('button', { name: 'Analizar mejores 3 fotos', exact: true });
+  const analyze = dialog.getByRole('button', { name: 'Analizar fotos', exact: true });
   const contrast = await analyze.evaluate(element => {
     const style = getComputedStyle(element);
     const luminance = color => color.match(/[\d.]+/g).slice(0, 3).map(Number).map(value => value / 255)
@@ -101,19 +105,35 @@ try {
   await source('Ángulo A').click();
   assert.ok(await dialog.getByRole('list', { name: 'Candidatos multivista' }).getByRole('listitem').count() > 0);
   await dialog.getByRole('button', { name: 'Aceptar candidato 1', exact: true }).click();
-  await dialog.getByText(/1\. Enrojecimiento aparente · revisado/).waitFor();
+  await dialog.getByLabel('Estado de revisión', { exact: true }).selectOption('all');
+  await dialog.getByText(/1\..* · revisado/).waitFor();
   await dialog.getByRole('button', { name: 'Descartar candidato 1', exact: true }).click();
-  assert.equal(await dialog.getByRole('button', { name: 'Aceptar candidato 1', exact: true }).count(), 0);
+  await dialog.getByText(/1\..* · descartado/).waitFor();
   await dialog.getByRole('button', { name: 'Restablecer revisión', exact: true }).click();
+  await dialog.getByLabel('Estado de revisión', { exact: true }).selectOption('pending');
+  await dialog.getByRole('button', { name: 'Buscar en zona', exact: true }).click();
+  for (const point of [{ x: .25, y: .52 }, { x: .40, y: .70 }]) await coordinates(point);
+  await dialog.getByRole('button', { name: 'Buscar aquí con más detalle', exact: true }).click();
+  await dialog.getByText('Zona revisada con más detalle. Los candidatos anteriores fuera de ella se conservan.', { exact: true }).waitFor();
+  assert.ok(await dialog.locator('svg rect').evaluateAll(nodes => nodes.some(node => {
+    const x = Number(node.getAttribute('x')) + Number(node.getAttribute('width')) / 2;
+    const y = Number(node.getAttribute('y')) + Number(node.getAttribute('height')) / 2;
+    return x >= .25 && x <= .40 && y >= .52 && y <= .70;
+  })), 'buscar aquí debe encontrar el estímulo sintético dentro de la zona');
+  const pending = await dialog.getByRole('listitem').count();
+  await dialog.getByRole('button', { name: 'Aceptar y siguiente · A', exact: true }).click();
+  assert.equal(await dialog.getByRole('listitem').count(), pending - 1);
+  await dialog.getByRole('button', { name: 'Deshacer revisión', exact: true }).click();
+  assert.equal(await dialog.getByRole('listitem').count(), pending);
   await source('Frontal').click();
   assert.ok(await dialog.getByText(/^Indicador en máscara:/).count() > 0);
-  await dialog.getByLabel('Mostrar indicadores en la máscara', { exact: true }).check();
   await dialog.getByRole('region', { name: 'Candidatos sobre máscara' }).locator('canvas').waitFor();
   const anchors = await page.evaluate(() => {
     const p = window.__skinBasePositions, h = Math.abs(p[31] - p[457]);
     return [168, 1, 2, 0, 17, 152].map(id => ({ x: .3 + p[id * 3 + 2] / h * .65, y: .5 - p[id * 3 + 1] / h * .65 }));
   });
   await source('Ángulo A').click();
+  await dialog.getByText('Alinear perfil puro con la máscara', { exact: true }).click();
   await dialog.getByRole('button', { name: 'Marcar seis referencias', exact: true }).click();
   for (const point of anchors) await coordinates(point);
   await dialog.getByRole('button', { name: 'Validar alineación', exact: true }).click();
@@ -131,12 +151,20 @@ try {
   await page.setViewportSize({ width: 390, height: 844 });
   assert.ok(await dialog.evaluate(node => node.scrollWidth <= node.clientWidth + 1));
   assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1));
-  await dialog.getByRole('button', { name: 'Cerrar', exact: true }).click();
-  await page.getByRole('button', { name: 'Piel · fotos y máscara', exact: true }).click();
-  await dialog.waitFor();
-  assert.equal(await dialog.getByRole('listitem').count(), 0, 'cerrar descarta resultados y decisiones');
-  await dialog.getByRole('button', { name: 'Cerrar', exact: true }).click();
+  const count = await dialog.getByRole('listitem').count();
+  await page.locator('[data-face-editor]').getByRole('button', { name: 'Morfología', exact: true }).click();
+  const appearance = page.locator('[data-face-editor]');
+  assert.equal(await appearance.getByRole('slider', { name: 'Margen suave', exact: true }).count(), 0);
+  await appearance.getByText('Avanzados de simetría', { exact: true }).click();
+  await appearance.getByRole('slider', { name: 'Margen suave', exact: true }).waitFor();
+  await page.locator('[data-face-editor]').getByRole('button', { name: 'Piel', exact: true }).click();
+  assert.equal(await dialog.getByRole('listitem').count(), count, 'cambiar de herramienta conserva la revisión');
+  await appearance.getByRole('group', { name: 'Flujo de piel' }).getByText('Avanzados', { exact: true }).click();
+  await appearance.getByRole('button', { name: 'Retoque y zonas', exact: true }).click();
+  await appearance.getByRole('region', { name: 'Revisión visual manual por zonas', exact: true }).waitFor();
+  await appearance.getByRole('button', { name: 'Buscar y revisar', exact: true }).click();
+  assert.equal(await dialog.getByRole('listitem').count(), count, 'retoque no pierde decisiones ni candidatos');
   assert.deepEqual(errors, []);
-  console.log(JSON.stringify({ cases: 13, synthetic: true, contrast, durationMs: duration, repeatHeapDeltaMB: before && after ? (after - before) / 1048576 : null,
+  console.log(JSON.stringify({ cases: 18, synthetic: true, contrast, durationMs: duration, repeatHeapDeltaMB: before && after ? (after - before) / 1048576 : null,
     manualProfile: true, photoAndMask: true, desktop: 1440, mobile: 390, errors }));
 } finally { await browser.close(); }

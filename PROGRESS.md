@@ -1,5 +1,12 @@
 # Progreso de BioSkinTech App
 
+- ✅ 2026-11-04 Piel: flujo único y dividido.
+- ✅ 2026-11-04 Laterales: indicadores independientes de textura.
+- ✅ 2026-11-04 Piel: categorías y búsqueda dirigida.
+- ✅ 2026-11-04 Simetría: opciones agrupadas en avanzados.
+- QA: 94 pruebas focales únicas, build y lint focal aprobados. Navegador sintético: 18 casos a 1440/390 px; búsqueda dirigida encuentra el estímulo dentro de la zona, aceptar/deshacer y alternar herramientas/retoque conservan la revisión. Tres fotos en 2,7 s; dos repeticiones tras GC dejan +1,4 MiB de heap JS (no RAM/GPU total). Cero errores JS.
+- QA real local: fotos autorizadas con detector original y red externa bloqueada; una vista lateral detectada coloca indicadores automáticamente sin depender de un parche de textura. Foto sin malla admite búsqueda dirigida con área confirmada; tres vistas analizadas. Inspección visual desktop/móvil sin errores JS; temporales privados fuera de Git.
+- Clasificación específica pendiente: investigación ampliada autorizada, sin ejecutar ni integrar modelos no validados. ViT de acné global (~343 MB) sin localización/export navegador/métricas suficientes; YOLOv8 requiere aclarar licencias y validación. No se etiquetan candidatos RGB como acné, lunares o cicatrices. Sin aprendizaje con clics ni persistencia clínica nueva. TypeScript conserva 12 errores previos fuera del Lab; pruebas exclusivamente locales.
 - ✅ 2026-11-04 Piel: revisión multivista local.
 - ✅ 2026-11-04 Perfiles: áreas y alineación manual.
 - ✅ 2026-11-04 Hover: regiones continuas con oclusión.

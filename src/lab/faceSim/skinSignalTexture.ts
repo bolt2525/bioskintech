@@ -47,6 +47,8 @@ export function createSkinSignalMask(width: number, height: number, landmarks?: 
   const faceHeight = Math.max(...oval.map(p => p.y)) - Math.min(...oval.map(p => p.y));
   const margin = faceHeight * 0.04;
   const exclusions = [
+    bounds([70, 63, 105, 66, 107, 55, 65, 52, 53, 46], margin),
+    bounds([336, 296, 334, 293, 300, 276, 283, 282, 295, 285], margin),
     bounds(FACE_REGION_BOUNDARIES.leftEye, margin),
     bounds(FACE_REGION_BOUNDARIES.rightEye, margin),
     bounds([...FACE_REGION_BOUNDARIES.upperLip, ...FACE_REGION_BOUNDARIES.lowerLip], margin),

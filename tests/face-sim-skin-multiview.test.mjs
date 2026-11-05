@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import atlas from '../src/lab/faceSim/genericFaceAtlas.json' with { type: 'json' };
-import { alignSkinProfile, mapSkinCandidate, mergeSkinObservations, PROFILE_SKIN_ANCHORS, selectSkinPhotos, skinPhotoQuality, skinPolygonMask } from '../src/lab/faceSim/skinMultiView.ts';
+import { alignSkinProfile, detectedSkinMapping, mapSkinCandidate, mergeSkinObservations, PROFILE_SKIN_ANCHORS, selectSkinPhotos, skinPhotoQuality, skinPolygonMask } from '../src/lab/faceSim/skinMultiView.ts';
 import { analyzeSkinAppearance, skinVisualCandidates } from '../src/lab/faceSim/skinAppearance.ts';
 import { applyRegistration, fitAffineRegistration } from '../src/lab/faceSim/engine.ts';
 
@@ -35,7 +35,7 @@ test('área manual de piel: no analiza toda la imagen por defecto ni acepta pol�
   assert.equal(mask[0], 0); assert.equal(mask[50 * 100 + 50], 1);
   assert.ok(skinPolygonMask(50, 50, []).every(value => value === 0));
   assert.throws(() => skinPolygonMask(100, 100, [[polygon[0], polygon[2], polygon[1], polygon[3]]]), /válidas/);
-  assert.throws(() => skinPolygonMask(768, 768, [polygon]), /válidas/);
+  assert.throws(() => skinPolygonMask(1024, 1024, [polygon]), /válidas/);
 });
 
 test('perfil con clics imperfectos usa la afín real, no los coeficientes modificados por TPS', () => {
@@ -98,4 +98,24 @@ test('deduplicación solo espacial/canal entre vistas; no mezcla color y textura
   assert.equal(merged.length, 2); assert.deepEqual(merged[0].observations, ['front', 'a']);
   assert.deepEqual(merged[0].observationIds, ['front/red', 'a/red']);
   assert.equal(merged[0].manual, true); assert.deepEqual(base.observations, ['front']); assert.equal(base.manual, false);
+});
+
+test('laterales detectados se proyectan sin exigir parche de textura ni reflejar el lado', () => {
+  for (const sign of [-1, 1]) {
+    const yaw = sign * Math.PI / 3;
+    const landmarks = Array.from({ length: 468 }, (_, i) => ({
+      x: .5 + (Math.cos(yaw) * surface.positions[i * 3] - Math.sin(yaw) * surface.positions[i * 3 + 2]) * .7 / height,
+      y: .5 - surface.positions[i * 3 + 1] * .7 / height,
+    }));
+    const mapping = detectedSkinMapping(surface, landmarks);
+    assert.ok(mapping);
+    assert.equal(Math.sign(mapping.direction[0]), sign);
+    const transferred = landmarks.flatMap((p, i) => {
+      if (Math.sign(surface.positions[i * 3]) !== sign) return [];
+      const point = mapSkinCandidate('lateral', { id: `${i}`, channel: 'redDots', x: p.x - .001, y: p.y - .001, width: .002, height: .002 }, mapping, surface);
+      return point ? [point] : [];
+    });
+    assert.ok(transferred.length > 20);
+    assert.ok(transferred.every(point => Math.sign(point.point.x) === sign));
+  }
 });

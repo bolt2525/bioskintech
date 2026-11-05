@@ -19,7 +19,7 @@ import type { PhotoSurfacePatch } from './multiViewHead';
 import { assessFaceCapture, classifyFacePose, compareFaceGeometry } from './photoValidation';
 import { DETECTION_RETRIES, detectionImage, refineLandmarksByCrop, restoreDetectionPoint } from './detection';
 import { Tooltip } from '../../components/ui/Tooltip';
-import type { SkinAppearanceVisualChannel, SkinAppearanceResult } from './skinAppearance';
+import { SKIN_CANDIDATE_COLORS, type SkinAppearanceVisualChannel, type SkinAppearanceResult } from './skinAppearance';
 import genericFaceAtlas from './genericFaceAtlas.json' with { type: 'json' };
 import { locateModelPoint, locatePhotoPoint, modelPoint as tryModelPoint, photoPoint as tryPhotoPoint, surfacePoint as trySurfacePoint, type FaceAddress } from './faceTransfer';
 import {
@@ -37,7 +37,23 @@ import { CheckChip, CutControls, EditorTabs, EffectMixer, IconToggle, ModeCards,
 import { DEFAULT_PREVIEW, GENERIC_EFFECT_CHART, PREVIEW_DESCRIPTIONS, buildIllustrativeEffects, previewCoverage, previewPixels, previewSurface, type ManualEffectArea, type PreviewSettings } from './injectablePreview';
 import EffectAreaEditor from './EffectAreaEditor';
 import { importLocalRecord, localRecord } from './injectableLocalRecord';
-import type { SkinPhotoSource } from './skinMultiView';
+import { detectedSkinMapping, type SkinMappedCandidate, type SkinPhotoSource } from './skinMultiView';
+
+function SkinMaskPreview({ surface, modelData, points, direction, selectedPoint }: {
+  surface: PersonalSurface; modelData: ArrayBuffer; points: readonly SkinMappedCandidate[]; direction: readonly number[]; selectedPoint?: string;
+}) {
+  const [x, y, z] = direction;
+  const cameraSync = useMemo<ClinicalCameraSync>(() => {
+    const centerY = (surface.positions[31] + surface.positions[457]) / 2;
+    return { pose: { source: Symbol('skin-photo'), position: [x * 12, centerY + y * 12, z * 12],
+      target: [0, centerY, 0], zoom: 1, verticalSpan: Math.abs(surface.positions[31] - surface.positions[457]) * 1.35 } };
+  }, [surface, x, y, z]);
+  return <Clinical3DViewer markers={[]} modelData={modelData} cameraPreset="face-surface" cameraSync={cameraSync}
+    readOnly occludeAnnotations height="clamp(240px, 42dvh, 480px)" selectedPointId={selectedPoint}
+    editablePoints={points.map(point => ({ id: point.id, type: 'free', ...point.point, lineIds: [],
+      name: `${point.label}${point.manual ? ' · manual' : ''}`, color: SKIN_CANDIDATE_COLORS[point.candidate.channel] }))}
+    interactionHint="Gira para revisar ubicaciones aproximadas. No son diagnósticos." />;
+}
 
 const modelPoint = (...args: Parameters<typeof tryModelPoint>): Vec3 => requireMappedPoint(tryModelPoint(...args));
 const photoPoint = (...args: Parameters<typeof tryPhotoPoint>): P2 => requireMappedPoint(tryPhotoPoint(...args));
@@ -219,7 +235,7 @@ async function detectFrame(img: HTMLCanvasElement): Promise<{
         await new Promise<void>(resolve => setTimeout(resolve, 0));
       }
     }
-    if (!detectedLandmarks) return { frame: null, reason: 'No hay malla fiable. Puedes revisar esta foto en «Piel · fotos y máscara». Para mejorar la reconstrucción 3D, añade otra toma a tres cuartos (30–60°).' };
+    if (!detectedLandmarks) return { frame: null, reason: 'No hay malla fiable. Puedes revisar esta foto en Morfología, piel y capas → Piel. Para mejorar la reconstrucción 3D, añade otra toma a tres cuartos (30–60°).' };
     if (!rotated) {
       const cropped = refineLandmarksByCrop(landmarker, img, detectedLandmarks);
       if (cropped && usable(cropped)) detectedLandmarks = cropped;
@@ -494,7 +510,6 @@ export default function FaceSimLab() {
   const setHoveredZone = hoverStore.set;
   const [markTab, setMarkTab] = useState<'inyectable' | 'capas' | 'revisar'>('inyectable');
   const [workspace, setWorkspace] = useState<'capture' | 'simulate'>('capture');
-  const [skinMultiViewOpen, setSkinMultiViewOpen] = useState(false);
   const [editorGroup, setEditorGroup] = useState<'annotations' | 'appearance'>('annotations');
   const [appearanceOpened, setAppearanceOpened] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -1233,7 +1248,7 @@ export default function FaceSimLab() {
       captureDigests.current[target] = prepared?.digest ?? await captureDigest(file);
       if (!detected.frame) {
         setPhotos(p => p[target]?.canvas === c ? { ...p, [target]: { ...p[target]!, detectionError: detected.reason } } : p);
-        setStatus(`${label}: ${detected.reason} Sin rostro detectado no se usa automáticamente para reconstruir o texturizar. Puedes revisar piel en 2D y alinear indicadores manualmente desde «Piel · fotos y máscara».${personalNote}`);
+        setStatus(`${label}: ${detected.reason} Sin rostro detectado no se usa automáticamente para reconstruir o texturizar. Revisa piel en 2D o alinea indicadores desde Morfología, piel y capas → Piel.${personalNote}`);
         return;
       }
       const auto = target === 'extra_a' || target === 'extra_b' ? null : autoRegistration(target, detected.frame, c.width / c.height, flipX);
@@ -2131,10 +2146,12 @@ export default function FaceSimLab() {
     if (!capture) return [];
     const accepted = personal?.captures?.[id]?.canvas === capture.canvas;
     const patch = accepted ? personal?.photoPatches?.find(item => item.source.texture === capture.canvas) : undefined;
+    const detectedMapping = accepted && personal && !capture.detectionRecovered && !capture.detectionError && capture.landmarks
+      ? detectedSkinMapping(personal.surface, capture.detectedLandmarks ?? capture.landmarks) : undefined;
     const mapping = accepted && personal && id === 'frontal'
       ? { landmarks: Array.from({ length: 468 }, (_, i) => ({ x: personal.surface.uvs[i * 2], y: personal.surface.uvs[i * 2 + 1] })), direction: [0, 0, 1], manual: false }
       : patch ? { landmarks: Array.from({ length: 468 }, (_, i) => ({ x: patch.uvs[i * 2], y: patch.uvs[i * 2 + 1] })),
-        direction: patch.source.projection.towardCamera, manual: false } : undefined;
+        direction: patch.source.projection.towardCamera, manual: false } : detectedMapping;
     return [{ id, label, canvas: capture.canvas, confirmed: !!capture.captureConfirmed,
       group: id === 'frontal' ? 'front' as const : id === 'izquierda' ? 'a' as const : id === 'derecha' ? 'b' as const : 'extra' as const,
       landmarks: !capture.detectionRecovered && !capture.detectionError ? capture.landmarks : undefined, mapping }];
@@ -2152,8 +2169,6 @@ export default function FaceSimLab() {
               setCalibrating(false); setPhotoAnchor(null); setContourIndex(null); setPickingForehead(false);
               if (id === 'simulate') setMeshVisible(false);
             }} className={`admin-focus-ring min-h-11 rounded-lg px-4 text-sm font-semibold ${workspace === id ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-700'}`}>{label}</button>)}
-          <button type="button" className="admin-focus-ring min-h-11 rounded-lg border border-sky-700 px-4 text-sm font-semibold text-sky-900"
-            onClick={() => setSkinMultiViewOpen(true)}>Piel · fotos y máscara</button>
         </nav>
         {workspace === 'simulate' && <nav aria-label="Grupos del editor" className="flex flex-wrap gap-2">
           {([['annotations', 'Marcaciones e inyectables'], ['appearance', 'Morfología, piel y capas']] as const).map(([id, label]) =>
@@ -2167,13 +2182,6 @@ export default function FaceSimLab() {
           : 'Elige una superficie y una herramienta. El registro es común; la dosis no controla el efecto visual.'}</p>
         <p className="text-xs text-slate-600" role="status">{status}</p>
       </header>
-      {skinMultiViewOpen && <Suspense fallback={<p role="status">Abriendo revisión de piel…</p>}>
-        <SkinMultiViewReview sources={skinSources} surface={personal?.surface} onClose={() => setSkinMultiViewOpen(false)}
-          renderMask={personal ? points => <Clinical3DViewer markers={[]} modelData={personal.glb} readOnly occludeAnnotations height="380px"
-            editablePoints={points.map(point => ({ id: point.id, type: 'free', ...point.point, lineIds: [],
-              name: `${point.label}${point.manual ? ' · manual' : ''}`, color: point.candidate.channel === 'redness' ? '#ef4444' : point.candidate.channel === 'contrast' ? '#f59e0b' : '#22d3ee' }))}
-            interactionHint="Gira para revisar indicadores aproximados de piel. No son diagnósticos." /> : undefined} />
-      </Suspense>}
       {reviewId && reviewSlot?.landmarks && <Suspense fallback={<p role="status">Abriendo revisión de límites…</p>}>
         <FaceBoundaryReview key={`${reviewId}-${reviewSlot.previewUrl?.length}`} canvas={reviewSlot.canvas} landmarks={reviewSlot.landmarks}
           title={PHOTO_SLOTS.find(v => v.id === reviewId)?.label} reference={reviewReference}
@@ -2732,7 +2740,11 @@ export default function FaceSimLab() {
             {modelKind === 'personal' && !personal ? <p role="status" className="rounded-xl border p-4">
               {buildingPersonal ? 'Calculando superficie fotografiada…' : 'Calcula la superficie personal en Capturas o selecciona el modelo genérico.'}
             </p> : <FacialSimulationViewer
-              onMultiViewReview={() => setSkinMultiViewOpen(true)}
+              skinReview={<Suspense fallback={<p role="status">Preparando revisión de piel…</p>}>
+                <SkinMultiViewReview sources={skinSources} surface={personal?.surface}
+                  renderMask={personal ? (points, direction, selectedPoint) => <SkinMaskPreview surface={personal.surface}
+                    modelData={personal.glb} points={points} direction={direction} selectedPoint={selectedPoint} /> : undefined} />
+              </Suspense>}
               surface={modelKind === 'personal' ? personal?.renderSurface : undefined}
               photo={modelKind === 'personal' ? personal?.canvas : undefined}
               photoPatches={modelKind === 'personal' ? personal?.photoPatches : undefined}

@@ -123,26 +123,35 @@ export function skinSignalLayer(result: SkinAppearanceResult, channel: SkinSigna
 
 export interface SkinVisualCandidate {
   id: string;
-  channel: SkinAppearanceChannel;
+  channel: SkinCandidateChannel;
   /** Caja normalizada respecto de la foto, con ancho/alto positivos. No es una lesión. */
   x: number;
   y: number;
   width: number;
   height: number;
 }
+export type SkinCandidateChannel = SkinSignalChannel | 'lines';
 
 export const MAX_SKIN_VISUAL_CANDIDATES = 24;
-export const SKIN_CANDIDATE_LABELS: Record<SkinAppearanceChannel, string> = {
+export const SKIN_CANDIDATE_LABELS: Record<SkinCandidateChannel, string> = {
   contrast: 'Pigmentación · contraste aparente',
   redness: 'Enrojecimiento aparente',
   texture: 'Textura aparente',
+  shine: 'Brillo localizado',
+  poreCandidates: 'Puntos oscuros',
+  redDots: 'Puntos rojos',
+  lines: 'Surcos aparentes',
 };
 
 /** Color por categoría; el número y el doble trazo evitan depender sólo del color. */
-export const SKIN_CANDIDATE_COLORS: Record<SkinAppearanceChannel, string> = {
+export const SKIN_CANDIDATE_COLORS: Record<SkinCandidateChannel, string> = {
   contrast: '#f59e0b',
   redness: '#ef4444',
   texture: '#22d3ee',
+  shine: '#a78bfa',
+  poreCandidates: '#d97706',
+  redDots: '#fb7185',
+  lines: '#34d399',
 };
 
 /**
@@ -152,10 +161,11 @@ export const SKIN_CANDIDATE_COLORS: Record<SkinAppearanceChannel, string> = {
  */
 export function skinVisualCandidates(
   result: SkinAppearanceResult, mask: Uint8Array, width: number, height: number,
+  expanded = false,
 ): SkinVisualCandidate[] {
   if (!Number.isSafeInteger(width) || !Number.isSafeInteger(height)
-    || width < 1 || height < 1 || width > 384 || height > 384) {
-    throw new RangeError('Los candidatos admiten hasta 384 px por lado.');
+    || width < 1 || height < 1 || width > (expanded ? 768 : 384) || height > (expanded ? 768 : 384)) {
+    throw new RangeError('Resolución de candidatos fuera del límite permitido.');
   }
   const size = width * height;
   if (!(mask instanceof Uint8Array) || mask.length !== size) throw new TypeError('Máscara de candidatos inválida.');
@@ -163,8 +173,10 @@ export function skinVisualCandidates(
   const counts = integral(Uint8Array.from(mask, value => value ? 1 : 0), width, height), stride = width + 1;
   const roiSize = mask.reduce((sum, value) => sum + (value ? 1 : 0), 0);
   const regions: SkinVisualCandidate[] = [];
-  for (const channel of ['contrast', 'redness', 'texture'] as const) {
-    const layer = result.channels[channel];
+  const channels: SkinCandidateChannel[] = expanded
+    ? ['redDots', 'poreCandidates', 'redness', 'contrast', 'lines', 'shine', 'texture'] : ['contrast', 'redness', 'texture'];
+  for (const channel of channels) {
+    const layer = skinSignalLayer(result, channel === 'lines' ? 'contrast' : channel);
     if (layer.rgba.length !== size * 4) throw new TypeError('Mapa de candidatos inválido.');
     // Microcontraste extendido puede ser ruido, barba, enfoque o compresión.
     if (layer.status !== 'highlighted' || layer.coverage > 0.22) continue;
@@ -187,8 +199,11 @@ export function skinVisualCandidates(
         }
       }
       const w = right - left + 1, h = bottom - top + 1;
-      if (tail < 6 || w < 2 || h < 2 || w > width * 0.35 || h > height * 0.35
-        || w * h > roiSize * 0.15 || tail / (w * h) < 0.18 || Math.max(w / h, h / w) > 4) continue;
+      const elongation = Math.max(w / h, h / w);
+      if (tail < (expanded && (channel === 'redDots' || channel === 'poreCandidates') ? 3 : 6)
+        || w < 2 || h < 2 || w > width * 0.35 || h > height * 0.35
+        || w * h > roiSize * 0.15 || tail / (w * h) < 0.18
+        || (channel === 'lines' ? elongation < 3 || elongation > 16 : elongation > 4)) continue;
       // Toda la caja + margen debe estar dentro de la máscara, no solo su centro.
       // Así una agrupación alrededor de un ojo/labio nunca crea una caja que lo atraviese.
       const l = left - 2, t = top - 2, r = right + 3, b = bottom + 3;
@@ -200,16 +215,16 @@ export function skinVisualCandidates(
     }
     // Área de soporte, no confianza o gravedad. Orden y IDs deterministas.
     groups.sort((a, b) => b.count - a.count || a.top - b.top || a.left - b.left);
-    for (const { left, top, w, h } of groups.slice(0, MAX_SKIN_VISUAL_CANDIDATES / 3)) {
+    for (const { left, top, w, h } of groups.slice(0, 8)) {
       regions.push({
-        id: `${channel}:${left}:${top}:${w}:${h}`,
+        id: `${channel}:${expanded ? `${width}x${height}:` : ''}${left}:${top}:${w}:${h}`,
         channel, x: left / width, y: top / height, width: w / width, height: h / height,
       });
     }
   }
   // Un mismo cambio rojo también activa contraste: evitar cuadros/números superpuestos.
   // La prioridad solo decide la etiqueta visual, nunca confianza ni gravedad.
-  const priority: Record<SkinAppearanceChannel, number> = { redness: 0, contrast: 1, texture: 2 };
+  const priority: Record<SkinCandidateChannel, number> = { redDots: 0, poreCandidates: 1, redness: 2, lines: 3, contrast: 4, shine: 5, texture: 6 };
   regions.sort((a, b) => priority[a.channel] - priority[b.channel]);
   const distinct: SkinVisualCandidate[] = [];
   for (const candidate of regions) {

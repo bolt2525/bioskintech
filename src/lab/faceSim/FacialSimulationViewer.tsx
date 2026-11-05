@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useEffect, useId, useMemo, useReducer, useRef, useState, type MutableRefObject } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useId, useMemo, useReducer, useRef, useState, type MutableRefObject, type ReactNode } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import type { P2, PersonalSurface } from './engine';
@@ -36,7 +36,7 @@ export interface FacialSimulationViewerProps {
   hair?: EstimatedHairSettings;
   hairPatches?: readonly PhotoHairPatch[];
   photoPatches?: readonly PhotoSurfacePatch[];
-  onMultiViewReview?: () => void;
+  skinReview?: ReactNode;
 }
 
 type View = 'front' | 'left' | 'right' | 'orbit';
@@ -110,10 +110,10 @@ function NasalSymmetryControls({ parameters, direction, onChange, onCompare, tex
   const id = useId();
   return <div role="group" className="space-y-3 rounded-lg border border-gold/40 p-2" aria-label="Simetría nasal">
     <h4 className="text-xs font-semibold text-gold">1. Simetría nasal · revisar antes de retocar</h4>
-    <p className="text-xs text-amber-200">Aproximación de superficie, no anatomía exacta. Las fosas son textura y relieve: no se reconstruye su interior.</p>
+    <p className="text-xs text-amber-200">Aproximación visual: no reconstruye el interior de las fosas.</p>
     <p role="status" className="text-xs text-stone-200">{proposed
-      ? 'Propuesta sin confirmar: revisa «Después» frente al original. Confirma o descarta antes de otros retoques.'
-      : 'Cambiar estos controles prepara una propuesta; no se aplica al historial hasta confirmar.'}</p>
+      ? 'Propuesta sin confirmar: compara, confirma o descarta antes de retocar.'
+      : 'Ajusta y revisa antes de confirmar.'}</p>
     <label className="block text-xs">Origen → destino · lados del paciente
       <select aria-label="Dirección de simetría nasal" className={`${selectClass} mt-1 w-full`} value={direction} onChange={event => {
         const next = Number(event.target.value) as 1 | -1;
@@ -123,12 +123,14 @@ function NasalSymmetryControls({ parameters, direction, onChange, onCompare, tex
         <option value="-1">Izquierda → derecha del paciente</option>
       </select>
     </label>
-    <p className="text-[11px] text-stone-300">En vista frontal, la derecha del paciente aparece a tu izquierda. La mitad de origen se conserva; revisa el destino de frente y de perfil.</p>
+    <p className="text-[11px] text-stone-300">Se conserva el lado de origen. Derecha del paciente = izquierda de la foto frontal.</p>
     <label className="block text-xs">Intensidad de forma · {Math.round(Math.abs(parameters.noseSymmetry) * 100)} %
       <input aria-label="Intensidad de forma nasal" type="range" min="0" max="1" step="0.01" value={Math.abs(parameters.noseSymmetry)}
         onChange={event => onChange({ noseSymmetry: Number(event.target.value) * direction })}
         className="mt-1 block w-full accent-gold focus-visible:outline-gold" />
     </label>
+    <details className="space-y-2 rounded border border-white/15 p-2 text-xs">
+    <summary className="cursor-pointer rounded text-gold focus-visible:outline">Avanzados de simetría</summary>
     {([{ key: 'noseSymmetryRange', label: 'Alcance nasal' }, { key: 'noseSymmetryMargin', label: 'Margen suave' }] as const).map(({ key, label }) =>
       <label key={key} className="block text-xs">{label} · {Math.round(parameters[key] * 100)} %
         <input aria-label={label} type="range" min="0" max="1" step="0.01" value={parameters[key]}
@@ -144,6 +146,8 @@ function NasalSymmetryControls({ parameters, direction, onChange, onCompare, tex
     <p id={`${id}-texture-help`} className="text-[11px] text-amber-200">{textureAvailable
       ? 'Solo foto frontal, con la misma intensidad. Copia también sombras y marcas; los parches sobre el destino nasal se retiran para mostrarla. No modifica la foto original.'
       : 'La textura requiere una foto frontal y correspondencias UV válidas.'}</p>
+    </details>
+    {parameters.noseSymmetryTexture === 1 && <p className="text-xs text-amber-200">Textura reflejada activa: también copia sombras y marcas de la foto.</p>}
     {texturePending ? <p role="status" className="text-xs text-stone-200">Preparando textura nasal… Puedes desactivarla o descartar la propuesta.</p> : null}
     <div className="flex flex-wrap gap-1">
       <button type="button" className={buttonClass} onClick={() => onChange({ noseSymmetry: direction })}>Replicar mitad (100 %)</button>
@@ -1018,7 +1022,8 @@ function mountFacialSimulation(
 }
 
 /** API de integración: <FacialSimulationViewer surface={surface} photo={photo} /> */
-export function FacialSimulationViewer({ surface, photo, hair = DEFAULT_HAIR, hairPatches, photoPatches, onMultiViewReview }: FacialSimulationViewerProps) {
+export function FacialSimulationViewer({ surface, photo, hair = DEFAULT_HAIR, hairPatches, photoPatches, skinReview: skinWorkspace }: FacialSimulationViewerProps) {
+  const [skinMode, setSkinMode] = useState<'review' | 'retouch'>('review');
   const id = useId(), host = useRef<HTMLDivElement>(null), runtime = useRef<ViewerRuntime | null>(null);
   const inspector = useRef<HTMLDivElement>(null);
   const editor = useRef<HTMLElement>(null);
@@ -1363,7 +1368,7 @@ export function FacialSimulationViewer({ surface, photo, hair = DEFAULT_HAIR, ha
         </div>
         <button type="button" className={buttonClass} onClick={reset}>Restablecer todo</button>
       </header>
-      <div className="flex shrink-0 flex-wrap justify-between gap-2 rounded-lg bg-slate-950/60 p-2">
+      <div className={`${tool === 'skin' && !!skinWorkspace && skinMode === 'review' ? 'hidden' : 'flex'} shrink-0 flex-wrap justify-between gap-2 rounded-lg bg-slate-950/60 p-2`}>
         <div role="group" aria-label="Orientación del modelo" className="flex flex-wrap gap-1">
           {([['front', 'Frontal'], ['left', 'Perfil lado A'], ['right', 'Perfil lado B'], ['orbit', 'Orbitar']] as const).map(([key, label]) => (
             <button type="button" key={key} className={buttonClass} aria-pressed={view === key} onClick={() => setView(key)}>{label}</button>
@@ -1395,6 +1400,12 @@ export function FacialSimulationViewer({ surface, photo, hair = DEFAULT_HAIR, ha
                   inspector.current?.scrollTo({ top: 0 });
                 }}>{label}</button>)}
           </nav>
+          {tool === 'skin' && skinWorkspace && <div role="group" aria-label="Flujo de piel" className="mt-3 flex flex-wrap gap-1 lg:flex-col">
+            <button type="button" className={buttonClass} aria-pressed={skinMode === 'review'} onClick={() => setSkinMode('review')}>Buscar y revisar</button>
+            <details><summary className="cursor-pointer rounded p-2 text-xs text-gold focus-visible:outline">Avanzados</summary>
+              <button type="button" className={buttonClass} aria-pressed={skinMode === 'retouch'} onClick={() => setSkinMode('retouch')}>Retoque y zonas</button>
+            </details>
+          </div>}
           <div hidden={tool !== 'morphology'} className="mt-3 space-y-2 border-t border-white/10 pt-3">
             <h3 className="text-[11px] font-bold uppercase tracking-wider text-gold">Región morfológica</h3>
             <div role="group" aria-label="Región morfológica" className="flex flex-wrap gap-1 lg:flex-col">
@@ -1402,9 +1413,9 @@ export function FacialSimulationViewer({ surface, photo, hair = DEFAULT_HAIR, ha
                 aria-pressed={morphologyGroup === group} onClick={() => { setMorphologyGroup(group); inspector.current?.scrollTo({ top: 0 }); }}>{group}</button>)}
             </div>
           </div>
-          <p className="mt-3 hidden text-[11px] leading-relaxed text-stone-400 lg:block">Elige una sección aquí. Sus controles aparecen a la derecha; el visor conserva el centro.</p>
         </aside>
-        <div className="flex min-h-0 min-w-0 flex-col gap-2" data-simulation-center>
+        {skinOpened && skinWorkspace && <div hidden={tool !== 'skin' || skinMode !== 'review'} className="min-h-0 min-w-0 lg:col-span-2 lg:overflow-y-auto" data-skin-workspace>{skinWorkspace}</div>}
+        <div className={`${tool === 'skin' && !!skinWorkspace && skinMode === 'review' ? 'hidden' : 'flex'} min-h-0 min-w-0 flex-col gap-2`} data-simulation-center>
           <div className="relative min-h-64 flex-1 overflow-hidden rounded-lg border border-slate-700 bg-slate-950">
             <div ref={host} data-simulation-viewport data-ready={ready} aria-busy={!ready && !failure} className="h-[46dvh] min-h-64 w-full lg:h-full" />
             {comparison === 'split' && !failure ? (
@@ -1433,7 +1444,7 @@ export function FacialSimulationViewer({ surface, photo, hair = DEFAULT_HAIR, ha
             <p className="max-h-24 overflow-y-auto py-2">La máscara conserva una profundidad aproximada. El reverso es un cierre mate, no una cabeza reconstruida. Músculos, arterias y huesos son ilustraciones genéricas: sus zonas están autoradas sobre las imágenes, no detectadas en el paciente. Corte y separación son visuales, no espesores anatómicos ni planos de inyección. No predice tratamientos ni diagnostica lesiones.</p>
           </details>
         </div>
-        <aside aria-label="Inspector de simulación" className="flex min-h-0 min-w-0 flex-col rounded-xl border border-white/10 bg-black/30">
+        <aside aria-label="Inspector de simulación" className={`${tool === 'skin' && !!skinWorkspace && skinMode === 'review' ? 'hidden' : 'flex'} min-h-0 min-w-0 flex-col rounded-xl border border-white/10 bg-black/30`}>
           <h3 className="shrink-0 border-b border-white/10 p-3 text-xs font-bold text-gold">
             {tool === 'morphology' ? `Morfología · ${morphologyGroup}` : tool === 'skin' ? 'Piel · revisión y ajustes' : tool === 'layers' ? 'Capas · referencias' : 'Corte · profundidad'}
           </h3>
@@ -1556,10 +1567,6 @@ export function FacialSimulationViewer({ surface, photo, hair = DEFAULT_HAIR, ha
           <p className="text-[11px] text-amber-200">{SIMULATION_NOTICE}</p>
           </div>
           <div id={`${id}-tool-skin`} hidden={tool !== 'skin'} className="space-y-3">
-              {onMultiViewReview && <div className="space-y-2 rounded-lg border border-gold/40 p-2">
-                <p className="text-xs text-stone-200">Busca candidatos automáticamente en las mejores fotos y compáralos sobre la máscara.</p>
-                <button type="button" className={buttonClass} onClick={onMultiViewReview}>Analizar piel en varias fotos</button>
-              </div>}
               {skinOpened && skinPhoto && skinPhotoContext ? <Suspense fallback={<p role="status" className="text-xs text-gold">Preparando revisión por zonas…</p>}>
                 <SkinRegionEditor key={`${skinReviewVersion}-${view}`} canvas={skinPhoto} landmarks={skinPhotoContext.landmarks}
                   sourceLabel={skinPhotoContext.label} modelDrawingRef={modelDrawingRef} onTexture={onSignalTexture} onRegionsChange={onSkinRegions} />
