@@ -11,14 +11,14 @@ import {
 interface Configuration { polygons: P2[][]; reviewed: boolean; anchors: P2[]; side: -1 | 1; mapping?: SkinPhotoMapping }
 type Decisions = Record<string, 'accepted' | 'dismissed'>;
 const initialConfiguration = (): Configuration => ({ polygons: [], reviewed: false, anchors: [], side: -1 });
-const button = 'admin-focus-ring min-h-10 rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs text-slate-800 disabled:opacity-50';
+const button = 'admin-focus-ring min-h-10 rounded-lg border border-white/20 bg-stone-950 px-3 py-2 text-xs text-stone-100 hover:border-gold/60 hover:bg-gold/10 aria-pressed:border-gold aria-pressed:bg-gold/20 aria-pressed:text-gold disabled:cursor-not-allowed disabled:opacity-50';
 const EMPTY: readonly SkinMappedCandidate[] = [];
 const FRONT = [0, 0, 1];
 
 export default function SkinMultiViewReview({ sources, surface, renderMask }: {
   sources: readonly SkinPhotoSource[];
   surface?: PersonalSurface;
-  renderMask?: (points: readonly SkinMappedCandidate[], direction: readonly number[], selectedPoint?: string) => ReactNode;
+  renderMask?: (points: readonly SkinMappedCandidate[], direction: readonly number[], selectedPoint: string | undefined, onSelect: (id: string) => void) => ReactNode;
 }) {
   const preview = useRef<HTMLCanvasElement>(null), request = useRef(0);
   const advanced = useRef<HTMLDetailsElement>(null), alignment = useRef<HTMLDetailsElement>(null);
@@ -33,6 +33,9 @@ export default function SkinMultiViewReview({ sources, surface, renderMask }: {
   const [busy, setBusy] = useState(false), [message, setMessage] = useState('Preparando fotos…');
   const [error, setError] = useState<string | null>(null);
   const [coordinates, setCoordinates] = useState({ x: 50, y: 50 }), [sensitivity, setSensitivity] = useState(50);
+  const [analyzedSensitivity, setAnalyzedSensitivity] = useState(50);
+  const [confirmReanalysis, setConfirmReanalysis] = useState(false);
+  const [zoom, setZoom] = useState(1), [mobileView, setMobileView] = useState<'photo' | 'mask'>('photo');
   const [category, setCategory] = useState<SkinCandidateChannel | 'all'>('all');
   const [reviewFilter, setReviewFilter] = useState('pending'), [activeId, setActiveId] = useState('');
   const selected = sources.find(source => source.id === selectedId);
@@ -45,6 +48,7 @@ export default function SkinMultiViewReview({ sources, surface, renderMask }: {
     request.current++;
     setResults([]); setUsedIds([]); setDecisions({}); setHistory([]); setConfigurations({}); setBusy(false);
     setMode(null); setDraft([]); setFocus([]); setSelectedId(sources[0]?.id ?? ''); setActiveId(''); setError(null);
+    setZoom(1); setConfirmReanalysis(false);
     setMessage('El análisis comienza con las fotos confirmadas. Las fotos sin detección necesitan un área de piel.');
     const timer = sources.some(source => source.confirmed && source.landmarks)
       ? setTimeout(() => void analyzeRef.current?.(), 150) : undefined;
@@ -89,9 +93,11 @@ export default function SkinMultiViewReview({ sources, surface, renderMask }: {
     return createSkinSignalMask(width, height, source.landmarks);
   };
   const analyze = async (target?: readonly P2[]) => {
+    if (target && results.length && sensitivity !== analyzedSensitivity) {
+      setError('Aplica primero la nueva sensibilidad con Analizar fotos; después busca en una zona.'); return;
+    }
     const id = ++request.current;
-    setBusy(true); setError(null); setMode(null); setDraft([]);
-    if (!target) { setResults([]); setUsedIds([]); setDecisions({}); setHistory([]); }
+    setBusy(true); setError(null); setMode(null); setDraft([]); setConfirmReanalysis(false);
     const quality: SkinPhotoResult[] = [];
     try {
       for (const source of target ? sources.filter(source => source.id === selectedId) : sources) {
@@ -144,6 +150,7 @@ export default function SkinMultiViewReview({ sources, surface, renderMask }: {
         setMessage('Zona revisada con más detalle. Los candidatos anteriores fuera de ella se conservan.');
       } else {
         setResults(quality);
+        setDecisions({}); setHistory([]); setAnalyzedSensitivity(sensitivity);
         const used = chosen.filter(sourceId => quality.find(item => item.sourceId === sourceId)?.usable);
         setUsedIds(used);
         setMessage(`${used.length} fotos analizadas; revisa los candidatos. No son lesiones confirmadas.`);
@@ -181,35 +188,76 @@ export default function SkinMultiViewReview({ sources, surface, renderMask }: {
   };
   const undo = () => { if (history.length) { setDecisions(history[history.length - 1]); setHistory(previous => previous.slice(0, -1)); } };
   const activePoint = mapped.find(point => point.observationIds.includes(`${selectedId}/${active?.id}`));
-  return <section aria-label="Revisión de piel · fotos y máscara" className="min-w-0 space-y-3 rounded-xl bg-slate-50 p-3 text-slate-900"
+  const stale = results.length > 0 && sensitivity !== analyzedSensitivity;
+  const selectMapped = (id: string) => {
+    const point = mapped.find(item => item.id === id);
+    if (!point) return;
+    const observation = point.observationIds.find(item => item.startsWith(`${selectedId}/`)) ?? point.observationIds[0];
+    const source = sources.find(item => observation.startsWith(`${item.id}/`));
+    if (!source) return;
+    setSelectedId(source.id); setActiveId(observation.slice(source.id.length + 1));
+    setReviewFilter('all'); setMode(null); setDraft([]); setFocus([]); setZoom(1);
+  };
+  return <section aria-label="Revisión de piel · fotos y máscara" className="min-w-0 space-y-3 rounded-xl border border-white/10 bg-stone-950 p-3 text-stone-100 [color-scheme:dark]"
     onKeyDown={event => {
       if (event.ctrlKey || event.metaKey || event.altKey || event.repeat || (event.target as HTMLElement).closest('input,textarea,select,[contenteditable="true"]')) return;
-      if (active && ['a', 'd'].includes(event.key.toLowerCase())) {
+      if (active && !busy && !stale && ['a', 'd'].includes(event.key.toLowerCase())) {
         event.preventDefault(); decide([active.id], event.key.toLowerCase() === 'a' ? 'accepted' : 'dismissed');
       }
     }}>
-    <header className="flex flex-wrap items-center justify-between gap-2">
-      <div><h3 className="font-semibold">Piel · buscar y revisar</h3><p className="text-xs">Candidatos visuales, no diagnósticos. Aceptar no retoca ni entrena un modelo.</p></div>
+    <header className="sticky top-0 z-10 space-y-2 border-b border-white/10 bg-stone-950/95 pb-3 backdrop-blur" data-skin-analysis-toolbar>
+      <div><h3 className="font-semibold text-gold">Piel · buscar y revisar</h3><p className="text-xs text-stone-300">1. Analiza · 2. Selecciona en foto o máscara · 3. Revisa. Aceptar no retoca ni entrena.</p></div>
       <div className="flex flex-wrap gap-2">
-        <button type="button" className={button} disabled={busy || !sources.length} onClick={() => void analyze()}>Analizar fotos</button>
+        <label className="flex min-w-40 flex-1 items-center gap-2 text-xs">Sensibilidad · {sensitivity}%
+          <input aria-label="Sensibilidad de candidatos de piel" type="range" min="0" max="100" value={sensitivity} disabled={busy}
+            className="admin-focus-ring min-w-20 flex-1 accent-gold" onChange={event => { setSensitivity(Number(event.target.value)); setConfirmReanalysis(false); }} />
+        </label>
+        <button type="button" className={button} disabled={busy || !sources.length}
+          onClick={() => Object.keys(decisions).length ? setConfirmReanalysis(true) : void analyze()}>Analizar fotos</button>
         <button type="button" className={button} disabled={busy || !selected} aria-pressed={mode === 'focus'}
-          onClick={() => { setMode('focus'); setDraft([]); setFocus([]); }}>Buscar en zona</button>
+          onClick={() => { setMode('focus'); setMobileView('photo'); setDraft([]); setFocus([]); }}>Buscar en zona</button>
         {busy && <button type="button" className={button} onClick={() => { request.current++; setBusy(false); setMessage('Análisis cancelado. No se aplicaron cambios.'); }}>Cancelar análisis</button>}
+      </div>
+      {stale && <p role="status" className="text-xs text-amber-200">Sensibilidad pendiente de aplicar. Se conserva la revisión anterior hasta que vuelvas a analizar.</p>}
+      {confirmReanalysis && <div role="alert" className="flex flex-wrap items-center gap-2 rounded-lg border border-gold/40 p-2 text-xs">
+        <p>Reanalizar sustituye candidatos y decisiones de las fotos. No modifica las imágenes.</p>
+        <button type="button" className={button} onClick={() => void analyze()}>Reanalizar y reemplazar revisión</button>
+        <button type="button" className={button} onClick={() => setConfirmReanalysis(false)}>Conservar revisión</button>
+      </div>}
+      <div className="flex flex-wrap items-center gap-2" aria-label="Revisión del candidato activo">
+        <p className="min-w-40 flex-1 text-xs">{active ? `${candidates.indexOf(active) + 1}/${candidates.length} · ${SKIN_CANDIDATE_LABELS[active.channel]} · ${activePoint ? 'Foto y máscara' : 'Solo foto: sin proyección segura'}` : 'Selecciona un candidato para revisarlo.'}</p>
+        <button type="button" className={button} disabled={!active || busy || stale} onClick={() => active && decide([active.id], 'accepted')}>Aceptar y siguiente · A</button>
+        <button type="button" className={button} disabled={!active || busy || stale} onClick={() => active && decide([active.id], 'dismissed')}>Descartar y siguiente · D</button>
+        <button type="button" className={button} disabled={!history.length || busy} onClick={undo}>Deshacer revisión</button>
       </div>
     </header>
     <div role="group" aria-label="Fotos de piel" className="flex flex-wrap gap-2">
-      {sources.map(source => <button type="button" key={source.id} className={`${button} aria-pressed:border-sky-700 aria-pressed:bg-sky-50`} aria-pressed={selectedId === source.id}
-        onClick={() => { setSelectedId(source.id); setMode(null); setDraft([]); setFocus([]); setActiveId(''); setError(null); }}>
+      {sources.map(source => <button type="button" key={source.id} className={button} aria-pressed={selectedId === source.id}
+        onClick={() => { setSelectedId(source.id); setMode(null); setDraft([]); setFocus([]); setActiveId(''); setError(null); setZoom(1); }}>
         {source.label}{usedIds.includes(source.id) ? ' · analizada' : ''}{!source.confirmed ? ' · sin confirmar' : ''}
       </button>)}
     </div>
     <p role="status" aria-live="polite" aria-busy={busy} className="text-xs">{message}</p>
-    {error && <p role="alert" className="rounded border border-red-300 bg-red-50 p-2 text-sm text-red-900">{error}</p>}
+    {error && <p role="alert" className="rounded border border-red-400/50 bg-red-950/50 p-2 text-sm text-red-100">{error}</p>}
     {!sources.length ? <p>Carga y confirma fotos en Capturas para comenzar.</p> : <>
+      <p className="text-xs text-stone-300">{selected?.confirmed ? selected.landmarks ? 'Área de piel detectada.' : 'Sin referencias faciales: delimita y confirma piel para analizar en 2D.' : 'Confirma esta captura antes de analizar.'} {mapping ? 'Correspondencia 3D disponible; se excluyen zonas ambiguas.' : 'Sin correspondencia 3D segura: el análisis permanece en la foto.'}</p>
+      {selected?.confirmed && !selected.landmarks && !config.polygons.length && <button type="button" className={button} disabled={busy}
+        onClick={() => { setMode('roi'); setMobileView('photo'); setDraft([]); }}>Delimitar piel de esta foto</button>}
+      <div role="group" aria-label="Visor de piel en móvil" className="flex gap-2 md:hidden">
+        <button type="button" className={button} aria-pressed={mobileView === 'photo'} onClick={() => setMobileView('photo')}>Foto</button>
+        <button type="button" className={button} aria-pressed={mobileView === 'mask'} onClick={() => setMobileView('mask')}>Máscara 3D</button>
+      </div>
       <div className="grid min-w-0 items-start gap-3 md:grid-cols-2" data-skin-split>
-        <figure className="min-w-0">
+        <figure className={`${mobileView === 'photo' ? 'block' : 'hidden'} min-w-0 md:block`}>
           <figcaption className="mb-1 text-xs font-semibold">{selected?.label} · pulsa un cuadro para revisarlo</figcaption>
-          <button type="button" className="admin-focus-ring relative mx-auto block max-w-full overflow-hidden rounded-xl bg-slate-900"
+          <div role="group" aria-label="Navegación de la foto de piel" className="mb-2 flex flex-wrap gap-1">
+            <button type="button" className={button} disabled={zoom >= 4} onClick={() => setZoom(value => Math.min(4, value + .5))}>Acercar foto</button>
+            <button type="button" className={button} disabled={zoom <= 1} onClick={() => setZoom(value => Math.max(1, value - .5))}>Alejar foto</button>
+            <button type="button" className={button} onClick={() => setZoom(1)}>Reencuadrar foto</button>
+            <output className="self-center text-xs">{Math.round(zoom * 100)}%</output>
+          </div>
+          <div className="max-h-[46dvh] overflow-auto rounded-xl border border-white/10 bg-slate-900" tabIndex={0} aria-label="Foto ampliable; desplaza para recorrerla">
+          <button type="button" style={{ zoom }} className="admin-focus-ring relative mx-auto block overflow-hidden rounded-xl bg-slate-900"
             aria-label={`Foto ${selected?.label}. ${mode === 'focus' ? 'Marca dos esquinas de la zona.' : mode === 'roi' ? 'Marca el borde del área de piel.' : mode === 'align' ? 'Marca el punto de perfil indicado.' : 'Vista de candidatos de piel.'}`}
             onClick={event => {
               if (!event.detail) return;
@@ -229,10 +277,13 @@ export default function SkinMultiViewReview({ sources, surface, renderMask }: {
               {config.anchors.map((p, i) => <g key={i}><circle cx={p.x} cy={p.y} r=".008" fill="#38bdf8" /><text x={p.x + .01} y={p.y} fill="white" fontSize=".025">{i + 1}</text></g>)}
             </svg>
           </button>
+          </div>
         </figure>
-        <section aria-label="Candidatos sobre máscara" className="min-w-0">
+        <section aria-label="Candidatos sobre máscara" className={`${mobileView === 'mask' ? 'block' : 'hidden'} min-w-0 md:block`}>
           <h4 className="mb-1 text-xs font-semibold">Máscara · ubicaciones aproximadas</h4>
-          {renderMask ? renderMask(mapped, mapping?.direction ?? FRONT, activePoint?.id) : <p className="rounded border p-4 text-xs">Genera y acepta una máscara para comparar en 3D. Puedes revisar las fotos mientras tanto.</p>}
+          {renderMask ? <>{renderMask(mapped, mapping?.direction ?? FRONT, activePoint?.id, selectMapped)}
+            <p className="mt-1 text-[11px] text-stone-300">Pulsa un indicador para seleccionar su foto. Los cercanos se agrupan: pulsa de nuevo para alternar.</p>
+          </> : <p className="rounded border p-4 text-xs">Genera y acepta una máscara para comparar en 3D. Puedes revisar las fotos mientras tanto.</p>}
           <p className="mt-1 text-xs">{mapped.filter(point => point.observations.includes(selectedId)).length} ubicaciones de esta foto sobre la máscara. Las zonas sin correspondencia segura permanecen solo en la foto.</p>
           {surface && !mapping && <button type="button" className={button} onClick={() => {
             if (advanced.current) advanced.current.open = true;
@@ -240,10 +291,10 @@ export default function SkinMultiViewReview({ sources, surface, renderMask }: {
           }}>Revisar alineación de esta foto</button>}
         </section>
       </div>
-      {mode && <div className="flex flex-wrap items-end gap-2 rounded border bg-white p-2">
+      {mode && <div className="flex flex-wrap items-end gap-2 rounded border border-gold/30 bg-stone-900 p-2">
         <p className="w-full text-xs">{mode === 'focus' ? 'Marca dos esquinas alrededor de la zona que quieres revisar.' : mode === 'roi' ? 'Rodea solo piel visible, sin ojos, labios ni pelo.' : `Punto ${Math.min(6, config.anchors.length + 1)}/6: ${PROFILE_SKIN_ANCHORS[Math.min(5, config.anchors.length)].label}`}</p>
         <details><summary className="admin-focus-ring cursor-pointer text-xs">Introducir punto con teclado</summary><div className="flex flex-wrap gap-2">
-          {(['x', 'y'] as const).map(axis => <label key={axis} className="text-xs">{axis.toUpperCase()} (%)<input type="number" min="0" max="100" value={coordinates[axis]} className="admin-focus-ring w-20 rounded border p-2"
+          {(['x', 'y'] as const).map(axis => <label key={axis} className="text-xs">{axis.toUpperCase()} (%)<input type="number" min="0" max="100" value={coordinates[axis]} className="admin-focus-ring w-20 rounded border border-white/20 bg-stone-950 p-2"
             onChange={event => setCoordinates(previous => ({ ...previous, [axis]: Number(event.target.value) }))} /></label>)}
           <button type="button" className={button} onClick={() => {
             if ([coordinates.x, coordinates.y].every(value => Number.isFinite(value) && value >= 0 && value <= 100)) addPoint({ x: coordinates.x / 100, y: coordinates.y / 100 });
@@ -259,7 +310,7 @@ export default function SkinMultiViewReview({ sources, surface, renderMask }: {
       </div>}
       {!!config.polygons.length && <label className="flex gap-2 text-xs"><input type="checkbox" className="admin-focus-ring" checked={config.reviewed}
         onChange={event => configure({ ...config, reviewed: event.target.checked })} />Las áreas contienen solo piel visible, sin ojos, labios, pelo ni fondo.</label>}
-      {!!focus.length && <button type="button" className={button} disabled={busy} onClick={() => void analyze(focus)}>Buscar aquí con más detalle</button>}
+      {!!focus.length && <button type="button" className={button} disabled={busy || stale} onClick={() => void analyze(focus)}>Buscar aquí con más detalle</button>}
       <div role="group" aria-label="Categorías de candidatos" className="flex flex-wrap gap-1">
         <button type="button" className={button} aria-pressed={category === 'all'} onClick={() => setCategory('all')}>Todas · {candidates.length}</button>
         {(Object.keys(SKIN_CANDIDATE_LABELS) as SkinCandidateChannel[]).filter(channel => candidates.some(candidate => candidate.channel === channel)).map(channel =>
@@ -268,50 +319,45 @@ export default function SkinMultiViewReview({ sources, surface, renderMask }: {
           </button>)}
       </div>
       <div className="flex flex-wrap items-center gap-2">
-        <label className="text-xs">Mostrar<select aria-label="Estado de revisión" className="admin-focus-ring ml-2 rounded border bg-white p-2" value={reviewFilter} onChange={event => setReviewFilter(event.target.value)}>
+        <label className="text-xs">Mostrar<select aria-label="Estado de revisión" className="admin-focus-ring ml-2 rounded border border-white/20 bg-stone-950 p-2" value={reviewFilter} onChange={event => setReviewFilter(event.target.value)}>
           <option value="pending">Pendientes</option><option value="accepted">Aceptados</option><option value="dismissed">Descartados</option><option value="all">Todos</option>
         </select></label>
-        <button type="button" className={button} disabled={!active || busy} onClick={() => active && decide([active.id], 'accepted')}>Aceptar y siguiente · A</button>
-        <button type="button" className={button} disabled={!active || busy} onClick={() => active && decide([active.id], 'dismissed')}>Descartar y siguiente · D</button>
-        <button type="button" className={button} disabled={!history.length} onClick={undo}>Deshacer revisión</button>
       </div>
       <ol aria-label="Candidatos multivista" className="grid max-h-48 gap-2 overflow-y-auto sm:grid-cols-2">
         {filtered.map(candidate => {
           const id = `${selectedId}/${candidate.id}`, index = candidates.indexOf(candidate) + 1;
           const point = mapped.find(item => item.observationIds.includes(id));
-          return <li key={id} className={`rounded border bg-white p-2 text-xs ${active === candidate ? 'border-sky-700' : 'border-slate-200'}`}>
+          return <li key={id} className={`rounded border bg-stone-900 p-2 text-xs ${active === candidate ? 'border-gold' : 'border-white/10'}`}>
             <button type="button" className="admin-focus-ring w-full rounded text-left" aria-pressed={active === candidate} onClick={() => setActiveId(candidate.id)}>
               {index}. {SKIN_CANDIDATE_LABELS[candidate.channel]} · {decisions[id] === 'accepted' ? 'revisado' : decisions[id] === 'dismissed' ? 'descartado' : 'pendiente'}
             </button>
             <p>{point ? `Indicador en máscara: ${point.label}.` : 'Solo foto: sin correspondencia 3D segura.'}</p>
             <div className="mt-1 flex flex-wrap gap-1">
-              <button type="button" className={button} onClick={() => decide([candidate.id], 'accepted')}>Aceptar candidato {index}</button>
-              <button type="button" className={button} onClick={() => decide([candidate.id], 'dismissed')}>Descartar candidato {index}</button>
+              <button type="button" className={button} disabled={busy || stale} onClick={() => decide([candidate.id], 'accepted')}>Aceptar candidato {index}</button>
+              <button type="button" className={button} disabled={busy || stale} onClick={() => decide([candidate.id], 'dismissed')}>Descartar candidato {index}</button>
             </div>
           </li>;
         })}
       </ol>
       {!filtered.length && <p className="text-xs">{selectedResult ? 'No quedan candidatos en este filtro. Esto no significa ausencia de lesiones.' : 'Analiza las fotos o marca una zona para empezar.'}</p>}
-      <details ref={advanced} className="rounded border bg-white p-3">
-        <summary className="admin-focus-ring cursor-pointer text-sm font-semibold">Avanzados · áreas, sensibilidad y alineación</summary>
+      <details ref={advanced} className="rounded border border-white/15 bg-stone-900 p-3">
+        <summary className="admin-focus-ring cursor-pointer text-sm font-semibold text-gold">Avanzados · áreas y alineación</summary>
         <div className="mt-2 space-y-3">
-          <label className="block text-xs">Sensibilidad · {sensitivity}%<input aria-label="Sensibilidad de candidatos de piel" type="range" min="0" max="100" value={sensitivity} className="admin-focus-ring block w-full"
-            onChange={event => { setSensitivity(Number(event.target.value)); invalidate(); }} /></label>
           <div className="flex flex-wrap gap-2">
-            <button type="button" className={button} disabled={busy || config.polygons.length >= 8} onClick={() => { setMode('roi'); setDraft([]); }}>Delimitar piel</button>
+            <button type="button" className={button} disabled={busy || config.polygons.length >= 8} onClick={() => { setMode('roi'); setMobileView('photo'); setDraft([]); }}>Delimitar piel</button>
             <button type="button" className={button} disabled={!config.polygons.length} onClick={() => configure({ ...config, polygons: [], reviewed: false })}>Borrar áreas</button>
             <button type="button" className={button} onClick={() => { setDecisions({}); setHistory([]); }}>Restablecer revisión</button>
-            <button type="button" className={button} disabled={busy || !filtered.length} onClick={() => decide(filtered.map(candidate => candidate.id), 'accepted')}>Aceptar visibles</button>
-            <button type="button" className={button} disabled={busy || !filtered.length} onClick={() => decide(filtered.map(candidate => candidate.id), 'dismissed')}>Descartar visibles</button>
+            <button type="button" className={button} disabled={busy || stale || !filtered.length} onClick={() => decide(filtered.map(candidate => candidate.id), 'accepted')}>Aceptar visibles</button>
+            <button type="button" className={button} disabled={busy || stale || !filtered.length} onClick={() => decide(filtered.map(candidate => candidate.id), 'dismissed')}>Descartar visibles</button>
           </div>
           <details ref={alignment}>
             <summary className="admin-focus-ring cursor-pointer text-xs">Alinear perfil puro con la máscara</summary>
             <p className="text-xs">Solo perfiles de 90°. No cambia anatomía ni textura. {mapping ? 'Correspondencia disponible.' : 'Sin proyección segura: revisa en foto o alinea manualmente.'}</p>
-            <label className="block text-xs">Lado visible<select aria-label="Lado visible del perfil" className="admin-focus-ring ml-2 rounded border bg-white p-2" value={config.side}
+            <label className="block text-xs">Lado visible<select aria-label="Lado visible del perfil" className="admin-focus-ring ml-2 rounded border border-white/20 bg-stone-950 p-2" value={config.side}
               onChange={event => configure({ ...config, side: Number(event.target.value) === -1 ? -1 : 1, mapping: undefined })}>
               <option value="-1">Derecho del paciente</option><option value="1">Izquierdo del paciente</option>
             </select></label>
-            <button type="button" className={button} disabled={!surface || busy} onClick={() => { configure({ ...config, anchors: [], mapping: undefined }); setMode('align'); }}>Marcar seis referencias</button>
+            <button type="button" className={button} disabled={!surface || busy} onClick={() => { configure({ ...config, anchors: [], mapping: undefined }); setMode('align'); setMobileView('photo'); }}>Marcar seis referencias</button>
             <button type="button" className={button} disabled={!surface || config.anchors.length !== 6 || busy} onClick={() => {
               try {
                 if (!surface || !selected) return;

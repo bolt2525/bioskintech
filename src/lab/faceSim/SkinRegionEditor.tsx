@@ -35,7 +35,7 @@ interface SourceContext {
 }
 
 const GOLD_FOCUS = 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-300 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950';
-const BUTTON = `rounded-md border border-amber-700/70 px-2.5 py-1.5 text-xs text-amber-100 transition hover:border-amber-400 hover:bg-amber-400/10 disabled:cursor-not-allowed disabled:opacity-45 ${GOLD_FOCUS}`;
+const BUTTON = `min-h-10 rounded-md border border-amber-700/70 px-2.5 py-1.5 text-xs text-amber-100 transition hover:border-amber-400 hover:bg-amber-400/10 disabled:cursor-not-allowed disabled:opacity-45 ${GOLD_FOCUS}`;
 const numberFormat = new Intl.NumberFormat('es', { style: 'percent', maximumFractionDigits: 1 });
 let nextRegionId = 0;
 
@@ -498,7 +498,7 @@ export default function SkinRegionEditor({ canvas, landmarks, onTexture, onRegio
     <header className="flex flex-wrap items-start justify-between gap-2">
       <div>
         <h3 className="font-semibold text-amber-200">Revisión visual por zonas</h3>
-        <p className="mt-1 text-xs text-slate-300">Delimita · etiqueta · analiza ROI · revisa y valida manualmente.</p>
+        <p className="mt-1 text-xs text-slate-300">1. Delimita · 2. Etiqueta y revisa · 3. Simula dentro de la zona.</p>
         <p className="text-xs text-amber-200">Fuente: {sourceLabel}</p>
       </div>
       <span className="rounded-full border border-amber-800 px-2 py-1 text-[11px] text-amber-200">Local · sin guardar</span>
@@ -517,8 +517,9 @@ export default function SkinRegionEditor({ canvas, landmarks, onTexture, onRegio
       <button type="button" className={BUTTON} onClick={newZone}>+ Nueva zona</button>
     </div>}
 
+    <fieldset className="space-y-2 rounded-lg border border-white/15 p-2">
+      <legend className="px-1 text-xs font-semibold text-gold">1. Delimitar zona</legend>
     <div className="flex flex-wrap items-center gap-2">
-      <span className="text-xs text-slate-300">Trazado</span>
       <button type="button" aria-pressed={drawMode === 'rectangle'} className={`${BUTTON} ${drawMode === 'rectangle' ? 'border-amber-300 bg-amber-400/15' : ''}`}
         onClick={() => { invalidateAnalysis(); setDrawMode('rectangle'); }}>Rectángulo</button>
       <button type="button" aria-pressed={drawMode === 'freehand'} className={`${BUTTON} ${drawMode === 'freehand' ? 'border-amber-300 bg-amber-400/15' : ''}`}
@@ -529,20 +530,27 @@ export default function SkinRegionEditor({ canvas, landmarks, onTexture, onRegio
         onClick={() => { cancelDraw(); setModelDrawing(value => !value); }}>
         {modelDrawing ? 'Terminar marcado · liberar giro' : 'Marcar sobre máscara'}
       </button>}
-      <button ref={openButtonRef} type="button" className={BUTTON} onClick={() => {
-        cancelDraw(); setZoom(1); setPan({ x: 0, y: 0 }); setExpanded(true);
-      }}>Ampliar foto</button>
       {selected && <button type="button" className={BUTTON} onClick={() => {
-        drawingRef.current = undefined; setDraft([]); setAnalysis(undefined);
-        invalidateAnalysis();
-        setRegions(currentRegions => currentRegions.filter(region => region.id !== selected.id));
-        setActiveId(undefined); setMessage('Trazado descartado. Puedes dibujarlo de nuevo.');
+        drawingRef.current = undefined; setDraft([]); setPhotoPan(false);
+        setMessage('Dibuja de nuevo sobre la foto o la máscara. El trazado anterior se conserva hasta aceptar uno válido.');
       }}>Corregir trazado</button>}
       {draft.length > 0 && <button type="button" className={BUTTON} onClick={() => {
         drawingRef.current = undefined; setDraft([]); setMessage('Trazado cancelado.');
       }}>Cancelar</button>}
     </div>
+    <p className="text-[11px] text-stone-300">{modelDrawing ? 'Marcado sobre máscara activo. Termina el marcado para volver a girar.' : photoPan ? 'Desplazamiento de foto activo; cambia a Dibujar foto para trazar.' : 'Dibuja en la foto; cada nuevo trazado sustituye solo la zona seleccionada.'}</p>
+    </fieldset>
 
+    <div role="group" aria-label="Navegación de foto manual" className="flex flex-wrap gap-1">
+      <button ref={openButtonRef} type="button" className={BUTTON} onClick={() => {
+        cancelDraw(); setExpanded(true);
+      }}>Ampliar foto</button>
+      <button type="button" className={BUTTON} disabled={zoom >= 4} onClick={() => { cancelDraw(); setZoom(value => Math.min(4, value + .5)); }}>Acercar</button>
+      <button type="button" className={BUTTON} disabled={zoom <= 1} onClick={() => { cancelDraw(); setZoom(value => Math.max(1, value - .5)); }}>Alejar</button>
+      <button type="button" className={BUTTON} onClick={() => { cancelDraw(); setZoom(1); setPan({ x: 0, y: 0 }); }}>Centrar</button>
+      <button type="button" className={BUTTON} aria-pressed={photoPan} onClick={() => { cancelDraw(); setPhotoPan(value => !value); }}>{photoPan ? 'Dibujar foto' : 'Mover foto'}</button>
+      <output className="self-center text-xs">{Math.round(zoom * 100)}%</output>
+    </div>
     {!expanded && photoEditor}
     <dialog ref={dialogRef} aria-label={`Foto ampliada · ${sourceLabel}`}
       onCancel={event => { event.preventDefault(); if (drawingRef.current) cancelDraw(); else setExpanded(false); }}
@@ -566,7 +574,9 @@ export default function SkinRegionEditor({ canvas, landmarks, onTexture, onRegio
       Ratón o tacto: arrastra para trazar. Teclado: enfoca la imagen, mueve el centro con flechas (Mayús = paso mayor) y pulsa Intro para crear un rectángulo.
     </p>
 
-    {selected && <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+    {selected && <fieldset className="space-y-2 rounded-lg border border-white/15 p-2">
+      <legend className="px-1 text-xs font-semibold text-gold">2. Etiquetar y revisar</legend>
+    <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
       <label className="text-xs text-slate-300">Etiqueta elegida por ti
         <select aria-label={`Etiqueta de ${selected.id}`} value={SKIN_REVIEW_LABELS.includes(selected.label as typeof SKIN_REVIEW_LABELS[number]) ? selected.label : selected.label ? 'Otra' : ''}
           onChange={event => {
@@ -585,15 +595,17 @@ export default function SkinRegionEditor({ canvas, landmarks, onTexture, onRegio
         }} maxLength={60} className={`mt-1 w-full rounded-md border border-slate-700 bg-slate-900 p-2 text-sm text-white ${GOLD_FOCUS}`}
           placeholder="Escrita por ti" />
       </label>}
-    </div>}
+    </div>
 
-    {selected && <div className="flex flex-wrap gap-2">
+    <div className="flex flex-wrap gap-2">
       <button type="button" className={BUTTON} disabled={busy || !labelIsReady || !base || !contextMatches}
         onClick={analyzeSelected}>{busy ? 'Analizando ROI…' : 'Analizar solo esta zona'}</button>
       <button type="button" className={BUTTON} disabled={!selectedAnalysis?.result.usable || !labelIsReady}
         onClick={verifySelected}>Validar revisión manual</button>
       <button type="button" className={BUTTON} onClick={discardSelected}>Descartar zona</button>
-    </div>}
+    </div>
+    <p className="text-[11px] text-stone-300">Validar conserva tu anotación; no confirma un diagnóstico ni aplica retoque.</p>
+    </fieldset>}
 
     {selectedAnalysis && <div className="rounded-lg border border-slate-700 bg-slate-900/80 p-2.5 text-xs" aria-label="Resultado de la revisión visual">
       <p className="font-medium text-amber-100">{statusSummary(selectedAnalysis)}</p>
@@ -610,7 +622,7 @@ export default function SkinRegionEditor({ canvas, landmarks, onTexture, onRegio
     </div>}
 
     {selected?.verified && <fieldset className="grid gap-x-4 gap-y-2 rounded-lg border border-emerald-800/70 bg-emerald-950/30 p-2.5 sm:grid-cols-2">
-      <legend className="px-1 text-xs font-medium text-emerald-200">Vista ilustrativa · solo dentro del ROI validado</legend>
+      <legend className="px-1 text-xs font-medium text-emerald-200">3. Simular · solo dentro del ROI validado</legend>
       <button type="button" className={BUTTON} disabled={!landmarks} onClick={() => {
         setShowBefore(false); setResetAcknowledged(false);
         setRegions(current => current.map(region => region.id === selected.id

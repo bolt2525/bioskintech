@@ -2,7 +2,7 @@ import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type
 import { Download, ImagePlus, Trash2, Wand2, Undo2, FileJson, ScanFace, Box, Image as ImageIcon, Move3d, MousePointer2, Crosshair, Brush, Spline, Slash, ArrowUpRight, Circle, Square, Fan, Grid3x3, Leaf, Layers, Scissors, Columns2, Syringe, ListChecks, Eye, Sparkles, UserRound, Gauge, Magnet, Type, Ruler, type LucideIcon } from 'lucide-react';
 import injectablesCatalog from '../../components/admin/ficha-clinica/data/injectables.json';
 import Clinical3DViewer, {
-  type AnatomicalSurfaceOverlay, type ClinicalCameraSync, type DrawingTool, type FreehandLine, type Marker3D, type SurfaceShape,
+  type AnatomicalSurfaceOverlay, type ClinicalCameraSync, type DrawingTool, type FreehandLine, type Marker3D, type ProjectedPosition, type SurfaceShape,
 } from '../../components/admin/ficha-clinica/components/Clinical3DViewer';
 import {
   AUTO_ZONE, FACE_OVAL, LANDMARK_ANCHORS, MAX_EFFECTS, REGISTRATION_ANCHORS, SIM_MODES, autoRegistration, correctPoints, defaultFrame,
@@ -39,20 +39,54 @@ import EffectAreaEditor from './EffectAreaEditor';
 import { importLocalRecord, localRecord } from './injectableLocalRecord';
 import { detectedSkinMapping, type SkinMappedCandidate, type SkinPhotoSource } from './skinMultiView';
 
-function SkinMaskPreview({ surface, modelData, points, direction, selectedPoint }: {
+function SkinMaskPreview({ surface, modelData, points, direction, selectedPoint, onSelect }: {
   surface: PersonalSurface; modelData: ArrayBuffer; points: readonly SkinMappedCandidate[]; direction: readonly number[]; selectedPoint?: string;
+  onSelect: (id: string) => void;
 }) {
+  const [projected, setProjected] = useState<ProjectedPosition[]>([]);
+  const updateProjection = useCallback((positions: ProjectedPosition[]) => {
+    const next = positions.filter(position => position.id !== '__zoom__' && position.visible === true);
+    setProjected(previous => previous.length === next.length && previous.every((position, i) =>
+      position.id === next[i].id && Math.abs(position.x - next[i].x) < .5 && Math.abs(position.y - next[i].y) < .5) ? previous : next);
+  }, []);
   const [x, y, z] = direction;
   const cameraSync = useMemo<ClinicalCameraSync>(() => {
     const centerY = (surface.positions[31] + surface.positions[457]) / 2;
     return { pose: { source: Symbol('skin-photo'), position: [x * 12, centerY + y * 12, z * 12],
       target: [0, centerY, 0], zoom: 1, verticalSpan: Math.abs(surface.positions[31] - surface.positions[457]) * 1.35 } };
   }, [surface, x, y, z]);
-  return <Clinical3DViewer markers={[]} modelData={modelData} cameraPreset="face-surface" cameraSync={cameraSync}
+  const markerGroups = useMemo(() => {
+    const groups: { position: ProjectedPosition; points: SkinMappedCandidate[] }[] = [];
+    for (const position of projected) {
+      const point = points.find(item => item.id === position.id);
+      if (!point) continue;
+      const group = groups.find(item => Math.hypot(item.position.x - position.x, item.position.y - position.y) < 32);
+      if (group) group.points.push(point);
+      else groups.push({ position, points: [point] });
+    }
+    return groups;
+  }, [projected, points]);
+  return <div className="relative overflow-hidden rounded-xl" data-skin-mask-preview>
+    <Clinical3DViewer markers={[]} modelData={modelData} cameraPreset="face-surface" cameraSync={cameraSync}
     readOnly occludeAnnotations height="clamp(240px, 42dvh, 480px)" selectedPointId={selectedPoint}
+    onProjectedPositions={updateProjection}
     editablePoints={points.map(point => ({ id: point.id, type: 'free', ...point.point, lineIds: [],
       name: `${point.label}${point.manual ? ' · manual' : ''}`, color: SKIN_CANDIDATE_COLORS[point.candidate.channel] }))}
-    interactionHint="Gira para revisar ubicaciones aproximadas. No son diagnósticos." />;
+    interactionHint="Gira o acerca; pulsa un indicador para revisar su foto. No son diagnósticos." />
+    <div className="pointer-events-none absolute inset-0">
+      {markerGroups.map(group => {
+        const selected = group.points.findIndex(point => point.id === selectedPoint);
+        const next = group.points[(selected + 1) % group.points.length];
+        const point = group.points[Math.max(0, selected)];
+        return <button key={group.points[0].id} type="button" aria-label={`Seleccionar en máscara ${next.label}`}
+          title={group.points.length > 1 ? `${group.points.length} indicadores cercanos; pulsa para alternar su selección.` : point.label}
+          aria-pressed={selected >= 0} onClick={() => onSelect(next.id)}
+          className="admin-focus-ring pointer-events-auto absolute flex h-8 w-8 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border border-gold/60 bg-stone-950/85 text-[10px] text-gold hover:bg-gold/20 aria-pressed:border-white aria-pressed:bg-gold aria-pressed:text-stone-950"
+          style={{ left: group.position.x, top: group.position.y }}>{group.points.length > 1
+            ? `${Math.max(0, selected) + 1}/${group.points.length}` : point.label.match(/\d+$/)?.[0] ?? '•'}</button>;
+      })}
+    </div>
+  </div>;
 }
 
 const modelPoint = (...args: Parameters<typeof tryModelPoint>): Vec3 => requireMappedPoint(tryModelPoint(...args));
@@ -2742,8 +2776,8 @@ export default function FaceSimLab() {
             </p> : <FacialSimulationViewer
               skinReview={<Suspense fallback={<p role="status">Preparando revisión de piel…</p>}>
                 <SkinMultiViewReview sources={skinSources} surface={personal?.surface}
-                  renderMask={personal ? (points, direction, selectedPoint) => <SkinMaskPreview surface={personal.surface}
-                    modelData={personal.glb} points={points} direction={direction} selectedPoint={selectedPoint} /> : undefined} />
+                  renderMask={personal ? (points, direction, selectedPoint, onSelect) => <SkinMaskPreview surface={personal.surface}
+                    modelData={personal.glb} points={points} direction={direction} selectedPoint={selectedPoint} onSelect={onSelect} /> : undefined} />
               </Suspense>}
               surface={modelKind === 'personal' ? personal?.renderSurface : undefined}
               photo={modelKind === 'personal' ? personal?.canvas : undefined}

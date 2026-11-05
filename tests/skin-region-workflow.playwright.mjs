@@ -155,6 +155,12 @@ try {
     await qa.getByRole('button', { name: 'Desplazar', exact: true }).click();
     assert.equal(await editor.getByRole('button', { name: 'Marcar sobre máscara', exact: true }).getAttribute('aria-pressed'), 'false');
     await qa.getByRole('button', { name: 'Girar', exact: true }).click();
+    const beforeCorrection = await editor.getByRole('application').locator('polygon').first().getAttribute('points');
+    const labelBeforeCorrection = await editor.locator('select').inputValue();
+    await editor.getByRole('button', { name: 'Corregir trazado', exact: true }).click();
+    assert.equal(await editor.getByRole('application').locator('polygon').first().getAttribute('points'), beforeCorrection,
+      'corregir no elimina el trazado antes de reemplazarlo');
+    assert.equal(await editor.locator('select').inputValue(), labelBeforeCorrection, 'corregir conserva la etiqueta');
     await editor.getByRole('button', { name: 'Pincel', exact: true }).click();
     // Modal real: foco, zoom, pan y dibujo comparten ROI; coordenadas mediante bounds transformados.
     await editor.getByRole('button', { name: 'Ampliar foto', exact: true }).click();

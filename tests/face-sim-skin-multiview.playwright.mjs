@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
+import { join } from 'node:path';
 const fixture = JSON.parse(readFileSync(new URL('./fixtures/face-sim-mediapipe-synthetic.json', import.meta.url), 'utf8'));
 const atlas = JSON.parse(readFileSync(new URL('../src/lab/faceSim/genericFaceAtlas.json', import.meta.url), 'utf8'));
 const { chromium } = await import(process.env.PLAYWRIGHT_MODULE ? pathToFileURL(process.env.PLAYWRIGHT_MODULE).href : 'playwright');
@@ -68,8 +69,13 @@ try {
   await page.locator('[data-face-editor]').getByRole('button', { name: 'Piel', exact: true }).click();
   const dialog = page.getByRole('region', { name: 'Revisión de piel · fotos y máscara' });
   await dialog.waitFor();
+  const flow = page.locator('[data-face-editor]').getByRole('group', { name: 'Flujo de piel' });
+  assert.ok(await flow.evaluate(node => node.parentElement.querySelector('button').textContent === 'Piel'),
+    'el subflujo debe pertenecer al mismo grupo que Piel');
+  assert.ok(await dialog.locator('[data-skin-analysis-toolbar]').getByRole('slider', { name: 'Sensibilidad de candidatos de piel' }).isVisible(),
+    'sensibilidad junto al análisis, no al final');
   assert.equal(await page.getByRole('dialog').count(), 0, 'la revisión pertenece a Piel, no a otro modal');
-  await dialog.getByText('Avanzados · áreas, sensibilidad y alineación', { exact: true }).click();
+  await dialog.getByText('Avanzados · áreas y alineación', { exact: true }).click();
   const source = label => dialog.getByRole('group', { name: 'Fotos de piel' }).getByRole('button', { name: new RegExp(`^${label}`) });
   const coordinates = async point => {
     if (!await dialog.getByLabel('X (%)', { exact: true }).isVisible()) await dialog.getByText('Introducir punto con teclado', { exact: true }).click();
@@ -96,6 +102,8 @@ try {
   assert.ok(contrast >= 4.5, 'el botón de análisis debe seguir legible');
   const run = async () => {
     const started = Date.now(); await analyze.click();
+    await dialog.getByRole('button', { name: 'Cancelar análisis', exact: true }).waitFor();
+    await dialog.getByRole('button', { name: 'Cancelar análisis', exact: true }).waitFor({ state: 'hidden' });
     await dialog.getByText('3 fotos analizadas; revisa los candidatos. No son lesiones confirmadas.', { exact: true }).waitFor();
     return Date.now() - started;
   };
@@ -107,6 +115,32 @@ try {
   await dialog.getByRole('button', { name: 'Aceptar candidato 1', exact: true }).click();
   await dialog.getByLabel('Estado de revisión', { exact: true }).selectOption('all');
   await dialog.getByText(/1\..* · revisado/).waitFor();
+  const sensitivity = dialog.getByRole('slider', { name: 'Sensibilidad de candidatos de piel' });
+  await sensitivity.focus(); await page.keyboard.press('ArrowRight');
+  await dialog.getByText(/^Sensibilidad pendiente de aplicar/).waitFor();
+  assert.ok(await dialog.getByRole('button', { name: 'Aceptar y siguiente · A', exact: true }).isDisabled());
+  await analyze.focus(); await page.keyboard.press('d');
+  await dialog.getByText(/1\..* · revisado/).waitFor();
+  const beforeCancel = await dialog.getByRole('list', { name: 'Candidatos multivista' }).innerText();
+  await analyze.click();
+  await dialog.getByRole('button', { name: 'Conservar revisión', exact: true }).click();
+  assert.equal(await dialog.getByRole('list', { name: 'Candidatos multivista' }).innerText(), beforeCancel, 'cancelar conserva candidatos y decisiones');
+  await analyze.click();
+  // Hace reproducible cancelar entre etapas, sin cambiar el detector ni sus resultados.
+  await page.evaluate(() => {
+    window.__skinOriginalTimeout = window.setTimeout;
+    window.setTimeout = (callback, delay, ...args) => window.__skinOriginalTimeout(callback, delay === 0 ? 300 : delay, ...args);
+  });
+  await dialog.getByRole('button', { name: 'Reanalizar y reemplazar revisión', exact: true }).click();
+  await dialog.getByRole('button', { name: 'Cancelar análisis', exact: true }).focus();
+  await page.keyboard.press('d');
+  assert.equal(await dialog.getByRole('list', { name: 'Candidatos multivista' }).innerText(), beforeCancel, 'el atajo no decide durante el análisis');
+  await dialog.getByRole('button', { name: 'Cancelar análisis', exact: true }).click();
+  await page.evaluate(() => { window.setTimeout = window.__skinOriginalTimeout; });
+  await dialog.getByText('Análisis cancelado. No se aplicaron cambios.', { exact: true }).waitFor();
+  assert.equal(await dialog.getByRole('list', { name: 'Candidatos multivista' }).innerText(), beforeCancel, 'cancelar el análisis conserva candidatos y decisiones');
+  await sensitivity.focus(); await page.keyboard.press('ArrowLeft');
+  assert.equal(await dialog.getByText(/^Sensibilidad pendiente de aplicar/).count(), 0);
   await dialog.getByRole('button', { name: 'Descartar candidato 1', exact: true }).click();
   await dialog.getByText(/1\..* · descartado/).waitFor();
   await dialog.getByRole('button', { name: 'Restablecer revisión', exact: true }).click();
@@ -128,6 +162,25 @@ try {
   await source('Frontal').click();
   assert.ok(await dialog.getByText(/^Indicador en máscara:/).count() > 0);
   await dialog.getByRole('region', { name: 'Candidatos sobre máscara' }).locator('canvas').waitFor();
+  const indicator = dialog.getByRole('button', { name: /^Seleccionar en máscara / }).first();
+  await indicator.waitFor();
+  const maskTarget = Number((await indicator.getAttribute('aria-label')).match(/ (\d+)$/)[1]);
+  await indicator.click();
+  assert.equal(await indicator.getAttribute('aria-pressed'), 'true', 'el indicador 3D selecciona su candidato en foto');
+  assert.equal(await dialog.getByRole('list', { name: 'Candidatos multivista' }).getByRole('listitem').nth(maskTarget - 1).getByRole('button').first().getAttribute('aria-pressed'),
+    'true', 'la selección 3D corresponde al número de su observación fotográfica');
+  const candidateBox = dialog.locator('svg rect').first();
+  const firstItem = dialog.getByRole('list', { name: 'Candidatos multivista' }).getByRole('listitem').first().getByRole('button').first();
+  await dialog.getByRole('button', { name: 'Acercar foto', exact: true }).click();
+  await candidateBox.scrollIntoViewIfNeeded();
+  const zoomedBox = await candidateBox.boundingBox();
+  await page.mouse.click(zoomedBox.x + zoomedBox.width / 2, zoomedBox.y + zoomedBox.height / 2);
+  assert.equal(await firstItem.getAttribute('aria-pressed'), 'true', 'el zoom mantiene las coordenadas del candidato');
+  await dialog.getByRole('button', { name: 'Reencuadrar foto', exact: true }).click();
+  if (process.env.QA_SCREENSHOT_DIR) {
+    await dialog.locator('header').scrollIntoViewIfNeeded();
+    await page.screenshot({ path: join(process.env.QA_SCREENSHOT_DIR, 'skin-review-desktop.png') });
+  }
   const anchors = await page.evaluate(() => {
     const p = window.__skinBasePositions, h = Math.abs(p[31] - p[457]);
     return [168, 1, 2, 0, 17, 152].map(id => ({ x: .3 + p[id * 3 + 2] / h * .65, y: .5 - p[id * 3 + 1] / h * .65 }));
@@ -149,6 +202,18 @@ try {
   if (before && after) assert.ok(after - before < 30 * 1024 * 1024, 'reanalizar no retiene mapas completos de cada ejecución');
   await cdp.detach();
   await page.setViewportSize({ width: 390, height: 844 });
+  const mobileViews = dialog.getByRole('group', { name: 'Visor de piel en móvil' });
+  const selectedBeforeTab = await dialog.getByRole('list', { name: 'Candidatos multivista' }).innerText();
+  await mobileViews.getByRole('button', { name: 'Máscara 3D', exact: true }).click();
+  assert.equal(await dialog.getByRole('button', { name: 'Acercar foto', exact: true }).isVisible(), false);
+  assert.ok(await dialog.getByRole('region', { name: 'Candidatos sobre máscara' }).isVisible());
+  await mobileViews.getByRole('button', { name: 'Foto', exact: true }).click();
+  assert.equal(await dialog.getByRole('region', { name: 'Candidatos sobre máscara' }).isVisible(), false);
+  assert.equal(await dialog.getByRole('list', { name: 'Candidatos multivista' }).innerText(), selectedBeforeTab);
+  if (process.env.QA_SCREENSHOT_DIR) {
+    await dialog.locator('header').scrollIntoViewIfNeeded();
+    await page.screenshot({ path: join(process.env.QA_SCREENSHOT_DIR, 'skin-review-mobile.png') });
+  }
   assert.ok(await dialog.evaluate(node => node.scrollWidth <= node.clientWidth + 1));
   assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1));
   const count = await dialog.getByRole('listitem').count();
@@ -165,6 +230,6 @@ try {
   await appearance.getByRole('button', { name: 'Buscar y revisar', exact: true }).click();
   assert.equal(await dialog.getByRole('listitem').count(), count, 'retoque no pierde decisiones ni candidatos');
   assert.deepEqual(errors, []);
-  console.log(JSON.stringify({ cases: 18, synthetic: true, contrast, durationMs: duration, repeatHeapDeltaMB: before && after ? (after - before) / 1048576 : null,
+  console.log(JSON.stringify({ cases: 26, synthetic: true, contrast, durationMs: duration, repeatHeapDeltaMB: before && after ? (after - before) / 1048576 : null,
     manualProfile: true, photoAndMask: true, desktop: 1440, mobile: 390, errors }));
 } finally { await browser.close(); }

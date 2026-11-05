@@ -1,5 +1,12 @@
 # Progreso de BioSkinTech App
 
+- ✅ 2026-11-05 Piel: navegación y revisión reorganizadas.
+- ✅ 2026-11-05 Sensibilidad: revisión preservada y confirmación.
+- ✅ 2026-11-05 Máscara: selección vinculada y agrupada.
+- ✅ 2026-11-05 Zonas: trazado corregible sin borrado.
+- QA: 94 pruebas focales aprobadas; lint focal y build aprobados. Navegador sintético: 26 comprobaciones de revisión a 1440/390 px, zoom con selección correcta, sensibilidad pendiente, confirmación/cancelación sin pérdida, atajos bloqueados durante análisis y alternancia Foto/Máscara. Cero errores JS; contraste del botón 18,1:1. Análisis de tres fotos en 3,95 s durante build concurrente; heap JS tras dos repeticiones y GC +0,31 MiB, no RAM/GPU total.
+- QA retoque sintético desktop/móvil: raycast UV real, trazado corregible conserva región/etiqueta, zoom/pan/foco, fuente lateral y restauración geométrica exacta; 2002 píxeles cambiados dentro del ROI, cero fuera y cero cambios en geometría protegida. No equivale a interacción táctil o rendimiento en hardware móvil. TypeScript mantiene 12 errores previos fuera del Lab.
+- Investigación pública ampliada: repos ISIC aportados clasifican recortes, no detectan cajas en retratos; hay datasets faciales con cajas/polígonos fuera de ISIC. Notebook de acné revisado: precision 60,55%, recall 58,01%, mAP50 61,12%, no validación BIOSKIN. MalImg CoAtNet clasifica malware, no piel. Detector semántico y umbral >70% siguen pendientes de licencia, métricas y evaluación independiente; sin pesos nuevos, entrenamiento, API externa ni cambios directos en producción.
 - ✅ 2026-11-04 Piel: flujo único y dividido.
 - ✅ 2026-11-04 Laterales: indicadores independientes de textura.
 - ✅ 2026-11-04 Piel: categorías y búsqueda dirigida.

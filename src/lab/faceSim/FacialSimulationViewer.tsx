@@ -1391,21 +1391,23 @@ export function FacialSimulationViewer({ surface, photo, hair = DEFAULT_HAIR, ha
         <aside aria-label="Herramientas de simulación" className="min-h-0 min-w-0 rounded-xl border border-white/10 bg-black/30 p-2 lg:overflow-y-auto">
           <nav aria-label="Sección de simulación" className="grid grid-cols-2 gap-1 lg:grid-cols-1">
             {([['morphology', 'Morfología'], ['skin', 'Piel'], ['layers', 'Capas'], ['cut', 'Corte']] as const).map(([key, label]) =>
+              <div key={key} className={key === 'skin' ? 'col-span-full lg:col-span-1' : ''}>
               <button type="button" key={key} aria-pressed={tool === key} aria-controls={`${id}-tool-${key}`}
-                className={`${buttonClass} min-h-10 text-left`} onClick={() => {
+                className={`${buttonClass} min-h-10 w-full text-left`} onClick={() => {
                   if (key !== 'skin') modelDrawingRef.current?.stop();
                   setTool(key);
                   if (key === 'skin') setSkinOpened(true);
                   if (key === 'layers' || key === 'cut') setComparison('after');
                   inspector.current?.scrollTo({ top: 0 });
-                }}>{label}</button>)}
-          </nav>
-          {tool === 'skin' && skinWorkspace && <div role="group" aria-label="Flujo de piel" className="mt-3 flex flex-wrap gap-1 lg:flex-col">
+                }}>{label}</button>
+              {key === 'skin' && tool === 'skin' && skinWorkspace && <div role="group" aria-label="Flujo de piel" className="my-2 ml-2 flex flex-wrap gap-1 border-l border-gold/30 pl-2 lg:flex-col">
             <button type="button" className={buttonClass} aria-pressed={skinMode === 'review'} onClick={() => setSkinMode('review')}>Buscar y revisar</button>
             <details><summary className="cursor-pointer rounded p-2 text-xs text-gold focus-visible:outline">Avanzados</summary>
               <button type="button" className={buttonClass} aria-pressed={skinMode === 'retouch'} onClick={() => setSkinMode('retouch')}>Retoque y zonas</button>
             </details>
-          </div>}
+              </div>}
+              </div>)}
+          </nav>
           <div hidden={tool !== 'morphology'} className="mt-3 space-y-2 border-t border-white/10 pt-3">
             <h3 className="text-[11px] font-bold uppercase tracking-wider text-gold">Región morfológica</h3>
             <div role="group" aria-label="Región morfológica" className="flex flex-wrap gap-1 lg:flex-col">
