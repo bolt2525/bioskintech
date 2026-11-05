@@ -35,7 +35,8 @@ test('área manual de piel: no analiza toda la imagen por defecto ni acepta pol�
   assert.equal(mask[0], 0); assert.equal(mask[50 * 100 + 50], 1);
   assert.ok(skinPolygonMask(50, 50, []).every(value => value === 0));
   assert.throws(() => skinPolygonMask(100, 100, [[polygon[0], polygon[2], polygon[1], polygon[3]]]), /válidas/);
-  assert.throws(() => skinPolygonMask(1024, 1024, [polygon]), /válidas/);
+  assert.ok(skinPolygonMask(1024, 1024, [polygon]).some(Boolean));
+  assert.throws(() => skinPolygonMask(1401, 1024, [polygon]), /válidas/);
 });
 
 test('perfil con clics imperfectos usa la afín real, no los coeficientes modificados por TPS', () => {

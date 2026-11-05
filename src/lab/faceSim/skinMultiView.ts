@@ -3,6 +3,7 @@ import { locatePhotoPoint, surfacePoint } from './faceTransfer.ts';
 import atlas from './genericFaceAtlas.json' with { type: 'json' };
 import type { SkinVisualCandidate } from './skinAppearance.ts';
 import { isValidSkinPolygon } from './skinRegionReview.ts';
+import type { SkinScanSummary } from './skinAutoScan.ts';
 
 export interface SkinPhotoSource {
   id: string;
@@ -34,6 +35,7 @@ export interface SkinPhotoResult {
   usable: boolean;
   reason: string;
   milliseconds: number;
+  scan?: SkinScanSummary;
 }
 export interface SkinMappedCandidate {
   id: string;
@@ -90,7 +92,7 @@ export function alignSkinProfile(
 }
 
 export function skinPolygonMask(width: number, height: number, polygons: readonly (readonly P2[])[]): Uint8Array {
-  if (!Number.isInteger(width) || !Number.isInteger(height) || width < 1 || height < 1 || width > 768 || height > 768
+  if (!Number.isInteger(width) || !Number.isInteger(height) || width < 1 || height < 1 || width > 1400 || height > 1400
     || polygons.length > 8 || polygons.some(p => !isValidSkinPolygon(p))) throw new Error('Delimita áreas de piel válidas, sin cruzar el trazado.');
   const mask = new Uint8Array(width * height);
   for (const polygon of polygons) {

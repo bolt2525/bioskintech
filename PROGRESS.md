@@ -1,5 +1,11 @@
 # Progreso de BioSkinTech App
 
+- ✅ 2026-11-05 Exploración: sectores automáticos y progreso.
+- ✅ 2026-11-05 Evaluador: métricas por categoría.
+- Automatización local: pasada general más ventanas solapadas sobre foto original ≤1400 px, hasta 16 por foto, sin depender de candidatos previos. Confirmar un área manual inicia el análisis; arranque manual evita duplicados pendientes. Progreso/cancelación, motivos de exclusión y cobertura espacial visibles; deduplicación y límite de 112 distribuidos entre sectores con aviso. No clasifica lesiones ni confunde cobertura con precisión.
+- Evaluación preparada para acné, manchas, lunares, cicatrices, melasma, poros y arrugas finas/gruesas: `npm run lab:skin-evaluate -- referencias.json predicciones.json`. JSON locales seudónimos, IoU ≥0,5, TP/FP/FN y precision/recall por clase; omisiones/duplicados y fuga declarada de grupos no pasan inadvertidos. No usa fotos ni aceptaciones como etiquetas; sin soporte una categoría queda sin evaluar, no aprobada.
+- QA: 109 pruebas focales aprobadas; build y lint focal aprobados. Navegador sintético: 30 comprobaciones a 1440/390 px, exploración automática al confirmar áreas, cobertura, modo pendiente, cancelación preservada, zoom/selección y alternancia de visores; listas visibles al volver a pantalla. Tres fotos en 5,96 s, contraste 18,1:1, cero errores JS; dos repeticiones con GC dejan +0,18 MiB de heap JS, no RAM/GPU total. TypeScript mantiene 12 errores previos fuera del Lab; no certifica precisión clínica ni interacción en hardware móvil.
+- Clasificador semántico bloqueado: los pesos pequeños revisados no aprobaron taxonomía/procedencia/condiciones de uso. No se descargaron pesos ni se incorporó un clasificador, API de inferencia, dependencia o servicio nuevo. El conjunto R2 facial/con tatuajes queda para evaluación posterior autorizada; no se consultó ni descargó, y aún necesita anotaciones independientes para medir >70%. La clasificación solicitada sigue pendiente, no se presenta la automatización RGB como su cumplimiento.
 - ✅ 2026-11-05 Piel: navegación y revisión reorganizadas.
 - ✅ 2026-11-05 Sensibilidad: revisión preservada y confirmación.
 - ✅ 2026-11-05 Máscara: selección vinculada y agrupada.

@@ -3,6 +3,7 @@ import type { P2, PersonalSurface } from './engine';
 import { analyzeSkinAppearance, SKIN_CANDIDATE_COLORS, SKIN_CANDIDATE_LABELS, skinVisualCandidates, type SkinCandidateChannel } from './skinAppearance';
 import { createSkinSignalMask, skinSignalPreview } from './skinSignalTexture';
 import { isValidSkinPolygon } from './skinRegionReview';
+import { scanSkinRegions } from './skinAutoScan';
 import {
   alignSkinProfile, mapSkinCandidate, mergeSkinObservations, PROFILE_SKIN_ANCHORS, replaceSkinFocusCandidates, selectSkinPhotos, skinPhotoQuality, skinPolygonMask,
   type SkinMappedCandidate, type SkinPhotoMapping, type SkinPhotoResult, type SkinPhotoSource,
@@ -31,9 +32,12 @@ export default function SkinMultiViewReview({ sources, surface, renderMask }: {
   const [usedIds, setUsedIds] = useState<string[]>([]);
   const [decisions, setDecisions] = useState<Decisions>({}), [history, setHistory] = useState<Decisions[]>([]);
   const [busy, setBusy] = useState(false), [message, setMessage] = useState('Preparando fotos…');
+  const [scanProgress, setScanProgress] = useState<{ completed: number; total: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [coordinates, setCoordinates] = useState({ x: 50, y: 50 }), [sensitivity, setSensitivity] = useState(50);
   const [analyzedSensitivity, setAnalyzedSensitivity] = useState(50);
+  const [autoScan, setAutoScan] = useState(true), [analyzedAutoScan, setAnalyzedAutoScan] = useState(true);
+  const previousConfigurations = useRef<Record<string, Configuration>>({});
   const [confirmReanalysis, setConfirmReanalysis] = useState(false);
   const [zoom, setZoom] = useState(1), [mobileView, setMobileView] = useState<'photo' | 'mask'>('photo');
   const [category, setCategory] = useState<SkinCandidateChannel | 'all'>('all');
@@ -50,8 +54,9 @@ export default function SkinMultiViewReview({ sources, surface, renderMask }: {
     setMode(null); setDraft([]); setFocus([]); setSelectedId(sources[0]?.id ?? ''); setActiveId(''); setError(null);
     setZoom(1); setConfirmReanalysis(false);
     setMessage('El análisis comienza con las fotos confirmadas. Las fotos sin detección necesitan un área de piel.');
+    const generation = request.current;
     const timer = sources.some(source => source.confirmed && source.landmarks)
-      ? setTimeout(() => void analyzeRef.current?.(), 150) : undefined;
+      ? setTimeout(() => { if (generation === request.current) void analyzeRef.current?.(); }, 150) : undefined;
     return () => { clearTimeout(timer); token.current++; };
   }, [sources, surface]);
   useEffect(() => {
@@ -93,11 +98,11 @@ export default function SkinMultiViewReview({ sources, surface, renderMask }: {
     return createSkinSignalMask(width, height, source.landmarks);
   };
   const analyze = async (target?: readonly P2[]) => {
-    if (target && results.length && sensitivity !== analyzedSensitivity) {
-      setError('Aplica primero la nueva sensibilidad con Analizar fotos; después busca en una zona.'); return;
+    if (target && results.length && (sensitivity !== analyzedSensitivity || autoScan !== analyzedAutoScan)) {
+      setError('Aplica primero los nuevos ajustes con Analizar fotos; después busca en una zona.'); return;
     }
     const id = ++request.current;
-    setBusy(true); setError(null); setMode(null); setDraft([]); setConfirmReanalysis(false);
+    setBusy(true); setScanProgress(null); setError(null); setMode(null); setDraft([]); setConfirmReanalysis(false);
     const quality: SkinPhotoResult[] = [];
     try {
       for (const source of target ? sources.filter(source => source.id === selectedId) : sources) {
@@ -121,6 +126,7 @@ export default function SkinMultiViewReview({ sources, surface, renderMask }: {
         await new Promise(resolve => setTimeout(resolve, 0));
         if (id !== request.current) return;
         const source = sources.find(item => item.id === sourceId)!;
+        setScanProgress(null);
         setMessage(`Analizando ${source.label}…`);
         const started = performance.now(), base = skinSignalPreview(source.canvas, target ? 768 : 512);
         const context = base.getContext('2d', { willReadFrequently: true });
@@ -136,6 +142,18 @@ export default function SkinMultiViewReview({ sources, surface, renderMask }: {
         entry.usable = analysis.usable;
         entry.reason = analysis.usable ? '' : analysis.warnings.find(warning => warning.startsWith('No utilizable:')) ?? 'Sin soporte visual suficiente.';
         entry.candidates = skinVisualCandidates(analysis, mask, base.width, base.height, true);
+        if (!target && autoScan && analysis.usable) {
+          const original = skinSignalPreview(source.canvas, 1400), originalContext = original.getContext('2d', { willReadFrequently: true });
+          if (!originalContext) throw new Error('No se pudieron leer las zonas de la fotografía original.');
+          const explored = await scanSkinRegions(originalContext.getImageData(0, 0, original.width, original.height),
+            maskFor(source, original.width, original.height), entry.candidates, {
+              sensitivity: sensitivity / 100, cancelled: () => id !== request.current,
+              onProgress: (completed, total) => {
+                setScanProgress({ completed, total }); setMessage(`Explorando ${source.label} · zona ${completed}/${total}…`);
+              },
+            });
+          entry.candidates = explored.candidates; entry.scan = explored.scan;
+        }
         entry.milliseconds = performance.now() - started;
       }
       if (id !== request.current) return;
@@ -150,17 +168,26 @@ export default function SkinMultiViewReview({ sources, surface, renderMask }: {
         setMessage('Zona revisada con más detalle. Los candidatos anteriores fuera de ella se conservan.');
       } else {
         setResults(quality);
-        setDecisions({}); setHistory([]); setAnalyzedSensitivity(sensitivity);
+        setDecisions({}); setHistory([]); setAnalyzedSensitivity(sensitivity); setAnalyzedAutoScan(autoScan);
         const used = chosen.filter(sourceId => quality.find(item => item.sourceId === sourceId)?.usable);
         setUsedIds(used);
         setMessage(`${used.length} fotos analizadas; revisa los candidatos. No son lesiones confirmadas.`);
       }
     } catch (cause) {
+      if (id !== request.current) return;
       console.error('Falló la revisión multivista de piel.', cause);
       if (id === request.current) setError(cause instanceof Error ? cause.message : 'No se pudo analizar la piel.');
     } finally { if (id === request.current) setBusy(false); }
   };
   useEffect(() => { analyzeRef.current = analyze; });
+  useEffect(() => {
+    const confirmed = Object.entries(configurations).some(([id, entry]) => entry.reviewed && !previousConfigurations.current[id]?.reviewed);
+    previousConfigurations.current = configurations;
+    if (!confirmed || !autoScan) return;
+    const generation = request.current;
+    const timer = setTimeout(() => { if (generation === request.current) void analyzeRef.current?.(); }, 300);
+    return () => clearTimeout(timer);
+  }, [configurations, autoScan]);
   const projected = useMemo(() => {
     if (!surface) return EMPTY;
     const points: SkinMappedCandidate[] = [];
@@ -188,7 +215,7 @@ export default function SkinMultiViewReview({ sources, surface, renderMask }: {
   };
   const undo = () => { if (history.length) { setDecisions(history[history.length - 1]); setHistory(previous => previous.slice(0, -1)); } };
   const activePoint = mapped.find(point => point.observationIds.includes(`${selectedId}/${active?.id}`));
-  const stale = results.length > 0 && sensitivity !== analyzedSensitivity;
+  const stale = results.length > 0 && (sensitivity !== analyzedSensitivity || autoScan !== analyzedAutoScan);
   const selectMapped = (id: string) => {
     const point = mapped.find(item => item.id === id);
     if (!point) return;
@@ -206,7 +233,7 @@ export default function SkinMultiViewReview({ sources, surface, renderMask }: {
       }
     }}>
     <header className="sticky top-0 z-10 space-y-2 border-b border-white/10 bg-stone-950/95 pb-3 backdrop-blur" data-skin-analysis-toolbar>
-      <div><h3 className="font-semibold text-gold">Piel · buscar y revisar</h3><p className="text-xs text-stone-300">1. Analiza · 2. Selecciona en foto o máscara · 3. Revisa. Aceptar no retoca ni entrena.</p></div>
+      <div><h3 className="font-semibold text-gold">Piel · buscar y revisar</h3><p className="text-xs text-stone-300">{autoScan ? '1. Explora al entrar · 2. Revisa en foto o máscara · 3. Acepta o descarta.' : '1. Analiza · 2. Selecciona en foto o máscara · 3. Revisa.'} Aceptar no retoca ni entrena.</p></div>
       <div className="flex flex-wrap gap-2">
         <label className="flex min-w-40 flex-1 items-center gap-2 text-xs">Sensibilidad · {sensitivity}%
           <input aria-label="Sensibilidad de candidatos de piel" type="range" min="0" max="100" value={sensitivity} disabled={busy}
@@ -218,7 +245,12 @@ export default function SkinMultiViewReview({ sources, surface, renderMask }: {
           onClick={() => { setMode('focus'); setMobileView('photo'); setDraft([]); setFocus([]); }}>Buscar en zona</button>
         {busy && <button type="button" className={button} onClick={() => { request.current++; setBusy(false); setMessage('Análisis cancelado. No se aplicaron cambios.'); }}>Cancelar análisis</button>}
       </div>
-      {stale && <p role="status" className="text-xs text-amber-200">Sensibilidad pendiente de aplicar. Se conserva la revisión anterior hasta que vuelvas a analizar.</p>}
+      <label className="flex items-start gap-2 text-xs text-stone-300"><input type="checkbox" className="admin-focus-ring mt-0.5 accent-gold"
+        checked={autoScan} disabled={busy} onChange={event => { setAutoScan(event.target.checked); setConfirmReanalysis(false); }} />
+        Explorar automáticamente todas las zonas de piel · más detalle, sin enviar fotos</label>
+      {busy && <progress aria-label="Avance de exploración de la foto" className="h-1 w-full accent-gold"
+        value={scanProgress?.completed} max={scanProgress?.total ?? 1} />}
+      {stale && <p role="status" className="text-xs text-amber-200">{sensitivity !== analyzedSensitivity ? 'Sensibilidad pendiente de aplicar.' : 'Exploración pendiente de aplicar.'} Se conserva la revisión anterior hasta que vuelvas a analizar.</p>}
       {confirmReanalysis && <div role="alert" className="flex flex-wrap items-center gap-2 rounded-lg border border-gold/40 p-2 text-xs">
         <p>Reanalizar sustituye candidatos y decisiones de las fotos. No modifica las imágenes.</p>
         <button type="button" className={button} onClick={() => void analyze()}>Reanalizar y reemplazar revisión</button>
@@ -239,6 +271,15 @@ export default function SkinMultiViewReview({ sources, surface, renderMask }: {
     </div>
     <p role="status" aria-live="polite" aria-busy={busy} className="text-xs">{message}</p>
     {error && <p role="alert" className="rounded border border-red-400/50 bg-red-950/50 p-2 text-sm text-red-100">{error}</p>}
+    {selectedResult && !selectedResult.usable && <p role="alert" className="rounded-lg border border-amber-400/40 p-2 text-xs text-amber-100">
+      Esta foto necesita atención: {selectedResult.reason} No se interpreta como ausencia de lesiones.
+    </p>}
+    {selectedResult?.scan && <div aria-label="Cobertura de exploración" className="rounded-lg border border-gold/25 bg-gold/5 p-2 text-xs">
+      <p>{selectedResult.scan.windows} zonas exploradas · {Math.floor(selectedResult.scan.coverage * 100)}% del área autorizada incluida en zonas utilizables.</p>
+      <p>Es cobertura espacial, no precisión ni calidad de cada píxel. Los candidatos son señales visuales, no categorías clínicas ni prueba de ausencia de lesiones.</p>
+      {selectedResult.scan.coverage < 1 && <p className="text-amber-200">Parte del área no admite análisis de detalle. Revisa luz, resolución y límites.</p>}
+      {selectedResult.scan.truncated && <p role="alert" className="text-amber-200">Más de 112 candidatos: se muestra una selección distribuida entre zonas. La revisión no es exhaustiva.</p>}
+    </div>}
     {!sources.length ? <p>Carga y confirma fotos en Capturas para comenzar.</p> : <>
       <p className="text-xs text-stone-300">{selected?.confirmed ? selected.landmarks ? 'Área de piel detectada.' : 'Sin referencias faciales: delimita y confirma piel para analizar en 2D.' : 'Confirma esta captura antes de analizar.'} {mapping ? 'Correspondencia 3D disponible; se excluyen zonas ambiguas.' : 'Sin correspondencia 3D segura: el análisis permanece en la foto.'}</p>
       {selected?.confirmed && !selected.landmarks && !config.polygons.length && <button type="button" className={button} disabled={busy}
@@ -327,8 +368,8 @@ export default function SkinMultiViewReview({ sources, surface, renderMask }: {
         {filtered.map(candidate => {
           const id = `${selectedId}/${candidate.id}`, index = candidates.indexOf(candidate) + 1;
           const point = mapped.find(item => item.observationIds.includes(id));
-          return <li key={id} className={`rounded border bg-stone-900 p-2 text-xs ${active === candidate ? 'border-gold' : 'border-white/10'}`}>
-            <button type="button" className="admin-focus-ring w-full rounded text-left" aria-pressed={active === candidate} onClick={() => setActiveId(candidate.id)}>
+          return <li key={id} className={`rounded border bg-stone-900 p-2 text-xs [content-visibility:auto] [contain-intrinsic-size:auto_110px] ${active === candidate ? 'border-gold' : 'border-white/10'}`}>
+            <button type="button" className="admin-focus-ring w-full scroll-mt-96 rounded text-left md:scroll-mt-64" aria-pressed={active === candidate} onClick={() => setActiveId(candidate.id)}>
               {index}. {SKIN_CANDIDATE_LABELS[candidate.channel]} · {decisions[id] === 'accepted' ? 'revisado' : decisions[id] === 'dismissed' ? 'descartado' : 'pendiente'}
             </button>
             <p>{point ? `Indicador en máscara: ${point.label}.` : 'Solo foto: sin correspondencia 3D segura.'}</p>
