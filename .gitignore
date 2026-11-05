@@ -29,3 +29,8 @@ Thumbs.db
 # Assets del simulador facial (npm run lab:face-assets)
 /public/mediapipe/
 /public/models/face/
+
+# Ensayos locales: nunca publicar fotos, mascaras ni pesos
+/.skin-experiments/
+/.venv-skin/
+__pycache__/

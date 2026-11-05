@@ -1,5 +1,9 @@
 # Progreso de BioSkinTech App
 
+- ✅ 2026-11-05 ISIC: ensayo aprendido local.
+- Implementados descarga acotada CC0, entrenamiento TorchVision desde cero y predicción de máscaras en coordenadas originales; sin API, pacientes/R2 ni cambios al detector facial. Separación entrenamiento/validación/prueba, hashes, presupuesto acumulado al reanudar, métricas de segmentación y categorías clínicas no evaluadas. HAM10000 tiene máscaras reales pero CC BY-NC; ISIC 2018 tareas 1/2 ofrece alternativas CC0, no las ocho clases faciales.
+- Ensayo real: 64/16/16 pares, 86,76 MB contabilizados incluyendo intentos, CPU 571,375 s, 629 pasos y pesos de 13,05 MB. Test: IoU medio 54,92%, Dice medio 66,91%, precision/recall de píxeles agregados 69,48%/55,71%; baseline de imagen completa IoU 20,17%. No cumple la detección facial >70% ni habilita categorías. Artefactos locales en `.skin-experiments/isic-2017/`, nunca en Git.
+- QA: 11 pruebas Python y 7 del evaluador previo aprobadas; build aprobado con avisos existentes. Hashes reales de los 96 pares, inferencia offline del checkpoint guardado y máscara 4288×2848 verificadas; comparación con anotación experta inspeccionada. Sin prueba clínica, fotos privadas ni cambios de UI/API.
 - ✅ 2026-11-05 Exploración: sectores automáticos y progreso.
 - ✅ 2026-11-05 Evaluador: métricas por categoría.
 - Automatización local: pasada general más ventanas solapadas sobre foto original ≤1400 px, hasta 16 por foto, sin depender de candidatos previos. Confirmar un área manual inicia el análisis; arranque manual evita duplicados pendientes. Progreso/cancelación, motivos de exclusión y cobertura espacial visibles; deduplicación y límite de 112 distribuidos entre sectores con aviso. No clasifica lesiones ni confunde cobertura con precisión.
