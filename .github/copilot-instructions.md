@@ -125,6 +125,7 @@ El módulo más importante. Acciones en `api/records.js`:
 - Tokens: PBKDF2+salt via Node crypto (sin deps extra)
 - Rate limit: 5 intentos → bloqueo 15 min
 - `hasFeature(feature)` controla acceso a módulos por clínica
+- `skin_visual_ai` es opt-in de clínica y también de usuario: requiere permiso individual explícito del Master Admin, sin herencia automática. El servidor revalida el acceso y los topes mensual individual/global. `SKIN_VISUAL_AI_ENABLED=false` por defecto; no activar Billing ni enviar fotos reales en pruebas. La configuración técnica no acredita elegibilidad contractual.
 
 ### Integration Points
 
@@ -166,7 +167,7 @@ Uses TailwindCSS with mobile-first approach and custom container class `containe
 ```
 /api/
 ├── admin-auth.js                   # Auth, sesiones, clínicas y usuarios
-├── ai-consultation.js              # Consultas de IA clínica
+├── ai-consultation.js              # Consultas IA y análisis visual opcional
 ├── backup.js                       # Exportación/restauración
 ├── calendar.js                     # Google Calendar
 ├── external-finance.js             # Finanzas externas

@@ -18,6 +18,7 @@
 import { createContext, useContext, useState, useCallback, useEffect, useRef, ReactNode } from 'react';
 import type { AuthUser } from '../types';
 import { sessionUser, subscriptionAccess } from '../utils/subscriptionAccess';
+import { isUserFeatureEnabled } from '../constants/features';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Tipos del contexto
@@ -218,7 +219,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (user?.role === 'master_admin') return true;
     if (!features.includes(feature)) return false; // deshabilitado en clínica
     const override = userModuleOverrides.find(o => o.feature === feature);
-    return override?.enabled === false ? false : true; // override de usuario
+    return isUserFeatureEnabled(feature, override?.enabled);
   };
 
   return (

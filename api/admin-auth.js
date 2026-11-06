@@ -111,10 +111,10 @@ const ALL_FEATURES = [
   'calendar', 'block_schedule', 'appointment',
   'clinical_records', 'finance', 'inventory', 'clinical_3d',
   'system_status', 'backup', 'ai_consultation', 'skin_explorer',
-  'treatment_notes_view',
+  'treatment_notes_view', 'skin_visual_ai',
 ];
 // ponytail: features desactivadas por defecto — requieren activación explícita por clínica
-const OPT_IN_FEATURES = ['treatment_notes_view', 'ai_consultation', 'clinical_3d'];
+const OPT_IN_FEATURES = ['treatment_notes_view', 'ai_consultation', 'clinical_3d', 'skin_visual_ai'];
 
 // Planes de suscripción predefinidos (precio en centavos USD)
 export function parsePostgresIntegerId(value) {
@@ -3016,6 +3016,16 @@ async function handleAdminRequest(req, res) {
       coexistenceTargetId = parsePostgresIntegerId(req.body?.id);
       if (!coexistenceTargetId || typeof req.body?.enabled !== 'boolean') return res.status(400).json({ error: 'Usuario y estado válidos requeridos' });
     }
+    // Validate before tenant resolution/SQL casts; do not coerce "false" to true.
+    if (action === 'setUserModuleOverride') {
+      if (!requireRole(user, 'master_admin', 'clinic_admin')) return res.status(403).json({ error: 'Sin permiso' });
+      if (req.method !== 'POST') return res.status(405).json({ error: 'Método no permitido' });
+      if (!parsePostgresIntegerId(req.body?.userId) || typeof req.body?.feature !== 'string' ||
+          ![...ALL_FEATURES, 'finanzas_visible'].includes(req.body.feature) || typeof req.body?.enabled !== 'boolean')
+        return res.status(400).json({ error: 'Usuario, módulo y estado booleano válidos requeridos' });
+      if (req.body.feature === 'skin_visual_ai' && user.role !== 'master_admin')
+        return res.status(403).json({ error: 'Solo master admin puede cambiar este permiso' });
+    }
     if (!['purgeClinic', 'clinicPurgePreview', 'updateClinic', 'deleteClinic', 'initFeatures', 'updateClinicSubscription'].includes(action)) {
       const suppliedClinics = [req.body?.clinicId, req.body?.clinic_id, req.query.clinicId]
         .filter(value => value !== undefined && value !== null && value !== '');
@@ -3670,17 +3680,15 @@ async function handleAdminRequest(req, res) {
     }
 
     if (action === 'setUserModuleOverride') {
-      if (!requireRole(user, 'master_admin', 'clinic_admin')) return res.status(403).json({ error: 'Sin permiso' });
-      const { userId, feature, enabled } = req.body || {};
-      if (!userId || !feature) return res.status(400).json({ error: 'userId y feature requeridos' });
-      if (![...ALL_FEATURES, 'finanzas_visible'].includes(feature)) return res.status(400).json({ error: 'Módulo inválido' });
+      const { feature, enabled } = req.body || {};
+      const userId = parsePostgresIntegerId(req.body?.userId);
       if (user.role === 'clinic_admin') {
         const target = await sql`SELECT 1 FROM clinic_users WHERE id = ${userId} AND clinic_id = ${user.clinic_id}`;
         if (!target.rows.length) return res.status(403).json({ error: 'Sin permiso' });
       }
       await sql`INSERT INTO user_module_overrides (clinic_user_id, feature, enabled)
-        VALUES (${userId}, ${feature}, ${!!enabled}) ON CONFLICT (clinic_user_id, feature)
-        DO UPDATE SET enabled = ${!!enabled}`;
+        VALUES (${userId}, ${feature}, ${enabled}) ON CONFLICT (clinic_user_id, feature)
+        DO UPDATE SET enabled = ${enabled}`;
       return res.status(200).json({ success: true });
     }
 

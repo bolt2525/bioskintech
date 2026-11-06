@@ -4,6 +4,7 @@ import { Printer, X, AlertCircle, ChevronDown, ChevronUp, Settings } from 'lucid
 import { useClinicSettings } from '../../../../hooks/useClinicSettings';
 import { useAuth } from '../../../../context/AuthContext';
 import { Dialog } from '../../../ui/Dialog';
+import { parseSkinReview, skinReviewDescription } from './skinVisualAI';
 
 interface PrintOptions {
   antecedentes: boolean;
@@ -261,8 +262,14 @@ export default function PrintModal({ patient, recordId, recordData, activeConsul
             fm.length ? `<div class="marks-title">Marcaciones faciales (${fm.length}):</div><div class="marks-list">${fm.map((m:any)=>`<span class="mark">${esc(m.category)}${m.tercio ? ' &middot; '+esc(m.tercio) : ''}${m.notes ? ' &mdash; '+esc(m.notes) : ''}</span>`).join('')}</div>` : '',
             bm.length ? `<div class="marks-title">Marcaciones corporales (${bm.length}):</div><div class="marks-list">${bm.map((m:any)=>`<span class="mark">${esc(m.category)}${m.tercio ? ' &middot; '+esc(m.tercio) : ''}${m.notes ? ' &mdash; '+esc(m.notes) : ''}</span>`).join('')}</div>` : '',
           ].filter(Boolean).join('');
-          const empty = !paramRows && !lesionsHtml && !marks;
-          sections += sectionHtml('Examen F\u00edsico' + titleSuffix, (empty ? '<em class="empty">Sin datos</em>' : tableHtml + lesionsHtml + marks), subtitle);
+          const reviewedRegions = parseSkinReview(ex.skin_visual_review);
+          const visualReviewHtml = reviewedRegions.length
+            ? `<div class="marks-title">Revisión visual 2D validada (${reviewedRegions.length}):</div>
+              <p>Propuestas ilustrativas revisadas por el usuario: cajas aproximadas sobre foto, no diagnóstico ni marcaciones en malla 3D.</p>
+              <ul>${reviewedRegions.map(annotation => `<li>${esc(skinReviewDescription(annotation))}</li>`).join('')}</ul>`
+            : '';
+          const empty = !paramRows && !lesionsHtml && !marks && !visualReviewHtml;
+          sections += sectionHtml('Examen F\u00edsico' + titleSuffix, (empty ? '<em class="empty">Sin datos</em>' : tableHtml + lesionsHtml + marks + visualReviewHtml), subtitle);
         });
       }
     }

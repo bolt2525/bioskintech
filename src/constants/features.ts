@@ -15,11 +15,15 @@ export const ALL_FEATURES = [
   'calendar', 'block_schedule', 'appointment',
   'clinical_records', 'finance', 'inventory', 'clinical_3d',
   'system_status', 'backup', 'ai_consultation', 'skin_explorer',
-  'treatment_notes_view',
+  'treatment_notes_view', 'skin_visual_ai',
 ] as const;
 
 // ponytail: features desactivadas por defecto — requieren opt-in explícito por clínica
-export const OPT_IN_FEATURES: readonly string[] = ['treatment_notes_view', 'ai_consultation', 'clinical_3d'];
+export const OPT_IN_FEATURES: readonly string[] = ['treatment_notes_view', 'ai_consultation', 'clinical_3d', 'skin_visual_ai'];
+
+export function isUserFeatureEnabled(feature: string, override: boolean | undefined): boolean {
+  return feature === 'skin_visual_ai' ? override === true : override !== false;
+}
 
 export type FeatureKey = typeof ALL_FEATURES[number];
 
@@ -39,6 +43,7 @@ export const FEATURE_META: Record<FeatureKey, { label: string; icon: React.Compo
   backup:           { label: 'Base de Datos',    icon: Database,      color: 'text-blue-600'   },
   skin_explorer:    { label: 'DermoAtlas 3D',    icon: Microscope, color: 'text-amber-600'  },
   treatment_notes_view: { label: 'Vista de Notas de Tratamiento', icon: Eye, color: 'text-teal-600' },
+  skin_visual_ai: { label: 'Análisis visual Gemini', icon: Brain, color: 'text-amber-600' },
 };
 
 // ─────────────────────────────────────────────────────────────────────────────

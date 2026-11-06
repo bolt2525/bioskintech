@@ -15,6 +15,9 @@ import trazadoData from '../../data/trazado-referencia-superior.json';
 import FieldHelp from '../FieldHelp';
 import { HELP } from '../../data/fieldHelpTexts';
 import { Dialog } from '../../../../ui/Dialog';
+import SkinVisualAIReview from '../SkinVisualAIReview';
+import { parseSkinReview, skinReviewDescription, skinReviewSaveField } from '../skinVisualAI';
+import type { ReviewedSkinMark, SkinVisualReviewData } from '../skinVisualAI';
 
 // -- Constantes para el visor 3D facial ----------------------------------------
 const TERCIO_BOUNDARIES = (trazadoData as { hairline: {
@@ -161,6 +164,7 @@ interface PhysicalExam {
   pigmentation?: string;
   sensitivity?: string;
   face_map_data?: string | Mark[];
+  skin_visual_review?: string | SkinVisualReviewData;
   body_map_data?: string | Mark[];
   created_at?: string;
 }
@@ -379,6 +383,8 @@ export default function PhysicalExamTab({ recordId, physicalExams, consultationI
   
   // Canvas State
   const [faceMarks, setFaceMarks] = useState<Mark[]>([]);
+  const [reviewedSkinMarks, setReviewedSkinMarks] = useState<ReviewedSkinMark[]>([]);
+  const [reviewSession, setReviewSession] = useState(0);
   const [bodyMarks, setBodyMarks] = useState<Mark[]>([]);
   const [selectedCategory, setSelectedCategory] = useState<string>('');
   const [activeTab, setActiveTab] = useState<'facial' | 'corporal'>('facial');
@@ -398,7 +404,7 @@ export default function PhysicalExamTab({ recordId, physicalExams, consultationI
     const examForConsult = physicalExams.find(e => Number(e.consultation_id) === Number(consultationId));
     if (examForConsult) loadExam(examForConsult);
     else resetExam();
-  }, [consultationId]);
+  }, [consultationId, recordId]);
 
   // Load exam from data on initial load (data arrives async after mount)
 
@@ -422,6 +428,7 @@ export default function PhysicalExamTab({ recordId, physicalExams, consultationI
 
   const loadExam = (exam: PhysicalExam) => {
     setCurrentExam(exam);
+    setReviewSession(value => value + 1);
     try {
       const parseData = (data?: string | Mark[]): Mark[] => {
         if (!data) return [];
@@ -438,17 +445,21 @@ export default function PhysicalExamTab({ recordId, physicalExams, consultationI
       };
 
       setFaceMarks(parseData(exam.face_map_data));
+      setReviewedSkinMarks(parseSkinReview(exam.skin_visual_review));
       setBodyMarks(parseData(exam.body_map_data));
     } catch (e) {
       console.error("Error parsing map data", e);
       setFaceMarks([]);
+      setReviewedSkinMarks([]);
       setBodyMarks([]);
     }
   };
 
   const resetExam = () => {
+    setReviewSession(value => value + 1);
     setCurrentExam({ ...EMPTY_EXAM, record_id: recordId });
     setFaceMarks([]);
+    setReviewedSkinMarks([]);
     setBodyMarks([]);
     setMessage(null);
   };
@@ -524,11 +535,13 @@ export default function PhysicalExamTab({ recordId, physicalExams, consultationI
 
   const handleSubmit = () => {
     const hasEmptyFields = !currentExam.skin_type || !currentExam.phototype || !currentExam.glogau_scale;
-    const hasNoMarks = faceMarks.length === 0 && bodyMarks.length === 0;
+    const hasNoMarks = faceMarks.length === 0 && bodyMarks.length === 0 && reviewedSkinMarks.length === 0;
 
+    const { skin_visual_review: existingReview, ...manualExam } = currentExam;
     const payload = {
-      ...currentExam,
+      ...manualExam,
       face_map_data: JSON.stringify(faceMarks),
+      ...skinReviewSaveField(existingReview, reviewedSkinMarks),
       body_map_data: JSON.stringify(bodyMarks),
       ...(consultationId ? { consultation_id: consultationId } : {})
     };
@@ -748,7 +761,7 @@ export default function PhysicalExamTab({ recordId, physicalExams, consultationI
           <span className="ml-auto flex items-center gap-1">
             <span className="text-xs bg-gray-100 text-gray-500 rounded-full px-2 py-0.5">{currentExams.length}</span>
             {otherExamCount > 0 && (
-              <button onClick={() => setCrossHistOpen(true)} title={`Ver ${otherExamCount} examen(es) de otras consultas`} className="p-1 hover:bg-[#deb887]/10 rounded-lg relative">
+              <button onClick={() => setCrossHistOpen(true)} aria-label="Ver historial de exámenes de otras consultas" title={`Ver ${otherExamCount} examen(es) de otras consultas`} className="p-1 hover:bg-[#deb887]/10 rounded-lg relative">
                 <History className="w-3.5 h-3.5 text-[#b8944d]" />
                 <span className="absolute -top-1 -right-1 w-3.5 h-3.5 bg-[#b8944d] text-white text-[8px] rounded-full flex items-center justify-center font-bold">{otherExamCount > 9 ? '9+' : otherExamCount}</span>
               </button>
@@ -803,6 +816,7 @@ export default function PhysicalExamTab({ recordId, physicalExams, consultationI
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
                 onClick={handleSubmit} 
+                aria-label="Guardar examen físico"
                 disabled={saving} 
                 className="flex items-center gap-2 px-4 py-2 bg-[#deb887] text-white rounded-lg hover:bg-[#c5a075] transition-colors shadow-lg shadow-[#deb887]/20 font-medium"
               >
@@ -878,6 +892,16 @@ export default function PhysicalExamTab({ recordId, physicalExams, consultationI
         <div className="flex-1 flex flex-col md:flex-row gap-6 overflow-visible md:overflow-hidden">
           {/* Left Column: Maps */}
           <div className="flex-1 flex flex-col overflow-y-auto min-w-0 custom-scrollbar pr-2">
+            <SkinVisualAIReview
+              key={`${recordId}:${consultationId ?? 'none'}:${reviewSession}`}
+              recordId={recordId}
+              consultationId={consultationId}
+              examIdentity={reviewSession}
+              context={{ skinType: currentExam.skin_type, phototype: currentExam.phototype, hydration: currentExam.hydration }}
+              reviewed={reviewedSkinMarks}
+              onChange={setReviewedSkinMarks}
+              disabled={saving}
+            />
             <div className="admin-tabs mb-6 w-fit shrink-0" role="group" aria-label="Zona de examen físico">
               {(['facial', 'corporal'] as const).map((tab) => (
                 <button
@@ -1106,6 +1130,7 @@ export default function PhysicalExamTab({ recordId, physicalExams, consultationI
         <div>
           <p className="font-medium text-gray-800">{e.skin_type || 'Examen físico'}{e.phototype ? ` — Fototipo: ${e.phototype}` : ''}</p>
           <p className="text-gray-400">{e.created_at ? new Date(e.created_at).toLocaleDateString('es-EC') : ''}</p>
+          <p>Revisión visual 2D: {parseSkinReview(e.skin_visual_review).length} regiones validadas</p>
         </div>
       )}
       renderDetail={e => (
@@ -1116,6 +1141,15 @@ export default function PhysicalExamTab({ recordId, physicalExams, consultationI
           {e.hydration && <div><span className="text-gray-400">Hidratación:</span> {e.hydration}</div>}
           {e.elasticity && <div><span className="text-gray-400">Elasticidad:</span> {e.elasticity}</div>}
           {e.lesions_description && <div><span className="text-gray-400">Lesiones:</span> {e.lesions_description}</div>}
+          <div className="space-y-2 border-t border-gray-200 pt-2">
+            <p className="font-semibold">Revisión visual 2D validada</p>
+            <p>Cajas ilustrativas sobre foto, no diagnóstico ni marcaciones en malla 3D. Una revisión vacía no descarta lesiones.</p>
+            {parseSkinReview(e.skin_visual_review).length ? (
+              <ul className="space-y-1 break-words">{parseSkinReview(e.skin_visual_review).map(annotation => (
+                <li key={annotation.id}>{skinReviewDescription(annotation)}</li>
+              ))}</ul>
+            ) : <p>Sin regiones validadas.</p>}
+          </div>
           {e.created_at && <div><span className="text-gray-400">Fecha:</span> {new Date(e.created_at).toLocaleDateString('es-EC')}</div>}
         </>
       )}

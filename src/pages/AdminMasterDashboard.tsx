@@ -25,6 +25,7 @@ import {
 
 // Constantes centralizadas — no duplicar aquí
 import { ALL_FEATURES, FEATURE_META, MODULE_LIST, OPT_IN_FEATURES } from '../constants/features';
+import UserSkinVisualPermission from '../components/admin/UserSkinVisualPermission';
 import type { FeatureKey } from '../constants/features';
 import { ROLE_LABELS, ROLE_COLORS } from '../constants/theme';
 import { slugify } from '../utils/slugify';
@@ -360,9 +361,9 @@ function UserModuleOverridesPanel({
   flash,
 }: {
   userId: number;
-  clinicId: number;
+  clinicId: string | number;
   authHeader: () => Record<string, string>;
-  featMap: Record<number, Record<string, boolean>>;
+  featMap: Record<string, Record<string, boolean>>;
   flash: (text: string, type?: 'ok' | 'err') => void;
 }) {
   const [overrides, setOverrides] = useState<Record<string, boolean>>({});
@@ -399,7 +400,7 @@ function UserModuleOverridesPanel({
   };
 
   // ponytail: ALL_FEATURES como base, no featMap (evita mostrar vacío cuando la clínica no tiene rows en clinic_features)
-  const clinicFeats = ALL_FEATURES.filter(f => isClinicFeatureEnabled(featMap[clinicId], f));
+  const clinicFeats = ALL_FEATURES.filter(f => f !== 'skin_visual_ai' && isClinicFeatureEnabled(featMap[clinicId], f));
   // finanzas_visible: si no hay override con false → visible (true)
   const financeVisible = overrides['finanzas_visible'] !== false;
 
@@ -414,6 +415,7 @@ function UserModuleOverridesPanel({
       </button>
       {open && (
         <div className="p-3 space-y-4">
+          <UserSkinVisualPermission userId={userId} clinicEnabled={isClinicFeatureEnabled(featMap[clinicId], 'skin_visual_ai')} />
           {/* Toggle de visibilidad de finanzas para el admin */}
           <div className="p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
             <div className="flex items-center justify-between">
@@ -767,6 +769,7 @@ function AccessCodesPanel({
   const [generatedLink, setGeneratedLink] = useState<{ link: string; clinic: string } | null>(null);
   const [codeForm, setCodeForm]   = useState({ plan_name: 'Plan Lanzamiento BioskinTech', expires_days: 30, note: '' });
   const [invForm, setInvForm]     = useState({ clinic_id: '', email: '', role: 'clinic_user', expires_hours: 72, access_scope: 'own', features: [] as string[] });
+  const invitableFeatures = ALL_FEATURES.filter(feature => feature !== 'skin_visual_ai');
   const [loading, setLoading]     = useState(false);
 
   const load = async () => {
@@ -1027,10 +1030,10 @@ function AccessCodesPanel({
               <div>
                 <label className="block text-xs font-medium text-gray-600 mb-2">
                   Módulos habilitados para este usuario
-                  <span className="text-gray-400 font-normal ml-1">(vacío = todos los de la clínica)</span>
+                  <span className="text-gray-400 font-normal ml-1">(vacío = heredables de la clínica)</span>
                 </label>
                 <div className="grid grid-cols-2 gap-1.5">
-                  {ALL_FEATURES.map(feat => {
+                  {invitableFeatures.map(feat => {
                     const meta    = FEATURE_META[feat as import('../constants/features').FeatureKey];
                     if (!meta) return null;
                     const Icon    = meta.icon;
@@ -1040,10 +1043,10 @@ function AccessCodesPanel({
                         <input type="checkbox" checked={checked}
                           onChange={e => {
                             const allOn = invForm.features.length === 0;
-                            const current = allOn ? [...ALL_FEATURES] : [...invForm.features];
+                            const current = allOn ? [...invitableFeatures] : [...invForm.features];
                             const next = e.target.checked ? [...current, feat] : current.filter(f => f !== feat);
                             // If all are checked, store empty (= inherit all from clinic)
-                            setInvForm(f => ({ ...f, features: next.length === ALL_FEATURES.length ? [] : next }));
+                            setInvForm(f => ({ ...f, features: next.length === invitableFeatures.length ? [] : next }));
                           }}
                           className="w-3 h-3 accent-blue-500" />
                         <Icon className={`w-3 h-3 ${meta.color}`} />
@@ -1052,6 +1055,7 @@ function AccessCodesPanel({
                     );
                   })}
                 </div>
+                <p className="mt-2 text-xs text-gray-500">Gemini visual no se habilita mediante invitaciones. Asigna su permiso individual desde la edición del usuario después de aceptar la invitación.</p>
               </div>
 
               {/* Expiración */}
@@ -3183,7 +3187,7 @@ export default function AdminMasterDashboard() {
             {userModal.userId && (
               <UserModuleOverridesPanel
                 userId={userModal.userId}
-                clinicId={parseInt(userForm.clinic_id || '0')}
+                clinicId={userForm.clinic_id || ''}
                 authHeader={authHeader}
                 featMap={featMap}
                 flash={flash}

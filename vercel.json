@@ -35,6 +35,9 @@
     }
   ],
   "functions": {
+    "api/ai-consultation.js": {
+      "maxDuration": 60
+    },
     "api/admin-auth.js": {
       "includeFiles": "data/**"
     },

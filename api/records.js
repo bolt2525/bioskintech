@@ -10,6 +10,7 @@ import { lockClinicWriters, unlockClinicWriters, requireClinicWritable } from '.
 import { buildFinanceCsv } from '../lib/finance-csv.js';
 import { normalizeEcuadorIdentification, hashConsentEvidence, hashSigningCode, hashConsentSession, isValidSignatureDataUrl, maskEmail, buildConsentGmailRaw } from '../lib/consent-signing.js';
 import { hasProtectedTreatmentFinanceChanges, validateTreatmentFinanceInput } from '../lib/modules/fichas-clinicas/treatment-finance-lock.js';
+import { savePhysicalExam, PhysicalExamError } from '../lib/modules/fichas-clinicas/physical-exam.js';
 
 console.log('✅ [API] records.js loaded');
 
@@ -2780,6 +2781,7 @@ export default async function handler(req, res) {
           consultationHistory
         ] = await Promise.all([
           safeQuery('SELECT * FROM medical_history WHERE record_id = $1', [targetRecordId]),
+          // SELECT * intentionally includes skin_visual_review JSONB, separate from legacy maps.
           safeQuery('SELECT * FROM physical_exams WHERE record_id = $1 ORDER BY created_at DESC', [targetRecordId]),
           safeQuery('SELECT * FROM diagnoses WHERE record_id = $1 ORDER BY date DESC', [targetRecordId]),
           safeQuery('SELECT * FROM treatments WHERE record_id = $1 ORDER BY date DESC', [targetRecordId]),
@@ -2995,26 +2997,16 @@ export default async function handler(req, res) {
       }
 
       case 'savePhysicalExam': {
-        const { id: examId, record_id: pid_exam, created_at, ...examData } = body;
-        // Whitelist: solo identificadores SQL válidos — previene SQL injection por nombres de columna
-        // clinic_id se excluye: lo fija el servidor via effectiveClinicId, nunca el cliente
-        const safeExamData = Object.fromEntries(Object.entries(examData).filter(([k]) => /^\w+$/.test(k) && k !== 'clinic_id'));
-        
-        if (examId) {
-           const eFields = Object.keys(safeExamData);
-           const eValues = Object.values(safeExamData);
-           if (eFields.length > 0) {
-             const eSet = eFields.map((f, i) => `${f} = $${i + 2}`).join(', ');
-             await pool.query(`UPDATE physical_exams SET ${eSet} WHERE id = $1`, [examId, ...eValues]);
-           }
-           return res.status(200).json({ success: true, id: examId });
-        } else {
-           if (!pid_exam) return res.status(400).json({ error: 'Falta el ID del expediente (record_id)' });
-           const eFields = ['record_id', 'clinic_id', ...Object.keys(safeExamData)];
-           const eValues = [pid_exam, effectiveClinicId, ...Object.values(safeExamData)];
-           const eParams = eFields.map((_, i) => `$${i + 1}`).join(', ');
-           const newExam = await pool.query(`INSERT INTO physical_exams (${eFields.join(', ')}) VALUES (${eParams}) RETURNING id`, eValues);
-           return res.status(200).json({ success: true, id: newExam.rows[0].id });
+        try {
+          const id = await savePhysicalExam(pool, {
+            body, clinicId: effectiveClinicId, sessionUser: su, isOwnedPhotoKey,
+          });
+          return res.status(200).json({ success: true, id });
+        } catch (error) {
+          if (error instanceof PhysicalExamError)
+            return res.status(error.status).json({ error: error.message });
+          // No submitted review/provenance, clinical text or database detail in logs/errors.
+          return res.status(500).json({ error: 'No se pudo guardar el examen físico.' });
         }
       }
 

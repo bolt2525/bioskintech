@@ -13,6 +13,9 @@
 
 import { getPool } from '../lib/neon-clinical-db.js';
 import { authenticateRequest } from '../lib/admin-auth.js';
+import { handleSkinVisual } from '../lib/modules/ia/skin-visual-ai.js';
+
+export const config = { maxDuration: 30 };
 
 export async function verifyPatientAccess(pool, patientId, clinicId) {
   if (clinicId == null) return { error: 'Seleccione una clínica antes de consultar un paciente', status: 400 };
@@ -30,6 +33,9 @@ export async function deleteAiConsultation(pool, consultationId, clinicId) {
 }
 
 export default async function handler(req, res) {
+  // Isolated path: no owner clinical pool, legacy persistence or legacy error logging.
+  if (['skinVisualStatus', 'analyzeSkinVisual'].includes(req.query?.action))
+    return handleSkinVisual(req, res, req.query.action);
   const auth = await authenticateRequest(req);
   if (!auth.valid) return res.status(401).json({ error: 'No autorizado' });
 
