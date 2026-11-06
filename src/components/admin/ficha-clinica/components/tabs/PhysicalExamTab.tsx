@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback, lazy, Suspense } from 'react';
 import { createPortal } from 'react-dom';
 import recordsFetch from "../../../../../utils/recordsFetch";
 import { motion, AnimatePresence } from 'framer-motion';
@@ -15,9 +15,13 @@ import trazadoData from '../../data/trazado-referencia-superior.json';
 import FieldHelp from '../FieldHelp';
 import { HELP } from '../../data/fieldHelpTexts';
 import { Dialog } from '../../../../ui/Dialog';
-import SkinVisualAIReview from '../SkinVisualAIReview';
-import { parseSkinReview, skinReviewDescription, skinReviewSaveField } from '../skinVisualAI';
-import type { ReviewedSkinMark, SkinVisualReviewData } from '../skinVisualAI';
+import { skinReviewSummaries } from '../skinEvaluation';
+import type { PersistedSkinReview } from '../skinEvaluation';
+import type { SkinVisualReviewData } from '../skinVisualAI';
+import { useUnsavedChangesGuard } from '../../../../../hooks/useUnsavedChangesGuard';
+import type { FaceSimIntegration } from '../../../../../lab/faceSim/facialSimulationSession';
+
+const SkinExamWorkspace = lazy(() => import('../SkinExamWorkspace'));
 
 // -- Constantes para el visor 3D facial ----------------------------------------
 const TERCIO_BOUNDARIES = (trazadoData as { hairline: {
@@ -164,7 +168,7 @@ interface PhysicalExam {
   pigmentation?: string;
   sensitivity?: string;
   face_map_data?: string | Mark[];
-  skin_visual_review?: string | SkinVisualReviewData;
+  skin_visual_review?: string | SkinVisualReviewData | PersistedSkinReview;
   body_map_data?: string | Mark[];
   created_at?: string;
 }
@@ -383,7 +387,13 @@ export default function PhysicalExamTab({ recordId, physicalExams, consultationI
   
   // Canvas State
   const [faceMarks, setFaceMarks] = useState<Mark[]>([]);
-  const [reviewedSkinMarks, setReviewedSkinMarks] = useState<ReviewedSkinMark[]>([]);
+  const [preparedReview, setPreparedReview] = useState<PersistedSkinReview | null>(null);
+  const [reviewDirty, setReviewDirty] = useState(false);
+  const [showSkinWorkspace, setShowSkinWorkspace] = useState(false);
+  const [mapView, setMapView] = useState<'generic' | 'mask' | 'split'>('generic');
+  const [legacyMigration, setLegacyMigration] = useState<FaceSimIntegration['legacyMigration']>();
+  const workspaceReview = useRef<PhysicalExam['skin_visual_review']>();
+  useUnsavedChangesGuard(reviewDirty || preparedReview !== null);
   const [reviewSession, setReviewSession] = useState(0);
   const [bodyMarks, setBodyMarks] = useState<Mark[]>([]);
   const [selectedCategory, setSelectedCategory] = useState<string>('');
@@ -427,6 +437,7 @@ export default function PhysicalExamTab({ recordId, physicalExams, consultationI
   useEffect(() => { setSelectedCategory(''); }, [activeTab]);
 
   const loadExam = (exam: PhysicalExam) => {
+    setLegacyMigration(undefined); setMapView('generic');
     setCurrentExam(exam);
     setReviewSession(value => value + 1);
     try {
@@ -445,21 +456,22 @@ export default function PhysicalExamTab({ recordId, physicalExams, consultationI
       };
 
       setFaceMarks(parseData(exam.face_map_data));
-      setReviewedSkinMarks(parseSkinReview(exam.skin_visual_review));
+      setPreparedReview(null); setReviewDirty(false); setShowSkinWorkspace(false);
       setBodyMarks(parseData(exam.body_map_data));
     } catch (e) {
       console.error("Error parsing map data", e);
       setFaceMarks([]);
-      setReviewedSkinMarks([]);
+      setPreparedReview(null); setReviewDirty(false); setShowSkinWorkspace(false);
       setBodyMarks([]);
     }
   };
 
   const resetExam = () => {
+    setLegacyMigration(undefined); setMapView('generic');
     setReviewSession(value => value + 1);
     setCurrentExam({ ...EMPTY_EXAM, record_id: recordId });
     setFaceMarks([]);
-    setReviewedSkinMarks([]);
+    setPreparedReview(null); setReviewDirty(false); setShowSkinWorkspace(false);
     setBodyMarks([]);
     setMessage(null);
   };
@@ -470,14 +482,17 @@ export default function PhysicalExamTab({ recordId, physicalExams, consultationI
   };
 
   const handleNew = () => {
+    if ((reviewDirty || preparedReview) && !window.confirm('Hay una evaluación de piel sin guardar en el examen. ¿Descartarla?')) return;
     resetExam();
   };
 
   const handleDuplicate = () => {
+    if ((reviewDirty || preparedReview) && !window.confirm('Hay una evaluación de piel sin guardar en el examen. ¿Descartarla?')) return;
     const duplicate = { ...currentExam };
     delete duplicate.id;
     delete duplicate.created_at;
     setCurrentExam({ ...duplicate, record_id: recordId });
+    setPreparedReview(null); setReviewDirty(false); setShowSkinWorkspace(false); setReviewSession(value => value + 1);
     setMessage({ type: 'success', text: 'Examen duplicado. Guarde para crear uno nuevo.' });
   };
 
@@ -517,6 +532,7 @@ export default function PhysicalExamTab({ recordId, physicalExams, consultationI
         const resData = await response.json().catch(() => null);
         const savedId = currentExam.id ?? resData?.id ?? null;
         setMessage({ type: 'success', text: 'Examen físico guardado correctamente' });
+        if (preparedReview) { setCurrentExam(prev => ({ ...prev, skin_visual_review: preparedReview })); setPreparedReview(null); }
         onSave();
         if (savedId != null) {
           setHighlightedId(savedId);
@@ -534,14 +550,18 @@ export default function PhysicalExamTab({ recordId, physicalExams, consultationI
   };
 
   const handleSubmit = () => {
+    if (reviewDirty) {
+      setMessage({ type: 'error', text: 'Prepara la evaluación de piel o descarta sus cambios antes de guardar el examen.' });
+      return;
+    }
     const hasEmptyFields = !currentExam.skin_type || !currentExam.phototype || !currentExam.glogau_scale;
-    const hasNoMarks = faceMarks.length === 0 && bodyMarks.length === 0 && reviewedSkinMarks.length === 0;
+    const hasNoMarks = faceMarks.length === 0 && bodyMarks.length === 0 && skinReviewSummaries(preparedReview ?? currentExam.skin_visual_review).length === 0;
 
     const { skin_visual_review: existingReview, ...manualExam } = currentExam;
     const payload = {
       ...manualExam,
       face_map_data: JSON.stringify(faceMarks),
-      ...skinReviewSaveField(existingReview, reviewedSkinMarks),
+      ...(preparedReview ? { skin_visual_review: preparedReview } : existingReview ? { skin_visual_review: existingReview } : {}),
       body_map_data: JSON.stringify(bodyMarks),
       ...(consultationId ? { consultation_id: consultationId } : {})
     };
@@ -561,6 +581,11 @@ export default function PhysicalExamTab({ recordId, physicalExams, consultationI
     setMessage({ type: 'success', text: 'Imprimiendo página actual...' });
     window.print();
   };
+
+  const handleSkinDirty = useCallback(() => setReviewDirty(true), []);
+  const handleSkinPrepared = useCallback((review: PersistedSkinReview) => {
+    setPreparedReview(review); setReviewDirty(false);
+  }, []);
 
   // 3D model click ? identify tercio ? open modal with suggestions
   const handle3DMarkerPlaced = (marker3D: Marker3D) => {
@@ -774,7 +799,10 @@ export default function PhysicalExamTab({ recordId, physicalExams, consultationI
               key={exam.id || index}
               whileHover={{ scale: 1.02 }}
               whileTap={{ scale: 0.98 }}
-              onClick={() => loadExam(exam)}
+              onClick={() => {
+                if ((reviewDirty || preparedReview) && !window.confirm('Hay una evaluación de piel sin guardar en el examen. ¿Descartarla?')) return;
+                loadExam(exam);
+              }}
               className={`p-4 rounded-xl cursor-pointer border transition-all shadow-sm ${
                 highlightedId === exam.id
                   ? 'ring-2 ring-[#b8944d] ring-offset-2 ring-offset-white animate-pulse'
@@ -892,16 +920,31 @@ export default function PhysicalExamTab({ recordId, physicalExams, consultationI
         <div className="flex-1 flex flex-col md:flex-row gap-6 overflow-visible md:overflow-hidden">
           {/* Left Column: Maps */}
           <div className="flex-1 flex flex-col overflow-y-auto min-w-0 custom-scrollbar pr-2">
-            <SkinVisualAIReview
-              key={`${recordId}:${consultationId ?? 'none'}:${reviewSession}`}
-              recordId={recordId}
-              consultationId={consultationId}
-              examIdentity={reviewSession}
-              context={{ skinType: currentExam.skin_type, phototype: currentExam.phototype, hydration: currentExam.hydration }}
-              reviewed={reviewedSkinMarks}
-              onChange={setReviewedSkinMarks}
-              disabled={saving}
-            />
+            <div className="mb-6 space-y-3">
+              <p className="text-sm text-gray-600">Puedes marcar en el modelo genérico o abrir el flujo de máscara facial con fotos. Ambos se conservan de forma independiente.</p>
+              <button type="button" className="admin-focus-ring rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm"
+                aria-expanded={showSkinWorkspace} disabled={saving} onClick={() => {
+                  if (showSkinWorkspace && reviewDirty && !window.confirm('Hay cambios de piel sin preparar. ¿Descartarlos?')) return;
+                  if (showSkinWorkspace && reviewDirty) setReviewDirty(false);
+                  if (!showSkinWorkspace) workspaceReview.current = preparedReview ?? currentExam.skin_visual_review;
+                  if (!showSkinWorkspace) setMapView('mask');
+                  setShowSkinWorkspace(current => !current);
+                }}>{showSkinWorkspace ? 'Cerrar evaluación de piel' : 'Abrir evaluación de piel'}</button>
+              {currentExam.id && faceMarks.length > 0 && <button type="button"
+                className="admin-focus-ring ml-2 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm" disabled={saving}
+                onClick={() => {
+                  if (reviewDirty && !window.confirm('Se reiniciará el editor de piel sin preparar. ¿Continuar con la migración?')) return;
+                  workspaceReview.current = preparedReview ?? currentExam.skin_visual_review;
+                  setLegacyMigration({ examId: currentExam.id!, marks: structuredClone(faceMarks) });
+                  setReviewSession(value => value + 1); setReviewDirty(false); setShowSkinWorkspace(true); setMapView('split'); setActiveTab('facial');
+                }}>Migrar marcaciones a máscara</button>}
+              {showSkinWorkspace && <div role="group" aria-label="Modo de visor facial" className="flex flex-wrap gap-2">
+                {(['generic', 'mask', 'split'] as const).map(mode => <button key={mode} type="button" aria-pressed={mapView === mode}
+                  className="admin-focus-ring rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm"
+                  onClick={() => { setMapView(mode); setActiveTab('facial'); }}>
+                  {({ generic: 'Solo genérico', mask: 'Solo máscara', split: 'Visor dividido' })[mode]}</button>)}
+              </div>}
+            </div>
             <div className="admin-tabs mb-6 w-fit shrink-0" role="group" aria-label="Zona de examen físico">
               {(['facial', 'corporal'] as const).map((tab) => (
                 <button
@@ -946,7 +989,17 @@ export default function PhysicalExamTab({ recordId, physicalExams, consultationI
               )}
             </div>
 
-            <div className="flex-1 rounded-2xl border border-gray-100 shadow-sm overflow-hidden min-h-[420px]">
+            <div className={showSkinWorkspace && mapView === 'split' && activeTab === 'facial' ? 'grid gap-4 xl:grid-cols-2' : 'space-y-4'}>
+            {showSkinWorkspace && <fieldset disabled={saving}
+              className={`min-w-0 ${mapView === 'generic' || activeTab !== 'facial' ? 'hidden' : ''} ${saving ? 'pointer-events-none opacity-60' : ''}`}>
+              <Suspense fallback={<p role="status">Abriendo evaluación de piel…</p>}>
+                <SkinExamWorkspace key={`${recordId}:${consultationId ?? 'none'}:${reviewSession}`}
+                  recordId={recordId} review={workspaceReview.current} legacyMigration={legacyMigration}
+                  context={{ skinType: currentExam.skin_type, phototype: currentExam.phototype, hydration: currentExam.hydration }}
+                  onPrepared={handleSkinPrepared} onDirty={handleSkinDirty} />
+              </Suspense>
+            </fieldset>}
+            <div className={`min-w-0 flex-1 rounded-2xl border border-gray-100 shadow-sm overflow-hidden min-h-[420px] ${showSkinWorkspace && mapView === 'mask' && activeTab === 'facial' ? 'hidden' : ''}`}>
               {activeTab === 'facial' ? (
                 <div className="relative">
                   <button
@@ -983,6 +1036,7 @@ export default function PhysicalExamTab({ recordId, physicalExams, consultationI
                   />
                 </div>
               )}
+            </div>
             </div>
             
             <div className="mt-6">
@@ -1130,7 +1184,7 @@ export default function PhysicalExamTab({ recordId, physicalExams, consultationI
         <div>
           <p className="font-medium text-gray-800">{e.skin_type || 'Examen físico'}{e.phototype ? ` — Fototipo: ${e.phototype}` : ''}</p>
           <p className="text-gray-400">{e.created_at ? new Date(e.created_at).toLocaleDateString('es-EC') : ''}</p>
-          <p>Revisión visual 2D: {parseSkinReview(e.skin_visual_review).length} regiones validadas</p>
+          <p>Revisión visual 2D: {skinReviewSummaries(e.skin_visual_review).length} regiones validadas</p>
         </div>
       )}
       renderDetail={e => (
@@ -1143,10 +1197,10 @@ export default function PhysicalExamTab({ recordId, physicalExams, consultationI
           {e.lesions_description && <div><span className="text-gray-400">Lesiones:</span> {e.lesions_description}</div>}
           <div className="space-y-2 border-t border-gray-200 pt-2">
             <p className="font-semibold">Revisión visual 2D validada</p>
-            <p>Cajas ilustrativas sobre foto, no diagnóstico ni marcaciones en malla 3D. Una revisión vacía no descarta lesiones.</p>
-            {parseSkinReview(e.skin_visual_review).length ? (
-              <ul className="space-y-1 break-words">{parseSkinReview(e.skin_visual_review).map(annotation => (
-                <li key={annotation.id}>{skinReviewDescription(annotation)}</li>
+            <p>Regiones revisadas sobre fotografía, no diagnóstico. Una revisión vacía no descarta lesiones.</p>
+            {skinReviewSummaries(e.skin_visual_review).length ? (
+              <ul className="space-y-1 break-words">{skinReviewSummaries(e.skin_visual_review).map(annotation => (
+                <li key={annotation.id}>{annotation.description}</li>
               ))}</ul>
             ) : <p>Sin regiones validadas.</p>}
           </div>

@@ -9,6 +9,8 @@ export interface SkinPhotoSource {
   id: string;
   label: string;
   canvas: HTMLCanvasElement;
+  /** Archivo original opcional, sin retoque ni reducción de resolución. */
+  original?: Blob;
   group: 'front' | 'a' | 'b' | 'extra';
   confirmed: boolean;
   landmarks?: readonly P2[];

@@ -1,0 +1,117 @@
+/** Editor real con originales sintéticos; todas las APIs y la salida externa quedan interceptadas. */
+import assert from 'node:assert/strict';
+import { pathToFileURL } from 'node:url';
+const { chromium } = await import(process.env.PLAYWRIGHT_MODULE ? pathToFileURL(process.env.PLAYWRIGHT_MODULE).href : 'playwright');
+const origin = process.env.LAB_URL ?? 'http://127.0.0.1:5187';
+assert.match(origin, /^http:\/\/(?:127\.0\.0\.1|localhost):\d+$/);
+const browser = await chromium.launch({ channel: 'chrome', headless: true });
+let enabled = false;
+const sent = [], errors = [], external = [];
+try {
+  const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
+  page.on('pageerror', e => errors.push(e.message));
+  await page.route('**/*', async route => {
+    const request = route.request(), url = new URL(request.url());
+    if (url.origin !== origin) { external.push(request.url()); return route.abort(); }
+    if (url.pathname.startsWith('/api/')) {
+      if (url.searchParams.get('action') === 'skinVisualStatus') return route.fulfill({ json: {
+        enabled, reason: 'Permiso sintético', model: 'gemini-3.5-flash-lite', usedUsd: 0, remainingUsd: 5, limitUsd: 5,
+      } });
+      if (url.searchParams.get('action') === 'analyzeSkinVisual') {
+        sent.push(request.postDataJSON());
+        return route.fulfill({ json: { analysisId: '00000000-0000-4000-8000-000000000001', model: 'gemini-3.5-flash-lite',
+          proposals: ['Uno', 'Dos'].map((label, index) => ({ id: String(index), category: 'spot', label, note: '',
+            box: { x: .1 + index * .3, y: .2, width: .1, height: .1 } })),
+          summary: 'Fixture, no evaluación clínica', limitations: ['Sintético'], usage: { usedUsd: .01, remainingUsd: 4.99, limitUsd: 5 } } });
+      }
+      throw new Error(`API no esperada: ${url.pathname}`);
+    }
+    if (url.pathname !== '/__skin_editor_fixture__') return route.continue();
+    const html = await (await route.fetch()).text();
+    const script = `<script type="module">
+      import React from '/node_modules/.vite/deps/react.js';
+      import ReactDOM from '/node_modules/.vite/deps/react-dom_client.js';
+      import Editor from '/src/components/admin/ficha-clinica/components/SkinEvaluationEditor.tsx';
+      import {toPersistedSkinReview,fromPersistedSkinReview} from '/src/components/admin/ficha-clinica/components/skinEvaluation.ts';
+      import '/src/index.css';
+      const original=document.createElement('canvas');original.width=1200;original.height=900;
+      original.getContext('2d').fillStyle='#bd3322';original.getContext('2d').fillRect(0,0,1200,900);
+      const blob=await new Promise(resolve=>original.toBlob(resolve,'image/png'));
+      const canvas=document.createElement('canvas');canvas.width=160;canvas.height=120;
+      canvas.getContext('2d').fillStyle='#00ff00';canvas.getContext('2d').fillRect(0,0,160,120);
+      const sources=['frontal','izquierda'].map((id,index)=>({id,label:index?'Oblicua':'Frontal',group:index?'left':'front',
+        confirmed:false,canvas,original:blob}));
+      function App(){
+        const [marks,setMarks]=React.useState([]);
+        window.marks=marks;
+        window.roundtrip=()=>{
+          const refs={frontal:{id:1,r2Key:'clinics/fixture/records/12/photos/1.png'},
+            izquierda:{id:2,r2Key:'clinics/fixture/records/12/photos/2.png'}};
+          const persisted=toPersistedSkinReview(marks,refs);
+          setMarks(fromPersistedSkinReview(JSON.parse(JSON.stringify(persisted)),refs));
+          return persisted;
+        };
+        return React.createElement(Editor,{sources,value:marks,onChange:setMarks,context:{}});
+      }
+      ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(App));
+    </script>`;
+    return route.fulfill({ contentType: 'text/html', body: html
+      .replace(/<link[^>]+fonts\.(?:googleapis|gstatic)\.com[^>]*>/g, '')
+      .replace(/<script[^>]+src="\/src\/main\.tsx(?:\?[^"]*)?"[^>]*><\/script>/, script) });
+  });
+  await page.goto(`${origin}/__skin_editor_fixture__`);
+  await page.getByText(/IA no disponible/).waitFor();
+  assert.equal(await page.getByRole('button', { name: 'Buscar asistido', exact: true }).count(), 0);
+  await page.getByRole('button', { name: 'Añadir marca en el centro', exact: true }).click();
+  await page.getByRole('button', { name: 'Validar región', exact: true }).click();
+  const identity = await page.evaluate(() => window.marks[0].id);
+  await page.getByRole('button', { name: 'Seleccionar Lesión, validada', exact: true }).click();
+  await page.getByRole('button', { name: /Oblicua.*sin confirmar/ }).click();
+  await page.getByText(/no tiene correspondencia fiable/).waitFor();
+  await page.getByRole('button', { name: 'Vincular observación a la región seleccionada', exact: true }).click();
+  await page.getByRole('button', { name: 'Vincular observación central', exact: true }).click();
+  await page.getByRole('button', { name: 'Validar región', exact: true }).click();
+  assert.deepEqual(await page.evaluate(() => ({ id: window.marks[0].id, length: window.marks.length, observations: window.marks[0].observations.length })),
+    { id: identity, length: 1, observations: 1 });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.getByRole('button', { name: '3D', exact: true }).click();
+  await page.getByText(/Máscara 3D no disponible/).waitFor();
+  await page.getByRole('button', { name: 'Foto', exact: true }).click();
+  assert.equal(await page.evaluate(() => window.roundtrip().annotations[0].observations.length), 1);
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1), false);
+  enabled = true;
+  await page.reload();
+  await page.getByRole('button', { name: 'Buscar asistido', exact: true }).click();
+  await page.getByRole('button', { name: 'Seleccionar zona central', exact: true }).click();
+  const preview = page.getByRole('img', { name: 'Vista previa del recorte original', exact: true });
+  await preview.waitFor();
+  await page.waitForFunction(() => document.querySelector('[aria-label="Vista previa del recorte original"]')?.width > 1);
+  const before = await preview.evaluate(canvas => canvas.width);
+  await page.getByLabel(/^Ancho:/).press('ArrowRight');
+  await page.waitForFunction(width => document.querySelector('[aria-label="Vista previa del recorte original"]').width !== width, before);
+  await page.getByRole('checkbox', { name: 'Confirmo el envío de este recorte a Gemini.' }).check();
+  await page.getByRole('button', { name: 'Confirmar y buscar', exact: true }).click();
+  await page.getByText('Revisión del último grupo de propuestas', { exact: true }).waitFor();
+  assert.equal(sent.length, 1); assert.equal(sent[0].temporary, true); assert.equal('recordId' in sent[0], false);
+  assert.equal(sent[0].consent, true);
+  const pixel = await page.evaluate(async base64 => {
+    const bitmap = await createImageBitmap(await (await fetch(`data:image/jpeg;base64,${base64}`)).blob());
+    const canvas = document.createElement('canvas'); canvas.width = canvas.height = 1;
+    canvas.getContext('2d').drawImage(bitmap, 0, 0, 1, 1); bitmap.close();
+    return Array.from(canvas.getContext('2d').getImageData(0, 0, 1, 1).data);
+  }, sent[0].imageBase64);
+  assert.ok(pixel[0] > 150 && pixel[1] < 100, 'Se envía el original rojo, nunca el canvas verde');
+  await page.getByRole('checkbox', { name: 'Incluir Dos', exact: true }).uncheck();
+  await page.getByRole('button', { name: 'Validar grupo seleccionado', exact: true }).click();
+  assert.deepEqual(await page.evaluate(() => window.marks.map(m => m.status)), ['validated', 'pending']);
+  await page.getByRole('button', { name: 'Descartar pendientes del grupo', exact: true }).click();
+  await page.getByLabel('Lesión o descripción', { exact: true }).fill('Descripción libre revisada');
+  await page.getByRole('button', { name: 'Validar región', exact: true }).click();
+  const persisted = await page.evaluate(() => window.roundtrip());
+  assert.equal(persisted.annotations.length, 1);
+  assert.equal(persisted.annotations[0].source.provider, 'edited');
+  assert.equal(persisted.annotations[0].crop.sourceWidth, 1200);
+  assert.equal(persisted.annotations[0].crop.sourceHeight, 900);
+  assert.deepEqual(errors, []); assert.deepEqual(external, []);
+  console.log(JSON.stringify({ passed: true, viewports: [1440, 390], syntheticAnalyses: sent.length, sameIdentityMultiview: true }));
+} finally { await browser.close(); }

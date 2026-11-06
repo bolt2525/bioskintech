@@ -220,6 +220,44 @@ function seed(f, { user = 7, actor = 'user:7', cost, status = 'completed', month
   f.state.ledger.push({ user, actor, cost, status, month, expires, id: randomUUID() });
 }
 
+test('temporary analysis requires explicit true with recordId absent, same fresh gates and no clinical ledger content', async () => {
+  const temp = () => {
+    const body = input({ temporary: true });
+    delete body.recordId;
+    return body;
+  };
+  assert.equal(validateVisualInput(temp()).recordId, null);
+  for (const body of [input({ temporary: true }), { ...temp(), temporary: false },
+    { ...temp(), temporary: 'true' }, { ...temp(), temporary: undefined }, { ...temp(), recordId: null }]) {
+    assert.throws(() => validateVisualInput(body));
+  }
+  const f = fixture({ state: { owned: false } });
+  const body = temp();
+  assert.equal((await f.run(body)).code, 200);
+  assert.equal(f.state.recordChecks, 0);
+  assert.equal(f.state.authCalls, 2);
+  assert.equal((await f.run(body)).code, 429);
+  assert.equal(f.state.fetches.length, 1);
+  const ledgerWrites = f.state.queries.filter(q => q.text.startsWith('INSERT INTO skin_visual_ai_usage'));
+  assert.equal(ledgerWrites.length, 1);
+  assert.doesNotMatch(ledgerWrites[0].text, /record_id|image|photo|prompt|result/i);
+  for (const state of [{ override: false }, { clinic: false }, { session: false }]) {
+    const denied = fixture({ state });
+    assert.ok([401, 403].includes((await denied.run(temp())).code));
+    assert.equal(denied.state.fetches.length, 0);
+  }
+  const revoked = fixture({ authHook(state) { if (state.authCalls === 2) state.override = false; } });
+  assert.equal((await revoked.run(temp())).code, 403);
+  assert.equal(revoked.state.fetches.length, 0);
+  const limited = fixture();
+  seed(limited, { cost: 4_900_000 });
+  assert.equal((await limited.run(temp())).code, 429);
+  assert.equal(limited.state.fetches.length, 0);
+  const global = fixture({ env: { ...env(), SKIN_VISUAL_AI_GLOBAL_MONTHLY_USD: '0.1' } });
+  assert.equal((await global.run(temp())).code, 429);
+  assert.equal(global.state.fetches.length, 0);
+});
+
 test('default disabled / mandatory global limit / fixed GA successor without obsolete cutoff (no HTTP)', async () => {
   assert.equal(serviceConfig({}).reason, 'service_disabled');
   for (const raw of [undefined, '', '0', '-1', 'Infinity', 'NaN', '1e3', ' 5', '0.0000001'])

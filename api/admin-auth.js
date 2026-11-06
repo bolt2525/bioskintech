@@ -111,10 +111,10 @@ const ALL_FEATURES = [
   'calendar', 'block_schedule', 'appointment',
   'clinical_records', 'finance', 'inventory', 'clinical_3d',
   'system_status', 'backup', 'ai_consultation', 'skin_explorer',
-  'treatment_notes_view', 'skin_visual_ai',
+  'treatment_notes_view', 'skin_visual_ai', 'facial_simulation',
 ];
 // ponytail: features desactivadas por defecto — requieren activación explícita por clínica
-const OPT_IN_FEATURES = ['treatment_notes_view', 'ai_consultation', 'clinical_3d', 'skin_visual_ai'];
+const OPT_IN_FEATURES = ['treatment_notes_view', 'ai_consultation', 'clinical_3d', 'skin_visual_ai', 'facial_simulation'];
 
 // Planes de suscripción predefinidos (precio en centavos USD)
 export function parsePostgresIntegerId(value) {

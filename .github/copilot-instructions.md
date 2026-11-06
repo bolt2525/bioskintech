@@ -20,6 +20,7 @@ No aplicar recomendaciones exclusivas de Next.js, RSC o React 19: el proyecto us
 ## Architecture & Key Patterns
 
 ### Core Structure
+- **Simulación facial opcional**: `facial_simulation` e IA deshabilitados por defecto. Examen físico comparte el editor de piel con `clinical_records`, conservando legacy. Máscaras editables versionadas en R2 privado/Neon; migración preparada, no ejecutar automáticamente.
 - **Respaldo anual opcional**: Worker/cola en `workers/annual-photo-backup/`, preparado y desactivado. Cuotas/estado en Neon; no desplegar, provisionar ni contratar planes sin autorización. Ver `docs/PLAN_RESPALDO_FOTOGRAFICO_ANUAL.md`.
 - **Frontend**: React SPA con HashRouter (requerido para Vercel SPA sin SSR)
 - **Backend**: Vercel serverless functions en `/api/`

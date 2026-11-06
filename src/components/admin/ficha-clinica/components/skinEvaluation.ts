@@ -1,0 +1,194 @@
+import { locatePhotoPoint, photoPoint, surfacePoint, genericFaceAtlas } from '../../../../lab/faceSim/faceTransfer.ts';
+import type { FaceAddress, PersonalSurface } from '../../../../lab/faceSim/faceTransfer';
+import type { SkinPhotoSource } from '../../../../lab/faceSim/skinMultiView';
+import { mapSkinCandidate } from '../../../../lab/faceSim/skinMultiView.ts';
+import { parseSkinReview, validBox } from './skinVisualAI.ts';
+import type { NormalizedBox, PhotoReference, ReviewedSkinMark, SkinContext } from './skinVisualAI';
+
+export type EvaluationAnchor = FaceAddress & { version: 1 };
+export type EvaluationOriginalSource = { provider: 'manual' } | ReviewedSkinMark['source'];
+export type EvaluationSource = EvaluationOriginalSource | { provider: 'edited'; original: EvaluationOriginalSource };
+export interface EvaluationObservation { sourceId: string; box: NormalizedBox }
+export interface EvaluationMark {
+  id: string;
+  sourceId: string;
+  category: string;
+  label: string;
+  note: string;
+  box: NormalizedBox;
+  status: 'pending' | 'validated';
+  source: EvaluationSource;
+  reviewedAt?: string;
+  anchor?: EvaluationAnchor;
+  observations?: EvaluationObservation[];
+  crop?: { box: NormalizedBox; sourceWidth: number; sourceHeight: number };
+}
+export interface PersistedSkinMark {
+  id: string; category: string; label: string; note: string;
+  coordinateSpace: 'clinical-photo-2d'; reviewVersion: 2;
+  photo: PhotoReference; normalizedBox: NormalizedBox;
+  reviewStatus: 'validated'; reviewedAt: string;
+  source: EvaluationSource;
+  anchor?: EvaluationAnchor;
+  observations?: { photo: PhotoReference; normalizedBox: NormalizedBox }[];
+  crop?: { originalPhoto: PhotoReference; normalizedBox: NormalizedBox; sourceWidth: number; sourceHeight: number };
+}
+export interface PersistedSkinReview { version: 2; annotations: PersistedSkinMark[]; simulationId?: number }
+
+export function skinRequestContext(context: SkinContext): SkinContext {
+  const result: SkinContext = {};
+  for (const key of ['skinType', 'phototype', 'hydration'] as const) {
+    const value = context[key]?.trim();
+    if (!value) continue;
+    if (value.length > 40 || !/^[\p{L}\p{N} ()/-]+$/u.test(value)) {
+      throw new Error('El contexto manual contiene caracteres no admitidos o supera 40 caracteres.');
+    }
+    result[key] = value;
+  }
+  return result;
+}
+
+export function cropToOriginal(box: NormalizedBox, crop: NormalizedBox): NormalizedBox {
+  if (!validBox(box) || !validBox(crop)) throw new Error('El recorte o la región no son válidos.');
+  return { x: crop.x + box.x * crop.width, y: crop.y + box.y * crop.height,
+    width: box.width * crop.width, height: box.height * crop.height };
+}
+
+export function visibleSkinTriangles(source: SkinPhotoSource, surface: PersonalSurface): boolean[] {
+  const direction = source.mapping?.direction;
+  if (!direction || direction.length !== 3 || !direction.every(Number.isFinite)) return [];
+  return Array.from({ length: genericFaceAtlas.triangles.length / 3 }, (_, triangle) => {
+    const ids = genericFaceAtlas.triangles.slice(triangle * 3, triangle * 3 + 3);
+    if (ids.some((id, i) => surface.indices[triangle * 3 + i] !== id)) return false;
+    const [a, b, c] = ids.map(id => Array.from(surface.positions.slice(id * 3, id * 3 + 3)));
+    if ([a, b, c].some(p => p.length !== 3 || !p.every(Number.isFinite))) return false;
+    const u = b.map((n, i) => n - a[i]), v = c.map((n, i) => n - a[i]);
+    const normal = [u[1] * v[2] - u[2] * v[1], u[2] * v[0] - u[0] * v[2], u[0] * v[1] - u[1] * v[0]];
+    const length = Math.hypot(...normal) * Math.hypot(...direction);
+    return length > 0 && normal.reduce((sum, n, i) => sum + n * direction[i], 0) / length > 0.12;
+  });
+}
+
+export function anchorForPhoto(box: NormalizedBox, source: SkinPhotoSource, surface?: PersonalSurface): EvaluationAnchor | undefined {
+  if (!surface || !source.confirmed || !source.mapping || !validBox(box)) return undefined;
+  if (!mapSkinCandidate(source.id, { id: 'selection', channel: 'contrast', ...box }, source.mapping, surface)) return undefined;
+  const address = locatePhotoPoint({ x: box.x + box.width / 2, y: box.y + box.height / 2 },
+    source.mapping.landmarks, genericFaceAtlas, { visibleTriangles: visibleSkinTriangles(source, surface) });
+  return address && surfacePoint(address, surface) ? { version: 1, ...address } : undefined;
+}
+
+export function photoForAnchor(anchor: EvaluationAnchor, source: SkinPhotoSource, surface?: PersonalSurface) {
+  if (!surface || !source.confirmed || !source.mapping || !visibleSkinTriangles(source, surface)[anchor.triangle] || !surfacePoint(anchor, surface)) return null;
+  const point = photoPoint(anchor, source.mapping.landmarks);
+  if (!point || point.x < 0 || point.x > 1 || point.y < 0 || point.y > 1) return null;
+  const round = locatePhotoPoint(point, source.mapping.landmarks, genericFaceAtlas,
+    { visibleTriangles: visibleSkinTriangles(source, surface) });
+  if (!round || round.triangle !== anchor.triangle) return null;
+  return point;
+}
+
+export function bestPhotoForAnchor(anchor: EvaluationAnchor, sources: readonly SkinPhotoSource[], surface?: PersonalSurface) {
+  const score = (source: SkinPhotoSource) => {
+    if (!surface || !source.mapping) return 0;
+    const ids = genericFaceAtlas.triangles.slice(anchor.triangle * 3, anchor.triangle * 3 + 3);
+    const [a, b, c] = ids.map(id => Array.from(surface.positions.slice(id * 3, id * 3 + 3)));
+    if ([a, b, c].some(p => p.length !== 3)) return 0;
+    const u = b.map((n, i) => n - a[i]), v = c.map((n, i) => n - a[i]);
+    const normal = [u[1] * v[2] - u[2] * v[1], u[2] * v[0] - u[0] * v[2], u[0] * v[1] - u[1] * v[0]];
+    const d = source.mapping.direction, magnitude = Math.hypot(...normal) * Math.hypot(...d);
+    const facing = magnitude ? normal.reduce((sum, n, i) => sum + n * d[i], 0) / magnitude : 0;
+    const [p, q, r] = ids.map(id => source.mapping!.landmarks[id]);
+    if (!p || !q || !r) return 0;
+    const area = Math.abs((q.x - p.x) * (r.y - p.y) - (q.y - p.y) * (r.x - p.x));
+    return facing * Math.sqrt(area * source.canvas.width * source.canvas.height);
+  };
+  return sources.filter(s => s.confirmed && photoForAnchor(anchor, s, surface))
+    .sort((a, b) => score(b) - score(a) || Number(b.group === 'front') - Number(a.group === 'front') || a.id.localeCompare(b.id))[0];
+}
+
+export function validateEvaluationGroup(marks: readonly EvaluationMark[], ids: readonly string[], reviewedAt = new Date().toISOString()): EvaluationMark[] {
+  const selected = new Set(ids);
+  if (!selected.size || marks.some(m => selected.has(m.id) && (!m.label.trim() || !validBox(m.box)))) {
+    throw new Error('Revisa la etiqueta y la región de todas las propuestas seleccionadas.');
+  }
+  return marks.map(m => selected.has(m.id) ? { ...m, label: m.label.trim(), status: 'validated', reviewedAt } : m);
+}
+
+function durable(ref: PhotoReference | undefined): ref is PhotoReference {
+  return !!ref && Number.isInteger(ref.id) && ref.id > 0 && typeof ref.r2Key === 'string' &&
+    ref.r2Key.startsWith('clinics/') && !/[?#\\\s]/.test(ref.r2Key);
+}
+export function toPersistedSkinReview(marks: readonly EvaluationMark[], refs: Record<string, PhotoReference>): PersistedSkinReview {
+  const annotations: PersistedSkinMark[] = [];
+  for (const mark of marks) {
+    if (mark.status !== 'validated') continue;
+    if (!durable(refs[mark.sourceId])) throw new Error('Falta una foto durable para una región validada.');
+    if (!validBox(mark.box) || !mark.label.trim() || !mark.reviewedAt) throw new Error('Hay una región validada con datos incompletos.');
+    if (mark.crop && (!validBox(mark.crop.box) || !Number.isInteger(mark.crop.sourceWidth) ||
+      !Number.isInteger(mark.crop.sourceHeight) || mark.crop.sourceWidth <= 0 || mark.crop.sourceHeight <= 0)) {
+      throw new Error('La evidencia del recorte no es válida.');
+    }
+    const photo = refs[mark.sourceId];
+    const observations = mark.observations?.map(o => {
+      if (!durable(refs[o.sourceId]) || !validBox(o.box)) throw new Error('Falta una foto durable o una región multivista válida.');
+      return { photo: refs[o.sourceId], normalizedBox: o.box };
+    });
+    annotations.push({ id: mark.id, category: mark.category, label: mark.label, note: mark.note,
+      coordinateSpace: 'clinical-photo-2d', reviewVersion: 2, photo, normalizedBox: mark.box,
+      reviewStatus: 'validated', reviewedAt: mark.reviewedAt, source: mark.source,
+      ...(mark.anchor ? { anchor: mark.anchor } : {}), ...(observations?.length ? { observations } : {}),
+      ...(mark.crop ? { crop: { originalPhoto: photo, normalizedBox: mark.crop.box,
+        sourceWidth: mark.crop.sourceWidth, sourceHeight: mark.crop.sourceHeight } } : {}) });
+  }
+  return { version: 2, annotations };
+}
+
+export function fromPersistedSkinReview(data: string | PersistedSkinReview | undefined, refs: Record<string, PhotoReference>): EvaluationMark[] {
+  let review: PersistedSkinReview | undefined;
+  try { review = typeof data === 'string' ? JSON.parse(data) : data; } catch { return []; }
+  if (!review || review.version !== 2 || !Array.isArray(review.annotations)) return [];
+  const sourceId = (photo: PhotoReference) => Object.keys(refs).find(id =>
+    durable(refs[id]) && refs[id].id === photo?.id && refs[id].r2Key === photo?.r2Key);
+  return review.annotations.flatMap(mark => {
+    if (!mark || typeof mark !== 'object') return [];
+    const id = sourceId(mark.photo);
+    if (!id || mark.reviewStatus !== 'validated' || !validBox(mark.normalizedBox) || !mark.id || !mark.label ||
+      !mark.source || !['manual', 'google-gemini', 'edited'].includes(mark.source.provider)) return [];
+    return [{ id: mark.id, sourceId: id, category: mark.category, label: mark.label, note: mark.note,
+      box: mark.normalizedBox, status: 'validated' as const, reviewedAt: mark.reviewedAt, source: mark.source,
+      ...(mark.anchor ? { anchor: mark.anchor } : {}),
+      ...(mark.crop && validBox(mark.crop.normalizedBox) && Number.isInteger(mark.crop.sourceWidth) && Number.isInteger(mark.crop.sourceHeight)
+        ? { crop: { box: mark.crop.normalizedBox, sourceWidth: mark.crop.sourceWidth, sourceHeight: mark.crop.sourceHeight } } : {}),
+      ...(mark.observations ? { observations: mark.observations.flatMap(o => {
+        const other = sourceId(o.photo);
+        return other && validBox(o.normalizedBox) ? [{ sourceId: other, box: o.normalizedBox }] : [];
+      }) } : {}) }];
+  });
+}
+
+/** Migración de lectura v1; una foto sin correspondencia no se atribuye a otra vista. */
+export function fromLegacySkinReview(data: Parameters<typeof parseSkinReview>[0], refs: Record<string, PhotoReference>): EvaluationMark[] {
+  return parseSkinReview(data).flatMap(mark => {
+    const sourceId = Object.keys(refs).find(id => refs[id].id === mark.photo.id && refs[id].r2Key === mark.photo.r2Key);
+    return sourceId ? [{ id: mark.id, sourceId, category: mark.category, label: mark.label,
+      note: mark.note, box: mark.normalizedBox, status: 'validated' as const,
+      reviewedAt: mark.reviewedAt, source: mark.source }] : [];
+  });
+}
+
+/** Presentación descriptiva, sin exponer claves ni URL de las fotografías. */
+export function skinReviewSummaries(data: unknown): { id: string; description: string }[] {
+  let review = data;
+  if (typeof review === 'string') { try { review = JSON.parse(review); } catch { return []; } }
+  if (!review || typeof review !== 'object' || !('version' in review)) return [];
+  if (review.version === 1) return parseSkinReview(review as Parameters<typeof parseSkinReview>[0])
+    .map(mark => ({ id: mark.id, description: `${mark.label}${mark.note ? ` — ${mark.note}` : ''} · Foto clínica #${mark.photo.id}` }));
+  if (review.version !== 2 || !('annotations' in review) || !Array.isArray(review.annotations)) return [];
+  return review.annotations.flatMap((mark: unknown) => {
+    if (!mark || typeof mark !== 'object' || !('reviewStatus' in mark) || mark.reviewStatus !== 'validated' ||
+      !('id' in mark) || typeof mark.id !== 'string' || !('label' in mark) || typeof mark.label !== 'string' ||
+      !('note' in mark) || typeof mark.note !== 'string' || !('photo' in mark) || !mark.photo ||
+      typeof mark.photo !== 'object' || !('id' in mark.photo) || typeof mark.photo.id !== 'number') return [];
+    return [{ id: mark.id, description: `${mark.label}${mark.note ? ` — ${mark.note}` : ''} · Foto clínica #${mark.photo.id}` }];
+  });
+}

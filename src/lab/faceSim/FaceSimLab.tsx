@@ -38,6 +38,11 @@ import { DEFAULT_PREVIEW, GENERIC_EFFECT_CHART, PREVIEW_DESCRIPTIONS, buildIllus
 import EffectAreaEditor from './EffectAreaEditor';
 import { importLocalRecord, localRecord } from './injectableLocalRecord';
 import { detectedSkinMapping, type SkinMappedCandidate, type SkinPhotoSource } from './skinMultiView';
+import { assertSessionAtlas, base64ToBuffer, bufferToBase64, restorePhotoPatches, restoreSurface, storePhotoPatches, storeSurface,
+  type FaceSimController, type FaceSimIntegration, type FacialSimulationState, type StoredMaskGeometry } from './facialSimulationSession';
+import type { EvaluationMark } from '../../components/admin/ficha-clinica/components/skinEvaluation';
+import { migrateLegacySkinMarks } from '../../components/admin/ficha-clinica/components/skinLegacyMigration';
+const SkinEvaluationEditor = lazy(() => import('../../components/admin/ficha-clinica/components/SkinEvaluationEditor'));
 
 function SkinMaskPreview({ surface, modelData, points, direction, selectedPoint, onSelect }: {
   surface: PersonalSurface; modelData: ArrayBuffer; points: readonly SkinMappedCandidate[]; direction: readonly number[]; selectedPoint?: string;
@@ -390,6 +395,7 @@ function zoneTint(label: string): [number, number, number] {
 
 interface Slot {
   canvas: HTMLCanvasElement;
+  original?: File;
   aspect: number;
   frame: FaceFrame;
   landmarks?: Landmark[];
@@ -465,12 +471,17 @@ const segDist = (p: P2, a: P2, b: P2, k: number) => {
   return Math.hypot(px - t * ax, py - t * ay);
 };
 
-export default function FaceSimLab() {
+export default function FaceSimLab({ integration }: { integration?: FaceSimIntegration } = {}) {
+  const onController = integration?.onController, onDirty = integration?.onDirty, onMarksChange = integration?.onMarksChange;
+  const [evaluationMarks, setEvaluationMarks] = useState<EvaluationMark[]>(() => integration?.initialMarks ?? []);
+  const skipDirty = useRef(true);
   const comparisonCamera = useRef<ClinicalCameraSync>({});
   const [photoCanvas, setPhotoCanvas] = useState<HTMLCanvasElement | null>(null);
   const rendererRef = useRef<Renderer | null>(null);
   const dragRef = useRef<string | null>(null);
   const uploadRequestRef = useRef<Partial<Record<PhotoSlotId, number>>>({});
+  const uploadSequence = useRef(0);
+  const captureSession = useRef(0);
   const personalRequestRef = useRef(0);
   const detectionQueueRef = useRef<Promise<void>>(Promise.resolve());
   const [photos, setPhotos] = useState<Partial<Record<PhotoSlotId, Slot>>>({});
@@ -544,8 +555,8 @@ export default function FaceSimLab() {
   const setHoveredZone = hoverStore.set;
   const [markTab, setMarkTab] = useState<'inyectable' | 'capas' | 'revisar'>('inyectable');
   const [workspace, setWorkspace] = useState<'capture' | 'simulate'>('capture');
-  const [editorGroup, setEditorGroup] = useState<'annotations' | 'appearance'>('annotations');
-  const [appearanceOpened, setAppearanceOpened] = useState(false);
+  const [editorGroup, setEditorGroup] = useState<'annotations' | 'appearance'>(integration ? 'appearance' : 'annotations');
+  const [appearanceOpened, setAppearanceOpened] = useState(!!integration);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [bilateral, setBilateral] = useState(false);
   const [anatomyDisplay, setAnatomyDisplay] = useState(initialAnatomyDisplay);
@@ -1094,6 +1105,10 @@ export default function FaceSimLab() {
   };
   const buildPersonal = async (nextDepth = depth, sourceView = view, closeHead = personal?.closedHead ?? false) => {
     sourceView = 'frontal';
+    if (integration && personal && evaluationMarks.length) {
+      setStatus('La evaluación está vinculada a la máscara original. Descarta sus marcas o abre otra sesión antes de reconstruirla; no se moverán automáticamente.');
+      return;
+    }
     if (hasPendingPhotos) {
       setStatus('Espera a que termine la detección de las fotos antes de calcular la superficie.');
       return;
@@ -1248,10 +1263,14 @@ export default function FaceSimLab() {
   const loadFile = async (file: File, target: PhotoSlotId, prepared?: PreparedCapture) => {
     if (!file.type.startsWith('image/')) { setStatus('El archivo debe ser una imagen.'); return; }
     if (file.size > MAX_IMAGE_BYTES) { setStatus('La imagen supera el límite de 20 MiB.'); return; }
+    if (integration && photos[target] && evaluationMarks.length) {
+      setStatus('Esta sesión contiene una evaluación. Descarta sus marcas o abre otra sesión antes de reemplazar fotos; no se trasladarán a otra imagen.');
+      return;
+    }
     if (photos[target] && !window.confirm(`Ya existe ${PHOTO_SLOTS.find(v => v.id === target)?.label}. ¿Reemplazarla? La foto anterior se retirará; el registro se conserva.`)) return;
     personalRequestRef.current++;
     setBuildingPersonal(false);
-    const requestId = (uploadRequestRef.current[target] ?? 0) + 1;
+    const requestId = ++uploadSequence.current;
     uploadRequestRef.current[target] = requestId;
     const targetView = target === 'extra_a' || target === 'extra_b' ? 'frontal' : target;
     setPendingPhotos(p => ({ ...p, [target]: true }));
@@ -1259,7 +1278,7 @@ export default function FaceSimLab() {
       const c = prepared?.canvas ?? await captureImage(file);
       if (requestId !== uploadRequestRef.current[target]) return;
       const personalNote = personal ? ' La máscara aceptada conserva sus fotos anteriores. Genera y confirma otra para actualizarla; tus marcas se conservan.' : '';
-      setPhotos(p => ({ ...p, [target]: { canvas: c, aspect: c.width / c.height, frame: defaultFrame(targetView), previewUrl: c.toDataURL('image/jpeg', 0.6) } }));
+      setPhotos(p => ({ ...p, [target]: { canvas: c, original: file, aspect: c.width / c.height, frame: defaultFrame(targetView), previewUrl: c.toDataURL('image/jpeg', 0.6) } }));
       setCalibrating(false);
       setPhotoAnchor(null);
       setContourIndex(null);
@@ -1326,12 +1345,14 @@ export default function FaceSimLab() {
   const loadCaptures = async (files: File[]) => {
     if (files.length > 3) { setCaptureProgress('Selecciona como máximo 3 fotos; no se cargó ninguna.'); return; }
     if (!files.length || batchBusy || hasPendingPhotos) return;
+    const session = captureSession.current;
     setBatchBusy(true);
     const occupied = new Set(Object.keys(photos));
     const digests = new Set([...Object.values(captureDigests.current), ...unassignedCaptures.map(c => c.digest)]);
     const messages: string[] = [];
     try {
       for (const [index, file] of files.entries()) {
+        if (session !== captureSession.current) return;
         setCaptureProgress(`Preparando ${index + 1}/${files.length} · ${file.name}`);
         try {
           if (!file.type.startsWith('image/') || file.size > MAX_IMAGE_BYTES) throw new Error('Usa una imagen de hasta 20 MiB.');
@@ -1340,6 +1361,7 @@ export default function FaceSimLab() {
           const canvas = await captureImage(file);
           setCaptureProgress(`Detectando pose ${index + 1}/${files.length} · ${file.name}`);
           const detected = await detectFrame(canvas);
+          if (session !== captureSession.current) return;
           const pose = detected.landmarks && !detected.captureWarnings?.some(w => w.includes('recuperada'))
             ? classifyFacePose({ landmarks: detected.detectedLandmarks ?? detected.landmarks, aspect: canvas.width / canvas.height, pose: detected.pose })
             : { view: null, reason: detected.reason || 'Detección recuperada: asigna la vista manualmente.' };
@@ -1359,14 +1381,20 @@ export default function FaceSimLab() {
         }
       }
     } finally {
-      setBatchBusy(false);
-      setCaptureProgress(`${messages.join(' ')} ${!occupied.has('frontal') ? 'Sugerencia: añade una frontal con la frente descubierta.' : ''}`);
+      if (session === captureSession.current) {
+        setBatchBusy(false);
+        setCaptureProgress(`${messages.join(' ')} ${!occupied.has('frontal') ? 'Sugerencia: añade una frontal con la frente descubierta.' : ''}`);
+      }
     }
   };
 
   const removePhoto = (id: PhotoSlotId) => {
+    if (integration && evaluationMarks.length) {
+      setStatus('Descarta las marcas o abre otra sesión antes de retirar fotografías de la evaluación.');
+      return;
+    }
     delete captureDigests.current[id];
-    uploadRequestRef.current[id] = (uploadRequestRef.current[id] ?? 0) + 1;
+    uploadRequestRef.current[id] = ++uploadSequence.current;
     personalRequestRef.current++;
     setBuildingPersonal(false);
     setPendingPhotos(p => ({ ...p, [id]: false }));
@@ -2178,18 +2206,145 @@ export default function FaceSimLab() {
   const skinSources = useMemo<SkinPhotoSource[]>(() => PHOTO_SLOTS.flatMap(({ id, label }) => {
     const capture = photos[id];
     if (!capture) return [];
-    const accepted = personal?.captures?.[id]?.canvas === capture.canvas;
-    const patch = accepted ? personal?.photoPatches?.find(item => item.source.texture === capture.canvas) : undefined;
-    const detectedMapping = accepted && personal && !capture.detectionRecovered && !capture.detectionError && capture.landmarks
-      ? detectedSkinMapping(personal.surface, capture.detectedLandmarks ?? capture.landmarks) : undefined;
-    const mapping = accepted && personal && id === 'frontal'
-      ? { landmarks: Array.from({ length: 468 }, (_, i) => ({ x: personal.surface.uvs[i * 2], y: personal.surface.uvs[i * 2 + 1] })), direction: [0, 0, 1], manual: false }
+    const original = personal?.reviewBase ?? personal;
+    const accepted = original?.captures?.[id]?.canvas === capture.canvas;
+    const alignedCapture = accepted ? original?.captures?.[id] ?? capture : capture;
+    const patch = accepted ? original?.photoPatches?.find(item => item.source.texture === capture.canvas) : undefined;
+    const detectedMapping = accepted && original && !alignedCapture.detectionRecovered && !alignedCapture.detectionError && alignedCapture.landmarks
+      ? detectedSkinMapping(original.surface, alignedCapture.detectedLandmarks ?? alignedCapture.landmarks) : undefined;
+    const mapping = accepted && original && id === 'frontal' && !alignedCapture.detectionRecovered && !alignedCapture.detectionError
+      ? { landmarks: Array.from({ length: 468 }, (_, i) => ({ x: original.surface.uvs[i * 2], y: original.surface.uvs[i * 2 + 1] })), direction: [0, 0, 1], manual: false }
       : patch ? { landmarks: Array.from({ length: 468 }, (_, i) => ({ x: patch.uvs[i * 2], y: patch.uvs[i * 2 + 1] })),
         direction: patch.source.projection.towardCamera, manual: false } : detectedMapping;
-    return [{ id, label, canvas: capture.canvas, confirmed: !!capture.captureConfirmed,
+    return [{ id, label, canvas: capture.canvas, original: capture.original, confirmed: !!capture.captureConfirmed,
       group: id === 'frontal' ? 'front' as const : id === 'izquierda' ? 'a' as const : id === 'derecha' ? 'b' as const : 'extra' as const,
-      landmarks: !capture.detectionRecovered && !capture.detectionError ? capture.landmarks : undefined, mapping }];
+      landmarks: !alignedCapture.detectionRecovered && !alignedCapture.detectionError ? alignedCapture.landmarks : undefined, mapping }];
   }), [photos, personal]);
+  const migration = integration?.legacyMigration;
+  const migrationAttempt = useRef(false);
+  const [migrationReport, setMigrationReport] = useState<{ added: number; skipped: { id: string; reason: string }[] } | null>(null);
+  const migrateLegacy = useCallback(() => {
+    if (!migration || !personal || personal.captures !== photos) return;
+    const result = migrateLegacySkinMarks(migration.marks, migration.examId, skinSources,
+      (personal.reviewBase ?? personal).surface, evaluationMarks);
+    migrationAttempt.current = true;
+    setEvaluationMarks(result.marks); onMarksChange?.(result.marks);
+    setMigrationReport({ added: result.added, skipped: result.skipped });
+  }, [migration, personal, photos, skinSources, evaluationMarks, onMarksChange]);
+  useEffect(() => {
+    if (migration && personal && personal.captures === photos && !migrationAttempt.current) migrateLegacy();
+  }, [migration, personal, photos, migrateLegacy]);
+
+  const importPhotoAction = useRef(loadFile);
+  importPhotoAction.current = loadFile;
+  const controller = useMemo<FaceSimController>(() => ({
+    getPhotos: () => PHOTO_SLOTS.flatMap(({ id }) => photos[id] ? [{ id, canvas: photos[id]!.canvas, original: photos[id]!.original }] : []),
+    getMarks: () => evaluationMarks,
+    async importPhoto(file, target) {
+      if (!PHOTO_SLOTS.some(slot => slot.id === target)) throw new Error('Vista de fotografía no válida.');
+      if (photos[target]) throw new Error('Esta vista ya está ocupada. Retírala en Capturas antes de seleccionar otra foto.');
+      if (!file.type.startsWith('image/') || file.size > MAX_IMAGE_BYTES) throw new Error('Selecciona una imagen de hasta 20 MiB.');
+      await importPhotoAction.current(file, target);
+    },
+    async snapshot(references) {
+      if (hasPendingPhotos || buildingPersonal) throw new Error('Espera a que termine el trabajo de las capturas.');
+      if (personal && personal.captures !== photos) throw new Error('La máscara pertenece a otras capturas. Genera y confirma la máscara actual antes de guardarla.');
+      const state: FacialSimulationState = {
+        version: 1, atlas: { modelId: genericFaceAtlas.modelId, version: 1, glbSha256: genericFaceAtlas.provenance.glbSha256 },
+        marks: structuredClone(evaluationMarks.filter(mark => mark.status === 'validated')),
+        photos: PHOTO_SLOTS.flatMap(({ id }) => {
+          const capture = photos[id];
+          if (!capture) return [];
+          const photo = references[id];
+          if (!photo) throw new Error('Guarda primero todas las fotografías originales vinculadas al expediente.');
+          return [{ slot: id, photo, alignment: { frame: structuredClone(capture.frame), landmarks: capture.landmarks,
+            detectedLandmarks: capture.detectedLandmarks, contourAdjusted: capture.contourAdjusted, pose: capture.pose,
+            detectionError: capture.detectionError, detectionRecovered: capture.detectionRecovered,
+            captureWarnings: capture.captureWarnings, captureConfirmed: capture.captureConfirmed,
+            foreheadReviewed: capture.foreheadReviewed, modelAnchors: capture.modelAnchors,
+            registration: capture.registration, registrationFlip: capture.registrationFlip, registrationSource: capture.registrationSource } }];
+        }),
+      };
+      if (personal) {
+        const geometry = (model: PersonalModel): StoredMaskGeometry => ({ surface: storeSurface(model.surface),
+          renderSurface: storeSurface(model.renderSurface), glbBase64: bufferToBase64(model.glb) });
+        state.mask = { ...geometry(personal), view: personal.view, depth: personal.depth, depthDetails: personal.depthDetails,
+          diagnostics: personal.diagnostics, closedHead: personal.closedHead,
+          photoPatches: storePhotoPatches(personal.photoPatches, photos),
+          ...(personal.reviewBase ? { base: geometry(personal.reviewBase) } : {}) };
+      }
+      if (new Blob([JSON.stringify(state)]).size > 3_900_000) throw new Error('Esta máscara supera el límite de guardado de 3,9 MB. Conserva las fotos; no se guardó ni simplificó la geometría.');
+      return state;
+    },
+    async restore(state, canvases, originals = {}) {
+      assertSessionAtlas(state);
+      const next: typeof photos = {};
+      for (const entry of state.photos) {
+        const canvas = canvases[entry.slot];
+        if (!canvas) throw new Error('Falta una fotografía original de la sesión.');
+        const blob = originals[entry.slot];
+        next[entry.slot] = { ...entry.alignment, canvas, aspect: canvas.width / canvas.height,
+          original: blob ? new File([blob], `${entry.slot}.${blob.type === 'image/png' ? 'png' : 'jpg'}`, { type: blob.type }) : undefined,
+          previewUrl: canvas.toDataURL('image/jpeg', .6),
+          regionMap: entry.alignment.landmarks ? buildFaceRegionMap(entry.alignment.landmarks, genericFaceAtlas.triangles,
+            canvas.width / canvas.height, genericFaceAtlas.positions) : undefined };
+      }
+      const mask = state.mask;
+      let restored: PersonalModel | null = null;
+      if (mask) {
+        const capture = next[mask.view];
+        if (!capture?.landmarks) throw new Error('La máscara no tiene una captura base alineada.');
+        const patches = restorePhotoPatches(mask.photoPatches, canvases);
+        const model = (geometry: StoredMaskGeometry): PersonalModel => {
+          const surface = restoreSurface(geometry.surface);
+          return { view: mask.view, canvas: capture.canvas, glb: base64ToBuffer(geometry.glbBase64),
+            surface, renderSurface: restoreSurface(geometry.renderSurface), projection: surface.projection,
+            depth: mask.depth, depthDetails: mask.depthDetails, diagnostics: mask.diagnostics, closedHead: mask.closedHead,
+            captures: next, regionMap: capture.regionMap!, photoPatches: patches };
+        };
+        restored = model(mask);
+        if (mask.base) restored.reviewBase = model(mask.base);
+      }
+      personalRequestRef.current++;
+      captureSession.current++;
+      uploadRequestRef.current = {};
+      skipDirty.current = true;
+      setPhotos(next); setPersonal(restored); setEvaluationMarks(structuredClone(state.marks));
+      setView(mask?.view ?? 'frontal'); setDepth(mask?.depth ?? 1);
+      setModelKind(restored ? 'personal' : 'generico'); setMaskReview(null); setPendingPhotos({}); setBatchBusy(false);
+      setUnassignedCaptures([]); setBoundaryReview([]); setCaptureProgress('');
+      setWorkspace('simulate'); setAppearanceOpened(true); setEditorGroup('appearance');
+      setStatus('Sesión recuperada con geometría, fotografías y alineación originales; no se repitió la detección.');
+    },
+    reset() {
+      personalRequestRef.current++;
+      captureSession.current++;
+      uploadRequestRef.current = {};
+      setPhotos({}); setPersonal(null); setEvaluationMarks([]); setMaskReview(null); setBoundaryReview([]);
+      setUnassignedCaptures([]); setPendingPhotos({}); setBatchBusy(false); setCaptureProgress('');
+      setWorkspace('capture'); captureDigests.current = {};
+    },
+  }), [photos, personal, evaluationMarks, hasPendingPhotos, buildingPersonal]);
+  useEffect(() => { onController?.(controller); }, [onController, controller]);
+  useEffect(() => () => { onController?.(null); }, [onController]);
+  useEffect(() => {
+    if (skipDirty.current) { skipDirty.current = false; return; }
+    onDirty?.();
+  }, [photos, personal, evaluationMarks, onDirty]);
+  const changeEvaluationMarks = useCallback((marks: EvaluationMark[]) => {
+    setEvaluationMarks(marks); onMarksChange?.(marks);
+  }, [onMarksChange]);
+  const skinEditor = <Suspense fallback={<p role="status">Preparando evaluación de piel…</p>}>
+    {migration && <section aria-label="Migración de marcaciones faciales" className="space-y-2 rounded-lg border border-amber-300 p-3 text-sm">
+      <p>Sube o selecciona fotos, confirma su alineación y genera la máscara. Las marcas compatibles se trasladarán como pendientes de revisión; el modelo genérico y sus datos se conservan.</p>
+      {migrationReport && <><p role="status">{migrationReport.added} marcaciones trasladadas en el último intento. {migrationReport.skipped.length} sin correspondencia.</p>
+        <ul>{migrationReport.skipped.map(item => <li key={item.id}>Marca {item.id}: {item.reason}</li>)}</ul>
+        <button type="button" className="rounded-lg border px-3 py-2" onClick={migrateLegacy} disabled={!personal || personal.captures !== photos}>Reintentar traslado sin duplicar</button></>}
+    </section>}
+    <SkinEvaluationEditor sources={skinSources} surface={(personal?.reviewBase ?? personal)?.surface}
+      modelData={(personal?.reviewBase ?? personal)?.glb} recordId={integration?.recordId} context={integration?.context ?? {}}
+      value={evaluationMarks} onChange={changeEvaluationMarks} />
+  </Suspense>;
 
   return (
     <div className={`grid min-w-0 gap-4 ${workspace === 'simulate' && editorGroup === 'annotations'
@@ -2205,7 +2360,8 @@ export default function FaceSimLab() {
             }} className={`admin-focus-ring min-h-11 rounded-lg px-4 text-sm font-semibold ${workspace === id ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-700'}`}>{label}</button>)}
         </nav>
         {workspace === 'simulate' && <nav aria-label="Grupos del editor" className="flex flex-wrap gap-2">
-          {([['annotations', 'Marcaciones e inyectables'], ['appearance', 'Morfología, piel y capas']] as const).map(([id, label]) =>
+          {(!integration ? [['annotations', 'Marcaciones e inyectables'], ['appearance', 'Morfología, piel y capas']] as const
+            : [['appearance', integration.mode === 'skin-exam' ? 'Evaluación de piel' : 'Morfología, piel y capas']] as const).map(([id, label]) =>
             <button type="button" key={id} aria-pressed={editorGroup === id} onClick={() => {
               setEditorGroup(id); if (id === 'appearance') setAppearanceOpened(true);
               setDraft(null); dragRef.current = null;
@@ -2213,7 +2369,7 @@ export default function FaceSimLab() {
         </nav>}
         <p className="text-sm text-slate-600">{workspace === 'capture'
           ? '1. Revisa las fotos · 2. Genera y confirma la máscara · 3. Simula o marca.'
-          : 'Elige una superficie y una herramienta. El registro es común; la dosis no controla el efecto visual.'}</p>
+          : integration ? 'La evaluación conserva la evidencia original; los retoques cosméticos no modifican las lesiones.' : 'Elige una superficie y una herramienta. El registro es común; la dosis no controla el efecto visual.'}</p>
         <p className="text-xs text-slate-600" role="status">{status}</p>
       </header>
       {reviewId && reviewSlot?.landmarks && <Suspense fallback={<p role="status">Abriendo revisión de límites…</p>}>
@@ -2377,7 +2533,7 @@ export default function FaceSimLab() {
             <input type="file" multiple accept="image/*" disabled={hasPendingPhotos} aria-label="Seleccionar hasta 3 fotos" className="sr-only"
               onChange={e => { const files = Array.from(e.target.files ?? []); e.target.value = ''; void loadCaptures(files); }} />
           </label>
-          <p className="mb-2 text-xs text-slate-600">Una frontal es obligatoria. Añade ambos lados si tienes tomas claras.</p>
+          <p className="mb-2 text-xs text-slate-600">Recomendadas: frontal y dos oblicuas de 45°. Una sola frontal permite comenzar con cobertura limitada. Sin detección fiable se conserva la evaluación 2D; la máscara requiere una frontal válida.</p>
           {captureProgress && <p role="status" aria-live="polite" className="mb-2 break-words text-xs text-slate-700">{captureProgress}</p>}
           {unassignedCaptures.map(candidate => <div key={candidate.digest} className="mb-2 rounded-lg border border-amber-200 bg-amber-50 p-2 text-xs">
             <p className="break-words font-semibold">{candidate.file.name}</p><p>{candidate.reason}</p>
@@ -2434,6 +2590,14 @@ export default function FaceSimLab() {
         {personal && <button type="button" disabled={buildingPersonal || hasPendingPhotos} onClick={() => setMaskReview({ model: personal.reviewBase ?? personal, photos })}
           className="admin-focus-ring min-h-11 w-full rounded-xl border border-sky-300 bg-sky-50 px-3 py-2 text-sm font-semibold">Revisar máscara aceptada</button>}
         {personal && personal.captures !== photos && <p role="status" className="text-xs font-semibold text-amber-900">La máscara aceptada usa capturas anteriores. Genera y confirma otra para actualizarla.</p>}
+        {integration && personal?.captures && personal.captures !== photos && <button type="button"
+          className="admin-focus-ring min-h-11 w-full rounded-lg border border-amber-400 px-3 py-2 text-sm"
+          onClick={() => {
+            if (!window.confirm('¿Descartar los cambios de capturas y recuperar las fotos y alineación de la máscara aceptada? Las marcas se conservan.')) return;
+            personalRequestRef.current++; captureSession.current++; uploadRequestRef.current = {};
+            setPendingPhotos({}); setBatchBusy(false); setBoundaryReview([]); setMaskReview(null);
+            setPhotos(personal.captures!); setStatus('Capturas y alineación originales recuperadas; las marcas no se desplazaron.');
+          }}>Recuperar capturas de la máscara</button>}
         <p className="text-xs font-semibold text-amber-900">Aproximación visual, no escaneo. Las zonas ocultas y el interior de las fosas no se reconstruyen.</p>
         {slot?.landmarks && <button type="button" onClick={() => setBoundaryReview(queue => [view, ...queue.filter(id => id !== view)])}
           className="admin-focus-ring w-full rounded-xl border border-sky-200 bg-sky-50 px-3 py-2 text-sm font-semibold">Revisar frente, sienes y mentón</button>}
@@ -2458,7 +2622,7 @@ export default function FaceSimLab() {
             <button type="button" disabled={!currentForeheadPreview.confirmed || buildingPersonal || hasPendingPhotos} onClick={() => void confirmForehead()} className="rounded bg-slate-800 px-2 py-1 text-white disabled:opacity-40">Aplicar frente revisada</button>
           </div>}
         </details>}
-        <details className="space-y-2 rounded-xl border border-slate-200 p-3 text-xs">
+        {!integration && <details className="space-y-2 rounded-xl border border-slate-200 p-3 text-xs">
           <summary className="cursor-pointer font-semibold">Apariencia de piel RGB · experimental</summary>
           <Tooltip content="Contraste, rojez y microtextura visibles; no confirma lesiones, poros individuales ni vasos internos. Usa luz blanca uniforme, sin filtros; RGB no sustituye UV o polarización."><button type="button" className="admin-focus-ring rounded border px-2 py-1">Alcance de los filtros</button></Tooltip>
           <label className="block">Área de análisis
@@ -2489,7 +2653,7 @@ export default function FaceSimLab() {
                 : `${currentSkinReview.result.channels[skinChannel].coverage * 100 < 0.01 ? '<0,01' : (currentSkinReview.result.channels[skinChannel].coverage * 100).toFixed(2)}% del área analizada resaltada; no es severidad.`}</p>}
             <button type="button" onClick={() => setSkinReview(null)} className="rounded border border-slate-300 px-2 py-1">Quitar análisis de apariencia</button>
           </>}
-        </details>
+        </details>}
         <fieldset className="space-y-2 rounded-xl border border-slate-200 p-3 text-xs">
           <legend className="px-1 font-semibold text-slate-600">Correspondencia anatómica</legend>
           <label className="flex items-center gap-2 font-semibold"><input type="checkbox" checked={showRegions} onChange={e => toggleMesh(e.target.checked)} />Mostrar mallado de zonas</label>
@@ -2771,10 +2935,10 @@ export default function FaceSimLab() {
             <span aria-hidden="true" className="h-9 w-9 animate-spin rounded-full border-2 border-gold/20 border-t-gold motion-reduce:animate-none" />
             Preparando morfología, piel y capas…
           </div>}>
-            {modelKind === 'personal' && !personal ? <p role="status" className="rounded-xl border p-4">
+            {integration?.mode === 'skin-exam' ? skinEditor : modelKind === 'personal' && !personal ? <p role="status" className="rounded-xl border p-4">
               {buildingPersonal ? 'Calculando superficie fotografiada…' : 'Calcula la superficie personal en Capturas o selecciona el modelo genérico.'}
             </p> : <FacialSimulationViewer
-              skinReview={<Suspense fallback={<p role="status">Preparando revisión de piel…</p>}>
+              skinReview={integration ? skinEditor : <Suspense fallback={<p role="status">Preparando revisión de piel…</p>}>
                 <SkinMultiViewReview sources={skinSources} surface={personal?.surface}
                   renderMask={personal ? (points, direction, selectedPoint, onSelect) => <SkinMaskPreview surface={personal.surface}
                     modelData={personal.glb} points={points} direction={direction} selectedPoint={selectedPoint} onSelect={onSelect} /> : undefined} />

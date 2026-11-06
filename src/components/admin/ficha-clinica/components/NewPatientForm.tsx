@@ -9,10 +9,16 @@ import { Dialog } from '../../../ui/Dialog';
 
 interface DuplicatePatient { id: number; first_name: string; last_name: string; identification_type: string; identification_number: string; sameUser?: boolean; }
 
-export default function NewPatientForm() {
+type NewPatientFormProps = { onCreated?: (patientId: number) => void; onCancel?: () => void };
+
+export default function NewPatientForm({ onCreated, onCancel }: NewPatientFormProps = {}) {
   const { nav } = useAdminNav();
   const { patientId } = useParams();
-  const isEditing = Boolean(patientId);
+  const isEditing = !onCreated && Boolean(patientId);
+  const openPatient = (id: number) => {
+    if (onCreated) onCreated(id);
+    else nav(`ficha-clinica/paciente/${id}`);
+  };
 
   const [formData, setFormData] = useState({
     first_name: '',
@@ -67,8 +73,8 @@ export default function NewPatientForm() {
       } else {
         throw new Error('Error cargando datos del paciente');
       }
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Error cargando datos del paciente');
     } finally {
       setLoading(false);
     }
@@ -98,7 +104,8 @@ export default function NewPatientForm() {
 
       if (response.ok) {
         const result = await response.json();
-        nav(`ficha-clinica/paciente/${result.id}`);
+        setDirty(false);
+        openPatient(result.id);
       } else if (response.status === 409) {
         const data = await response.json();
         if (data.conflict === 'same_user' || data.conflict === 'same_clinic') {
@@ -110,9 +117,9 @@ export default function NewPatientForm() {
         const errorData = await response.json().catch(() => ({ error: 'Error desconocido del servidor' }));
         throw new Error(errorData.error || `Error al ${isEditing ? 'actualizar' : 'crear'} paciente`);
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Error saving patient:', err);
-      setError(err.message || 'No se pudo guardar el paciente. Verifique los datos.');
+      setError(err instanceof Error ? err.message : 'No se pudo guardar el paciente. Verifique los datos.');
     } finally {
       setSaving(false);
     }
@@ -134,7 +141,8 @@ export default function NewPatientForm() {
       });
       if (res.ok) {
         const data = await res.json();
-        nav(`ficha-clinica/paciente/${data.patient.id}`);
+        setDirty(false);
+        openPatient(data.patient.id);
       } else {
         const err = await res.json();
         setError(err.error || 'Error al importar');
@@ -153,11 +161,7 @@ export default function NewPatientForm() {
     );
   }
 
-  return (
-    <AdminLayout 
-      title={isEditing ? "Editar Paciente" : "Nuevo Paciente"} 
-      subtitle={isEditing ? "Modificar datos del paciente" : "Registro de nuevo paciente en el sistema"}
-    >
+  const content = (
       <div className="max-w-3xl mx-auto space-y-6">
         <form onSubmit={handleSubmit} className="admin-surface space-y-6 p-5 sm:p-8">
           {error && (
@@ -193,7 +197,7 @@ export default function NewPatientForm() {
                   </div>
                   {duplicate.sameUser ? (
                     <div className="flex gap-2 pt-2">
-                      <button type="button" onClick={() => nav(`ficha-clinica/paciente/${duplicate.id}`)}
+                      <button type="button" onClick={() => openPatient(duplicate.id)}
                         className="flex-1 py-2.5 bg-[#deb887] text-white rounded-xl text-sm font-semibold hover:bg-[#c9a876] transition-colors">
                         Ir al expediente existente
                       </button>
@@ -414,6 +418,13 @@ export default function NewPatientForm() {
           </div>
 
           <div className="flex justify-end pt-6">
+            {onCancel && (
+              <button type="button" disabled={saving} onClick={() => {
+                if (!dirty || window.confirm('¿Descartar los datos del paciente que aún no se han guardado?')) onCancel();
+              }} className="admin-focus-ring min-h-11 rounded-lg px-4 text-sm text-gray-700 hover:bg-gray-100">
+                Cancelar
+              </button>
+            )}
             <button
               type="submit"
               disabled={saving}
@@ -425,6 +436,15 @@ export default function NewPatientForm() {
           </div>
         </form>
       </div>
+  );
+
+  if (onCreated) return content;
+  return (
+    <AdminLayout
+      title={isEditing ? "Editar Paciente" : "Nuevo Paciente"}
+      subtitle={isEditing ? "Modificar datos del paciente" : "Registro de nuevo paciente en el sistema"}
+    >
+      {content}
     </AdminLayout>
   );
 }

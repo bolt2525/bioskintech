@@ -34,6 +34,8 @@ interface AdminLayoutProps {
   subtitle?: string;
   showBack?: boolean;
   backPath?: string;
+  onBack?: () => void;
+  onLogout?: () => void;
   breadcrumbs?: Breadcrumb[];
   /** Menú flyout de módulos. Por defecto solo en rutas de Fichas Clínicas. */
   moduleNav?: boolean;
@@ -49,6 +51,8 @@ export default function AdminLayout({
   subtitle,
   showBack = true,
   backPath,
+  onBack,
+  onLogout,
   breadcrumbs,
   moduleNav,
 }: AdminLayoutProps) {
@@ -74,12 +78,14 @@ export default function AdminLayout({
   }, [user?.is_demo, user?.demo_expires_at]);
 
   const handleLogout = () => {
+    if (onLogout) { onLogout(); return; }
     logout();
     navigate('/admin/login');
   };
 
   const handleBack = () => {
-    if (backPath) navigate(backPath);
+    if (onBack) onBack();
+    else if (backPath) navigate(backPath);
     else navigate(-1);
   };
 

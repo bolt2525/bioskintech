@@ -9,12 +9,12 @@
  *   bioskintechapp.com/consent-signing/**  → Firma de consentimientos (público)
  *   bioskintechapp.com/medical-finance     → Gestión médica externa
  *
- * Truco: se usa `basename="/gestionestetica"` en BrowserRouter para que todos los
+ * Truco: se usa `basename="/gestionestetica"` en el router de navegador para que todos los
  * navigate('/admin/...') internos del panel funcionen sin cambio alguno.
  */
 
-import { lazy, Suspense } from 'react';
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { lazy, Suspense, useState } from 'react';
+import { BrowserRouter, Routes, Route, Navigate, createBrowserRouter, RouterProvider } from 'react-router-dom';
 import { AuthProvider } from './context/AuthContext';
 import { MasterViewProvider } from './context/MasterViewContext';
 import ErrorBoundary from './pages/ErrorBoundary';
@@ -48,6 +48,7 @@ const PublicBookingPage = lazy(() => import('./pages/PublicBookingPage'));
 const AdminInventory = lazy(() => import('./pages/AdminInventory'));
 const AdminFinance = lazy(() => import('./pages/AdminFinance'));
 const Clinical3D = lazy(() => import('./pages/Clinical3D'));
+const FacialSimulation = lazy(() => import('./pages/FacialSimulation'));
 const ExternalMedicalFinance = lazy(() => import('./pages/ExternalMedicalFinance'));
 const SkinExplorerPage = lazy(() => import('./skin-explorer/SkinExplorerPage'));
 const HairRenderLab = import.meta.env.DEV ? lazy(() => import('./pages/dev/HairRenderLab')) : null;
@@ -102,6 +103,7 @@ function AdminRoutes() {
             <Route path="inventory"   element={<AdminInventory />} />
             <Route path="finance"     element={<AdminFinance />} />
             <Route path="clinical-3d" element={<Clinical3D />} />
+            <Route path="facial-simulation" element={<FacialSimulation />} />
             <Route path="system-status" element={<AdminSystemStatus />} />
             <Route path="backup"        element={<AdminBackup />} />
             <Route path="skin-explorer" element={<SkinExplorerPage />} />
@@ -122,6 +124,7 @@ function AdminRoutes() {
           <Route path="/admin/:clinicSlug/:username/inventory"                                element={<AdminInventory />} />
           <Route path="/admin/:clinicSlug/:username/finance"                                  element={<AdminFinance />} />
           <Route path="/admin/:clinicSlug/:username/clinical-3d"                              element={<Clinical3D />} />
+          <Route path="/admin/:clinicSlug/:username/facial-simulation"                       element={<FacialSimulation />} />
           <Route path="/admin/:clinicSlug/:username/system-status"                            element={<AdminSystemStatus />} />
           <Route path="/admin/:clinicSlug/:username/backup"                                   element={<AdminBackup />} />
           <Route path="/admin/:clinicSlug/:username/skin-explorer"                            element={<SkinExplorerPage />} />
@@ -141,6 +144,7 @@ function AdminRoutes() {
           <Route path="/admin/inventory"   element={<AdminInventory />} />
           <Route path="/admin/finance"     element={<AdminFinance />} />
           <Route path="/admin/clinical-3d" element={<Clinical3D />} />
+          <Route path="/admin/facial-simulation" element={<FacialSimulation />} />
           <Route path="/admin/system-status" element={<AdminSystemStatus />} />
           <Route path="/admin/backup"        element={<AdminBackup />} />
           <Route path="/admin/skin-explorer" element={<SkinExplorerPage />} />
@@ -157,6 +161,13 @@ function AdminRoutes() {
 // ─────────────────────────────────────────────────────────────────────────────
 // App principal
 // ─────────────────────────────────────────────────────────────────────────────
+
+function AdminRouter() {
+  const [router] = useState(() => createBrowserRouter(
+    [{ path: '*', element: <AdminRoutes /> }], { basename: '/gestionestetica' },
+  ));
+  return <RouterProvider router={router} />;
+}
 
 export default function App() {
   const path = window.location.pathname;
@@ -179,14 +190,12 @@ export default function App() {
     return null;
   }
 
-  // Panel admin → BrowserRouter con basename /gestionestetica
+  // El data router conserva URLs e historial y permite bloquear salidas con borradores.
   // Todos los navigate('/admin/...') internos funcionan sin cambio alguno
   if (path.startsWith('/gestionestetica')) {
     return (
       <ErrorBoundary>
-        <BrowserRouter basename="/gestionestetica">
-          <AdminRoutes />
-        </BrowserRouter>
+        <AdminRouter />
       </ErrorBoundary>
     );
   }

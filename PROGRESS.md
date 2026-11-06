@@ -1,5 +1,6 @@
 # Progreso de BioSkinTech App
 
+- ✅ 2026-11-05 Examen físico: traslado guiado de marcaciones compatibles tras generar máscara, preservación legacy y modos genérico/máscara/dividido; antecedentes históricos requieren confirmación explícita.
 - ✅ 2026-11-05 Gemini: permiso individual explícito.
 - `skin_visual_ai` exige opt-in de clínica y usuario; Master Admin dispone de control independiente con confirmación del servidor. Pruebas: tres casos de permisos y navegador 1440/390 verifican denegación predeterminada, errores sin falso éxito, revocación y descarte de respuestas de otro usuario; cero red externa.
 - ✅ 2026-11-05 Gemini: revisión fotográfica opcional.

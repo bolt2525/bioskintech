@@ -18,7 +18,7 @@ function reset() {
       clinic_id: CLINIC, effective_clinic_id: CLINIC, clinical_records_enabled: true,
       skin_visual_ai_enabled: false },
     record: { id: 7, clinic_id: CLINIC, patient_id: 3, created_by_user_id: 7 },
-    exams: [], photos: [{ id: 10, record_id: 7, clinic_id: CLINIC, r2_key: PHOTO_KEY }],
+    exams: [], simulations: [], photos: [{ id: 10, record_id: 7, clinic_id: CLINIC, r2_key: PHOTO_KEY }],
     assigned: false, writes: 0, statements: [], reviewSchema: true, failWrite: false,
   };
 }
@@ -48,6 +48,15 @@ async function query(statement, params = []) {
       assert.match(text, /cp\.record_id = \$1 AND cp\.clinic_id = \$2/);
       assert.match(text, /FOR KEY SHARE OF cp/);
       const review = JSON.parse(params[Number(reviewIndex[1]) - 1]);
+      if (text.includes('FROM facial_simulations fs')) {
+        const index = Number(text.match(/fs.id = \$(\d+)/)[1]) - 1;
+        const moduleIndex = Number(text.match(/fs.scope = 'physical-exam' OR \$(\d+)::boolean/)[1]) - 1;
+        const session = state.simulations.find(row => row.id === params[index] &&
+          row.record_id === params[0] && row.clinic_id === params[1] &&
+          (row.scope === 'physical-exam' || params[moduleIndex] === true));
+        if (!session || review.annotations.some(mark =>
+          !session.photos.some(photo => photo.id === mark.photo.id && photo.r2Key === mark.photo.r2Key))) return rows([]);
+      }
       for (const mark of review.annotations) {
         if (!state.photos.some(p => p.id === mark.photo.id && p.r2_key === mark.photo.r2Key &&
           p.record_id === params[0] && p.clinic_id === params[1])) return rows([]);
@@ -201,6 +210,80 @@ test('legacy update omitting review preserves it; explicit version 1 empty list 
   await direct({ id, skin_visual_review: { version: 1, annotations: [] } });
   assert.deepEqual(state.exams[0].skin_visual_review, { version: 1, annotations: [] });
   assert.deepEqual(state.exams[0].face_map_data, legacy);
+});
+
+test('v2 Gemini keeps original bounded provenance but supports stable identity and free reviewed label', async () => {
+  reset();
+  const payload = body();
+  payload.skin_visual_review.version = 2;
+  const mark = payload.skin_visual_review.annotations[0];
+  mark.reviewVersion = 2;
+  mark.id = 'stable-lesion:one';
+  mark.label = 'Etiqueta libre revisada por clínico';
+  mark.category = 'telangiectasias';
+  assert.equal((await call('savePhysicalExam', payload)).code, 200);
+  assert.deepEqual(state.exams[0].skin_visual_review, payload.skin_visual_review);
+  const unsafe = structuredClone(payload);
+  unsafe.skin_visual_review.annotations[0].source.proposal.category = 'nevo-displasico';
+  assert.equal((await call('savePhysicalExam', unsafe)).code, 400);
+});
+
+test('v2 edited provenance roundtrips manual or complete Gemini original; one level only and v1 unchanged', async () => {
+  for (const original of [{ provider: 'manual' }, review().annotations[0].source]) {
+    reset();
+    const payload = body(), r = payload.skin_visual_review;
+    r.version = 2; r.annotations[0].reviewVersion = 2; r.annotations[0].id = 'stable-edited:one';
+    r.annotations[0].source = { provider: 'edited', original: structuredClone(original) };
+    const saved = await call('savePhysicalExam', payload);
+    assert.equal(saved.code, 200);
+    const reopened = await call('getRecordData', {}, { recordId: '7' });
+    assert.deepEqual(reopened.body.physicalExams[0].skin_visual_review, r);
+    assert.deepEqual(r.annotations[0].source.original, original, 'original must not be rewritten');
+    for (const source of [
+      { provider: 'edited', original: { provider: 'edited', original } },
+      { provider: 'edited', original, extra: true },
+      { provider: 'edited' },
+      { provider: 'edited', original: { provider: 'manual', extra: true } },
+      { provider: 'edited', original: { provider: 'google-gemini' } },
+      { provider: 'edited', original: null },
+    ]) {
+      const bad = structuredClone(payload); bad.skin_visual_review.annotations[0].source = source;
+      assert.equal((await call('savePhysicalExam', bad)).code, 400);
+    }
+    const v1 = body();
+    v1.skin_visual_review.annotations[0].source = { provider: 'edited', original };
+    assert.equal((await call('savePhysicalExam', v1)).code, 400);
+  }
+});
+
+test('v2 simulationId binds the same clinic/record/photos; manual physical-exam works with module disabled', async () => {
+  reset();
+  const payload = body();
+  const r = payload.skin_visual_review;
+  r.version = 2; r.simulationId = 12;
+  r.annotations[0].reviewVersion = 2;
+  r.annotations[0].source = { provider: 'manual' };
+  r.annotations[0].id = 'stable-manual-mark';
+  state.simulations = [{ id: 12, clinic_id: CLINIC, record_id: 7, scope: 'physical-exam',
+    photos: [{ id: 10, r2Key: PHOTO_KEY }] }];
+  assert.equal((await call('savePhysicalExam', payload)).code, 200);
+  assert.equal(state.exams[0].skin_visual_review.simulationId, 12);
+  assert.equal(state.auth.facial_simulation_enabled, undefined);
+  for (const change of [
+    () => { state.simulations[0].clinic_id = OTHER; },
+    () => { state.simulations[0].record_id = 8; },
+    () => { state.simulations[0].photos = []; },
+    () => { state.simulations[0].scope = 'facial-simulation'; },
+  ]) {
+    const saved = structuredClone(state.simulations);
+    change();
+    assert.equal((await call('savePhysicalExam', payload)).code, 403);
+    state.simulations = saved;
+  }
+  for (const simulationId of ['12', -1, 0, null]) {
+    const bad = structuredClone(payload); bad.skin_visual_review.simulationId = simulationId;
+    assert.equal((await call('savePhysicalExam', bad)).code, 400);
+  }
 });
 
 test('HIGH mass-assignment regression: uppercase review/record keys and protected/unknown keys => 400, intact exam, ZERO writes', async () => {
@@ -377,17 +460,13 @@ test('failed save is atomic; exam deletion removes review with its row, not the 
   assert.equal(state.photos.length, 1);
 });
 
-test('initializer and standalone migration add JSONB idempotently; list/history/print consume complete reviews', () => {
+test('initializer and standalone migration add review JSONB idempotently without optional simulation DDL', () => {
   const schema = readFileSync(new URL('../lib/neon-clinical-db.js', import.meta.url), 'utf8');
   assert.match(schema, /skin_visual_review\s+JSONB/);
   assert.match(schema, /ALTER TABLE physical_exams\s+ADD COLUMN IF NOT EXISTS skin_visual_review JSONB/);
   const migration = readFileSync(new URL('../scripts/skin-visual-review-schema.sql', import.meta.url), 'utf8');
   assert.match(migration, /BEGIN;[\s\S]+ADD COLUMN IF NOT EXISTS skin_visual_review JSONB;[\s\S]+COMMIT;/);
-  const tab = readFileSync(new URL('../src/components/admin/ficha-clinica/components/tabs/PhysicalExamTab.tsx', import.meta.url), 'utf8');
-  const print = readFileSync(new URL('../src/components/admin/ficha-clinica/components/PrintModal.tsx', import.meta.url), 'utf8');
-  assert.match(tab, /parseSkinReview\(exam\.skin_visual_review\)/);
-  assert.match(tab, /parseSkinReview\(e\.skin_visual_review\)/);
-  assert.match(print, /parseSkinReview\(ex\.skin_visual_review\)/);
+  assert.doesNotMatch(schema, /facial_simulations|clinical_simulation_requests|facial-simulation-schema/);
 });
 
 test('runner: direct/pooler logical Neon aliases accepted, owner canonical wins, ONE client + transaction for BOTH DDL', async () => {

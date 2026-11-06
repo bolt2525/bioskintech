@@ -107,7 +107,8 @@ const Clinical = () => null;
 function app() {
   let cursor = 0, refCursor = 0, memoCursor = 0, tree;
   const states = [], refs = [], memos = [], cache = new Map();
-  const names = [...readFileSync(path.join(root, 'FaceSimLab.tsx'), 'utf8').matchAll(/const \[(\w+),[^\]]+\] = useState/g)].map(m => m[1]);
+  const componentSource = readFileSync(path.join(root, 'FaceSimLab.tsx'), 'utf8').split('export default function FaceSimLab')[1];
+  const names = [...componentSource.matchAll(/const \[(\w+),[^\]]+\] = useState/g)].map(m => m[1]);
   function load(file) {
     if (cache.has(file)) return cache.get(file);
     if (file.endsWith('.json')) return JSON.parse(readFileSync(file, 'utf8'));

@@ -1,12 +1,12 @@
-
+import lesionCatalog from './skin-lesion-catalog.json' with { type: 'json' };
 export const CLINICAL_FIELDS = {
   skin_type: {
     label: "Tipo de piel",
-    options: ["", "Sensible", "Seca", "Normal", "Grasa", "Mixta"]
+    options: ["", "Sensible", "Seca", "Normal", "Grasa", "Mixta", "No determinado"]
   },
   phototype: {
     label: "Fototipo (Fitzpatrick)",
-    options: ["", "I", "II", "III", "IV", "V", "VI"]
+    options: ["", "I", "II", "III", "IV", "V", "VI", "No determinado"]
   },
   glogau_scale: {
     label: "Glogau",
@@ -42,31 +42,7 @@ export const CLINICAL_FIELDS = {
   }
 };
 
-export const LESION_CATALOG = [
-  // Lesiones pigmentarias
-  "Melasma", "Lentigo solar", "Efélides", "Queratosis seborreica", "Nevo melanocítico",
-  "Nevo displásico", "Léntigo actínico", "Poiquilodermia", "Hiperpigmentación postinflamatoria",
-  
-  // Lesiones vasculares
-  "Telangiectasias", "Arañas vasculares", "Rosácea", "Eritema", "Cuperosis",
-  "Hemangioma", "Angioma rubí", "Lago venoso", "Varicosidades",
-  
-  // Lesiones inflamatorias
-  "Acné comedónico", "Acné inflamatorio", "Acné quístico", "Pápulas", "Pústulas",
-  "Dermatitis seborreica", "Dermatitis atópica", "Foliculitis", "Queratosis pilaris",
-  
-  // Signos de envejecimiento
-  "Arrugas dinámicas", "Arrugas estáticas", "Surcos nasogenianos", "Líneas periorbitarias",
-  "Código de barras", "Flacidez facial", "Pérdida de volumen", "Ptosis palpebral",
-  
-  // Textura y calidad de piel
-  "Poros dilatados", "Comedones", "Puntos negros", "Milia", "Rugosidad",
-  "Xerosis", "Descamación", "Hiperqueratosis", "Atrofia cutánea",
-  
-  // Cicatrices
-  "Cicatriz hipertrófica", "Queloides", "Cicatrices atróficas", "Cicatrices de acné",
-  "Estrías", "Cicatrices quirúrgicas"
-].sort();
+export const LESION_CATALOG = Object.values(lesionCatalog).sort();
 
 export interface ParameterTooltipItem {
   label: string;

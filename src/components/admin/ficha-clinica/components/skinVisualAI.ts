@@ -1,7 +1,6 @@
-export const SKIN_CATEGORIES = {
-  acne: 'Acné', spot: 'Mancha', nevus: 'Nevo', scar: 'Cicatriz',
-  melasma: 'Melasma', 'fine-wrinkle': 'Arruga fina', 'coarse-wrinkle': 'Arruga gruesa',
-} as const;
+import lesionCatalog from '../../../../data/skin-lesion-catalog.json' with { type: 'json' };
+
+export const SKIN_CATEGORIES = lesionCatalog;
 export type SkinCategory = keyof typeof SKIN_CATEGORIES;
 export interface NormalizedBox { x: number; y: number; width: number; height: number }
 export interface SkinProposal {
@@ -51,7 +50,8 @@ export function validBox(value: unknown): value is NormalizedBox {
 }
 function validProposal(value: unknown): value is SkinProposal {
   return object(value) && typeof value.id === 'string' && typeof value.category === 'string' &&
-    Object.prototype.hasOwnProperty.call(SKIN_CATEGORIES, value.category) && typeof value.label === 'string' &&
+    Object.prototype.hasOwnProperty.call(SKIN_CATEGORIES, value.category) &&
+    !['other', 'poros-dilatados', 'nevo-displasico'].includes(value.category) && typeof value.label === 'string' &&
     value.label.trim().length > 0 && value.label.length <= 300 && typeof value.note === 'string' &&
     value.note.length <= 3000 && validBox(value.box);
 }

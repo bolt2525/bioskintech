@@ -11,6 +11,9 @@ import { buildFinanceCsv } from '../lib/finance-csv.js';
 import { normalizeEcuadorIdentification, hashConsentEvidence, hashSigningCode, hashConsentSession, isValidSignatureDataUrl, maskEmail, buildConsentGmailRaw } from '../lib/consent-signing.js';
 import { hasProtectedTreatmentFinanceChanges, validateTreatmentFinanceInput } from '../lib/modules/fichas-clinicas/treatment-finance-lock.js';
 import { savePhysicalExam, PhysicalExamError } from '../lib/modules/fichas-clinicas/physical-exam.js';
+import {
+  saveFacialSimulation, getFacialSimulation, listFacialSimulations, saveSimulationExam, MAX_SIMULATION_BODY_BYTES,
+} from '../lib/modules/fichas-clinicas/facial-simulation.js';
 
 console.log('✅ [API] records.js loaded');
 
@@ -673,6 +676,7 @@ function buildSu(auth) {
     finance_scope:       auth.finance_scope || 'all',
     finance_enabled:     auth.finance_enabled === true,
     clinical_records_enabled: auth.clinical_records_enabled === true,
+    facial_simulation_enabled: auth.facial_simulation_enabled === true,
     inventory_enabled:   auth.inventory_enabled === true,
     inventory_scope:     auth.inventory_scope || 'all',
     calendar_scope:      auth.calendar_scope || 'own',
@@ -1146,6 +1150,12 @@ export default async function handler(req, res) {
     if (!action && body.action) {
       action = body.action;
     }
+    if (['saveFacialSimulation', 'saveSimulationExam'].includes(action)) {
+      const length = req.headers?.['content-length'];
+      if ((length !== undefined && (!/^\d+$/.test(String(length)) || Number(length) > MAX_SIMULATION_BODY_BYTES)) ||
+          Buffer.byteLength(JSON.stringify(body)) > MAX_SIMULATION_BODY_BYTES)
+        return res.status(413).json({ error: 'La simulación supera el límite de 4 MB; reduce el estado antes de guardar.' });
+    }
 
     // ── Auth ──────────────────────────────────────────────────────────────
     // ponytail: whitelist mínima pública; cualquier acción nueva requiere auth por defecto
@@ -1280,6 +1290,10 @@ export default async function handler(req, res) {
         getRecordData: req.query.recordId,
         listConsultations: req.query.record_id,
         createConsultation: body.record_id,
+        saveFacialSimulation: body.record_id,
+        getFacialSimulation: req.query.record_id,
+        listFacialSimulations: req.query.record_id,
+        saveSimulationExam: body.record_id,
         listHistorySnapshots: req.query.record_id,
         saveConsultation: body.recordId,
         saveHistory: body.record_id,
@@ -2994,6 +3008,28 @@ export default async function handler(req, res) {
           );
         } catch (snapErr) { console.warn('Snapshot save warning:', snapErr.message); }
         return res.status(200).json({ success: true });
+      }
+
+      case 'saveFacialSimulation':
+      case 'getFacialSimulation':
+      case 'listFacialSimulations':
+      case 'saveSimulationExam': {
+        res.setHeader('Cache-Control', 'private, no-store');
+        const writing = ['saveFacialSimulation', 'saveSimulationExam'].includes(action);
+        if (req.method !== (writing ? 'POST' : 'GET'))
+          return res.status(405).json({ error: 'Método no permitido.' });
+        try {
+          const handlers = { saveFacialSimulation, getFacialSimulation, listFacialSimulations, saveSimulationExam };
+          const result = await handlers[action](client, {
+            body, query: req.query, clinicId: effectiveClinicId, sessionUser: su, isOwnedPhotoKey,
+          });
+          return res.status(200).json(result);
+        } catch (error) {
+          if (error instanceof PhysicalExamError)
+            return res.status(error.status).json({ error: error.message });
+          return res.status(['42P01', '42703'].includes(error?.code) ? 503 : 500)
+            .json({ error: 'No se pudo procesar la simulación. Verifica disponibilidad y configuración.' });
+        }
       }
 
       case 'savePhysicalExam': {

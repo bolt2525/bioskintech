@@ -117,7 +117,8 @@ const find = (tree, fn) => !tree || typeof tree !== 'object' ? [] : Array.isArra
   ? tree.flatMap(t => find(t, fn)) : [...(fn(tree) ? [tree] : []), ...find(tree.props?.children, fn)];
 function app() {
   const source = readFileSync(path.join(root, 'FaceSimLab.tsx'), 'utf8');
-  const names = [...source.matchAll(/const \[(\w+),[^\]]+\] = useState/g)].map(m => m[1]);
+  const componentSource = source.slice(source.indexOf('export default function FaceSimLab'));
+  const names = [...componentSource.matchAll(/const \[(\w+),[^\]]+\] = useState/g)].map(m => m[1]);
   let cursor = 0, refCursor = 0, tree;
   const states = [], refs = [];
   const loadUI = loader({ ...React, useEffect() {}, useMemo: fn => fn(), useCallback: fn => fn, useId: () => 'test-id',

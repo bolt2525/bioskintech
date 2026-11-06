@@ -234,7 +234,8 @@ const text = tree => Array.isArray(tree) ? tree.map(text).join('') : tree && typ
 function app() {
   const states = [], refs = [], memos = [];
   let cursor = 0, refCursor = 0, memoCursor = 0, tree;
-  const names = [...readFileSync(path.join(root, 'FaceSimLab.tsx'), 'utf8').matchAll(/const \[(\w+),[^\]]+\] = useState/g)].map(m => m[1]);
+  const componentSource = readFileSync(path.join(root, 'FaceSimLab.tsx'), 'utf8').split('export default function FaceSimLab')[1];
+  const names = [...componentSource.matchAll(/const \[(\w+),[^\]]+\] = useState/g)].map(m => m[1]);
   const Clinical = () => null;
   const appLoad = loader({
     react: { ...React, useEffect() {}, useCallback: fn => fn, useId: () => 'premium-test',

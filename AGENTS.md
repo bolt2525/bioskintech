@@ -93,6 +93,7 @@ Los agentes especializados deben aplicar estas combinaciones:
 - **Auth multi-tenant**: `master_admin` → `clinic_admin` → `clinic_user`. Siempre pasar por `lib/admin-auth.js`.
 - **Design tokens**: Colores y roles en `src/constants/theme.ts`. No hardcodear `#deb887` en nuevos archivos.
 - **Features**: Agregar nuevos módulos a `src/constants/features.ts` y a `ALL_FEATURES` en `api/admin-auth.js`.
+- **Simulación facial**: `facial_simulation` deshabilitado por defecto, independiente de `skin_visual_ai`. Examen físico comparte el editor manual con `clinical_records` y mantiene legacy. No activar IA ni ejecutar la migración opcional sin autorización.
 - **Gemini visual opcional**: `skin_visual_ai` exige opt-in de clínica y permiso individual explícito del Master Admin; ausencia significa denegado. El interruptor global permanece apagado por defecto. Sin llamadas reales, Billing ni fotos de pacientes durante QA. USD 5/usuario/mes y tope global se controlan en servidor; no confundir habilitación técnica con elegibilidad contractual.
 - **Vercel Functions**: Límite 12 según el plan documentado. El repositorio contiene 11 archivos de función en `api/`; confirmar el límite y funciones efectivas en el proyecto Vercel antes de crear otra.
 - **Rutas públicas**: El panel es el núcleo administrativo, pero también existen landing, reserva pública, firma de consentimientos y gestión médica externa; no añadir páginas públicas fuera de ese alcance sin documentarlas.
