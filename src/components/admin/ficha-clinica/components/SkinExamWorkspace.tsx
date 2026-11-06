@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import recordsFetch from '../../../../utils/recordsFetch';
 import { SimulationPhotoLibrary } from './SimulationPhotoLibrary';
 import { ensureSimulationPhotos, loadSimulationPhotos } from './simulationPhotos';
@@ -50,11 +50,12 @@ async function json(response: Response) {
   return value;
 }
 
-export default function SkinExamWorkspace({ recordId, context, review, onPrepared, onDirty, legacyMigration, onCaptureReady }: {
+export default function SkinExamWorkspace({ recordId, context, review, onPrepared, onDirty, legacyMigration, onCaptureReady, referenceView, viewMode, aiAllowed }: {
   recordId: number; context: SkinContext; review: Review;
   onPrepared: (review: PersistedSkinReview) => void; onDirty: () => void;
   legacyMigration?: FaceSimIntegration['legacyMigration'];
   onCaptureReady?: (ready: boolean) => void;
+  referenceView?: ReactNode; viewMode?: 'mask' | 'split'; aiAllowed?: boolean;
 }) {
   const prior = useMemo(() => {
     try { return { refs: priorReferences(review), error: reviewIntegrity(review) }; }
@@ -195,6 +196,7 @@ export default function SkinExamWorkspace({ recordId, context, review, onPrepare
     <fieldset disabled={busy || !ready} aria-busy={busy || !ready} className={busy || !ready ? 'pointer-events-none opacity-60' : ''}>
     <Suspense fallback={<p role="status">Abriendo el editor…</p>}>
       <FaceSimLab integration={{ mode: 'skin-exam', recordId, context, initialMarks, onController, onDirty: changed, onMarksChange: changed,
+        referenceView, viewMode, aiAllowed,
         legacyMigration, onCaptureReady, photoLibrary: <SimulationPhotoLibrary recordId={recordId} selection="multiple"
           onSelect={(photo, file) => importLibraryPhotos([{ photo, file }])} onSelectMany={importLibraryPhotos} /> }} />
     </Suspense>

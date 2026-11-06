@@ -20,6 +20,29 @@ export interface ReviewedCapture { id: string; landmarks: Landmark[] }
 const action = 'admin-focus-ring inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm font-medium text-gray-800 hover:bg-gray-50 disabled:opacity-50';
 const primary = 'admin-focus-ring inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-gold px-4 py-2 text-sm font-semibold text-gray-900 hover:bg-gold-dark disabled:opacity-50';
 
+function PhotoGuide() {
+  return <section aria-label="Guía de fotografías" className="rounded-2xl bg-slate-50 p-4">
+    <div className="mb-3"><h3 className="font-semibold">Empieza con una foto de frente</h3>
+      <p className="text-sm text-gray-600">Añade ambos ángulos de 45° para ver mejor los laterales. Son opcionales.</p></div>
+    <div className="grid grid-cols-3 gap-2">
+      {(['Oblicua izquierda', 'Frontal', 'Oblicua derecha'] as const).map((label, index) => <div key={label}
+        className={`rounded-xl border p-2 text-center ${index === 1 ? 'border-gold bg-gold-light/40' : 'border-gray-200 bg-white'}`}>
+        <svg viewBox="0 0 100 100" className="mx-auto h-20 w-20 max-w-full" aria-hidden="true">
+          <path d="M22 94c1-21 55-21 56 0M37 68v12m26-12v12" fill="none" stroke="currentColor" strokeWidth="2" className="text-slate-400" />
+          <g transform={index === 2 ? 'translate(100 0) scale(-1 1)' : undefined}>
+            <path d={index === 1 ? 'M28 34c0-32 44-32 44 0v15c0 34-44 34-44 0Z' : 'M33 20q26-16 36 11l-2 12 8 9-10 5q-1 23-19 18-21-7-19-33Z'}
+              fill="currentColor" fillOpacity=".15" stroke="currentColor" strokeWidth="2" className="text-gold-ink" />
+            <path d={index === 1 ? 'M37 39h5m16 0h5M50 42v11h4m-12 9q8 4 16 0' : 'M52 39h6m-9 22q6 3 12 0'}
+              fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+          </g>
+        </svg>
+        <p className="text-xs font-semibold">{label}</p><p className="mt-1 text-[11px] text-gray-500">{index === 1 ? 'Necesaria' : 'Opcional · 45°'}</p>
+      </div>)}
+    </div>
+    <p className="mt-3 text-xs text-gray-500">Buena luz, rostro despejado y sin filtros. ¿No tienes fotos ahora? Puedes volver después; tus marcas se conservan.</p>
+  </section>;
+}
+
 function CaptureCard({ capture, onChange, disabled }: { capture: ClinicalCapture;
   onChange: (value: ReviewedCapture | null) => void; disabled: boolean }) {
   const preview = useRef<HTMLCanvasElement>(null);
@@ -118,17 +141,14 @@ export default function ClinicalCaptureFlow({ open, onClose, photos, busy, statu
         {!candidate && <>
           <div className="flex flex-wrap gap-2" role="group" aria-label="Origen de las fotos">
             <label className={`${action} cursor-pointer focus-within:ring-2 focus-within:ring-gold-ink ${busy || blocked ? 'pointer-events-none opacity-50' : ''}`}>
-              <Upload size={17} aria-hidden="true" /> Subir fotos
+              <Upload size={17} aria-hidden="true" /> Subir una o varias fotos
               <input type="file" accept="image/*" multiple className="sr-only" disabled={busy || blocked}
                 onChange={e => { setSource('upload'); onFiles(Array.from(e.target.files ?? [])); e.target.value = ''; }} />
             </label>
             {library && <button type="button" className={action} aria-pressed={source === 'library'} disabled={busy || blocked}
               onClick={() => setSource(value => value === 'library' ? 'upload' : 'library')}><Images size={17} aria-hidden="true" /> Fotos del expediente</button>}
           </div>
-          {!photos.length && <div className="rounded-2xl border border-dashed border-gray-200 bg-gray-50 px-5 py-8 text-center">
-            <Images size={30} className="mx-auto mb-3 text-gray-400" aria-hidden="true" />
-            <p className="font-medium">Una frontal es suficiente para empezar</p><p className="mt-1 text-sm text-gray-500">Añade dos oblicuas si las tienes. Hasta 3 fotos por carga.</p>
-          </div>}
+          {!photos.length && <PhotoGuide />}
           {source === 'library' && library}
           {!!photos.length && <>
             <p className="text-sm text-gray-600">{photos.length} foto(s) · revisa los bordes sugeridos y desmarca las que no quieras usar.</p>
@@ -157,6 +177,7 @@ export default function ClinicalCaptureFlow({ open, onClose, photos, busy, statu
       <footer className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-t border-gray-100 bg-gray-50 px-5 py-4">
         <p className="max-w-md text-xs text-gray-500">{candidate ? 'Las marcas originales se conservan.' : 'Al confirmar verificas que las fotos son de la misma persona y los bordes corresponden a piel visible.'}</p>
         <div className="flex flex-wrap gap-2">
+        <button type="button" className={action} disabled={busy} onClick={onClose}>{photos.length || candidate ? 'Cancelar' : 'Ahora no'}</button>
         {!candidate && !!photos.length && <button type="button" className={action} disabled={busy} onClick={onClose}>Continuar solo en foto</button>}
         <button type="button" className={primary} disabled={busy || (!candidate && (!selected.length || blocked))}
           onClick={() => candidate ? onAccept() : onConfirm(selected)}><Check size={17} aria-hidden="true" />

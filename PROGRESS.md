@@ -1,5 +1,8 @@
 # Progreso de BioSkinTech App
 
+- ✅ 2026-11-06 Mesa clínica visual: comparación alineada, revisión de traslado con borrador, marcas contextuales, parámetros en modal y guía SVG de fotos cancelable. Sin avisos IA para usuarios no habilitados.
+- Selector de lesión dentro del visor; carga de fotos individual o por lote. QA: 35 pruebas Node, cinco recorridos sintéticos de navegador y build aprobados; comparación con WebGL real, cancelación/reubicación, evidencia de recorte y ausencia de llamadas IA sin permiso verificadas. TypeScript mantiene 12 errores previos; lint sin errores, dos advertencias previas.
+- Capturas desktop/móvil revisadas con datos sintéticos; sin pacientes, proveedor IA, Neon ni R2 reales. Skills: `building-components`, `vercel-react-best-practices`, `vercel-composition-patterns`, `web-design-guidelines`, `testing-validation`, `agent-browser`.
 - ✅ 2026-11-06 Visor anatómico: selección visible, máscara prioritaria, fotos desplegables con zoom y zonas compartidas. Migración corregida sin eliminar marcas originales.
 - QA: 35 pruebas Node y cuatro recorridos sintéticos desktop/móvil aprobados, incluido raycast WebGL foto↔máscara y coordenadas bajo zoom. Build aprobado; lint sin errores (dos advertencias previas), TypeScript conserva 12 errores previos. Sin IA real, fotos clínicas ni cambios de infraestructura.
 - Skills: `building-components`, `vercel-react-best-practices`, `vercel-composition-patterns`, `web-design-guidelines`, `testing-validation`, `agent-browser`.

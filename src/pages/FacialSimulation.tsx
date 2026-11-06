@@ -264,7 +264,7 @@ export default function FacialSimulation() {
         {cursor && <button type="button" className={button} disabled={!!busy} onClick={() => void listHistory(true)}>Cargar más</button>}
       </section>}
       <fieldset disabled={!!busy} aria-busy={!!busy} className={busy ? 'pointer-events-none opacity-60' : ''}>
-        <FaceSimLab integration={{ mode: 'simulation', recordId: record?.id, context: { skinType, phototype, hydration }, onController, onDirty }} />
+        <FaceSimLab integration={{ mode: 'simulation', recordId: record?.id, context: { skinType, phototype, hydration }, aiAllowed: hasFeature('skin_visual_ai'), onController, onDirty }} />
       </fieldset>
     </div>
     <SimulationPatientDialog open={patientDialog} onClose={() => { setPatientDialog(false); setPendingSave(null); leaveAfterSave.current = false; }}

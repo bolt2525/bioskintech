@@ -43,6 +43,8 @@ try {
         confirmed:false,canvas,original:blob}));
       function App(){
         const [marks,setMarks]=React.useState([]);
+        const [allow,setAllow]=React.useState(true);
+        window.setAssistanceAllowed=setAllow;
         window.marks=marks;
         window.roundtrip=()=>{
           const refs={frontal:{id:1,r2Key:'clinics/fixture/records/12/photos/1.png'},
@@ -51,7 +53,7 @@ try {
           setMarks(fromPersistedSkinReview(JSON.parse(JSON.stringify(persisted)),refs));
           return persisted;
         };
-        return React.createElement(Editor,{sources,value:marks,onChange:setMarks,context:{}});
+        return React.createElement(Editor,{sources,value:marks,onChange:setMarks,context:{},aiAllowed:allow});
       }
       ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(App));
     </script>`;
@@ -60,12 +62,13 @@ try {
       .replace(/<script[^>]+src="\/src\/main\.tsx(?:\?[^"]*)?"[^>]*><\/script>/, script) });
   });
   await page.goto(`${origin}/__skin_editor_fixture__`);
-  await page.getByText(/IA no disponible/).waitFor();
+  await page.getByRole('button', { name: 'Añadir marca en el centro', exact: true }).waitFor();
   assert.equal(await page.getByRole('button', { name: 'Buscar asistido', exact: true }).count(), 0);
   await page.getByRole('button', { name: 'Añadir marca en el centro', exact: true }).click();
   await page.getByRole('button', { name: 'Validar región', exact: true }).click();
   const identity = await page.evaluate(() => window.marks[0].id);
   await page.getByRole('button', { name: 'Seleccionar Lesión, validada', exact: true }).click();
+  await page.getByRole('button', { name: 'Cerrar', exact: true }).click();
   await page.getByRole('button', { name: /Oblicua.*sin confirmar/ }).click();
   await page.getByText(/no tiene correspondencia fiable/).waitFor();
   await page.getByRole('button', { name: 'Vincular observación a la región seleccionada', exact: true }).click();
@@ -105,6 +108,7 @@ try {
   await page.getByRole('button', { name: 'Validar grupo seleccionado', exact: true }).click();
   assert.deepEqual(await page.evaluate(() => window.marks.map(m => m.status)), ['validated', 'pending']);
   await page.getByRole('button', { name: 'Descartar pendientes del grupo', exact: true }).click();
+  await page.getByRole('button', { name: /Uno.*Confirmada/ }).click();
   await page.getByLabel('Lesión o descripción', { exact: true }).fill('Descripción libre revisada');
   await page.getByRole('button', { name: 'Validar región', exact: true }).click();
   const persisted = await page.evaluate(() => window.roundtrip());
@@ -112,6 +116,26 @@ try {
   assert.equal(persisted.annotations[0].source.provider, 'edited');
   assert.equal(persisted.annotations[0].crop.sourceWidth, 1200);
   assert.equal(persisted.annotations[0].crop.sourceHeight, 900);
+  const originalCrop=persisted.annotations[0].crop;
+  await page.getByRole('button',{name:/Descripción libre revisada.*Confirmada/}).click();
+  await page.getByRole('button',{name:'Reubicar marca',exact:true}).click();
+  await page.getByRole('button',{name:/Oblicua.*sin confirmar/}).click();
+  const photoTarget=page.getByRole('button',{name:/^Añadir marca en la foto/});
+  await photoTarget.click({position:{x:50,y:50}});
+  await page.getByText('Reubica esta marca desde su foto original para conservar la evidencia del análisis.',{exact:true}).waitFor();
+  assert.equal(await page.evaluate(()=>window.marks.length),1);
+  await page.getByRole('button',{name:/Frontal.*sin confirmar/}).click();
+  await photoTarget.click({position:{x:70,y:70}});
+  await page.getByRole('button',{name:/Descripción libre revisada.*Por revisar/}).click();
+  await page.getByRole('button',{name:'Validar región',exact:true}).click();
+  const moved=await page.evaluate(()=>window.roundtrip());
+  assert.deepEqual(moved.annotations[0].crop,originalCrop,'Reubicar conserva evidencia del recorte original');
+  await page.getByRole('button',{name:'Buscar asistido',exact:true}).click();
+  await page.evaluate(()=>window.setAssistanceAllowed(false));
+  await page.waitForFunction(()=>![...document.querySelectorAll('button')].some(button=>button.textContent==='Buscar asistido'));
+  await page.getByRole('button',{name:'Añadir marca en el centro',exact:true}).click();
+  assert.equal(await page.evaluate(()=>window.marks.length),2,'Revocar asistencia devuelve la interacción al marcado manual');
+  assert.equal(sent.length,1,'Revocar no permite más análisis');
   assert.deepEqual(errors, []); assert.deepEqual(external, []);
   console.log(JSON.stringify({ passed: true, viewports: [1440, 390], syntheticAnalyses: sent.length, sameIdentityMultiview: true }));
 } finally { await browser.close(); }

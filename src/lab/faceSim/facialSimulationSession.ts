@@ -75,6 +75,9 @@ export interface FaceSimIntegration {
   legacyMigration?: { examId: number; marks: readonly Mark[] };
   photoLibrary?: ReactNode;
   onCaptureReady?: (ready: boolean) => void;
+  referenceView?: ReactNode;
+  viewMode?: 'mask' | 'split';
+  aiAllowed?: boolean;
 }
 
 export function storeSurface(surface: PersonalSurface | EstimatedHeadSurface): StoredSurface {

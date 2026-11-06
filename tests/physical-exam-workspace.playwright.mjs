@@ -4,8 +4,9 @@ import { pathToFileURL } from 'node:url';
 const { chromium } = await import(process.env.PLAYWRIGHT_MODULE ? pathToFileURL(process.env.PLAYWRIGHT_MODULE).href : 'playwright');
 const origin = process.env.LAB_URL ?? 'http://127.0.0.1:5187';
 assert.match(origin, /^http:\/\/(?:127\.0\.0\.1|localhost):\d+$/);
-const browser = await chromium.launch({ channel: 'chrome', headless: true });
-const errors = [], writes = [], external = [];
+const browser = await chromium.launch({ channel: 'chrome', headless: true,
+  args:['--enable-webgl','--use-angle=swiftshader','--enable-unsafe-swiftshader'] });
+const errors = [], writes = [], external = [], aiRequests=[];
 try {
   const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
   page.on('pageerror', e => errors.push(e.message));
@@ -13,13 +14,19 @@ try {
   await page.route('**/*', async route => {
     const request = route.request(), url = new URL(request.url());
     if (url.origin !== origin) { external.push(request.url()); return route.abort(); }
-    if (url.pathname.endsWith('/Clinical3DViewer.tsx')) return route.fulfill({ contentType: 'application/javascript', body: `
+    if (url.pathname.endsWith('/context/AuthContext.tsx')) return route.fulfill({ contentType: 'application/javascript',
+      body: `export const useAuth=()=>({hasFeature:()=>false});` });
+    if (url.pathname.endsWith('/Clinical3DViewer.tsx') && !url.searchParams.has('qa-original')) return route.fulfill({ contentType: 'application/javascript', body: `
       import React from '/node_modules/.vite/deps/react.js';
-      export default function Viewer({markers=[],modelData}){return React.createElement('output',{'data-testid':modelData?'mask-preview':'generic-mark-count'},String(markers.length))}
+      ${process.env.QA_REAL_VIEWERS ? "import ActualViewer from '/src/components/admin/ficha-clinica/components/Clinical3DViewer.tsx?qa-original';" : ''}
+      export default function Viewer(props){const {markers=[],modelData}=props;return React.createElement(React.Fragment,null,
+        React.createElement('output',{'data-testid':modelData?'mask-preview':'generic-mark-count','data-readonly':!!props.readOnly},String(markers.length)),
+        ${process.env.QA_REAL_VIEWERS ? 'React.createElement(ActualViewer,props)' : 'null'})}
     ` });
     if (url.pathname.endsWith('/FaceSimLab.tsx')) return route.fulfill({ contentType: 'application/javascript',
       body: (await (await route.fetch()).text()).replace('onController?.(controller)', '(window.captureController = controller, onController?.(controller))') });
     if (url.pathname.startsWith('/api/')) {
+      if(['skinVisualStatus','analyzeSkinVisual'].includes(url.searchParams.get('action')))aiRequests.push(request.url());
       if (request.method() !== 'GET') writes.push(request.postDataJSON());
       if (url.searchParams.get('action') === 'listPhotos') return route.fulfill({ json: { photos: [], total: 0, hasMore: false } });
       if (url.searchParams.get('action') === 'skinVisualStatus') return route.fulfill({ json: {
@@ -62,11 +69,28 @@ try {
       .replace(/<script[^>]+src="\/src\/main\.tsx(?:\?[^"]*)?"[^>]*><\/script>/, script) });
   });
   await page.goto(`${origin}/__physical_workspace_fixture__`);
+  await page.getByTestId('generic-mark-count').waitFor();
+  assert.equal(await page.getByTestId('generic-mark-count').isVisible(), true, 'El modelo aparece al entrar');
+  const viewerBounds = await page.getByRole('region', {name:'Visor de evaluación facial'}).boundingBox();
+  assert.ok(viewerBounds.height > 100, 'El contenedor no comprime el visor');
+  await page.getByRole('button', {name:'Evaluar parámetros',exact:true}).click();
+  const parameters = page.getByRole('dialog',{name:'Evaluación clínica de la piel',exact:true});
+  await parameters.getByRole('button',{name:'Seca',exact:true}).click();
+  if(process.env.QA_SCREENSHOT_DIR)await page.screenshot({path:process.env.QA_SCREENSHOT_DIR+'\\parametros-modal.png'});
+  await parameters.getByRole('button',{name:'Cancelar',exact:true}).click();
+  assert.match(await page.getByRole('region',{name:'Resumen clínico'}).innerText(),/Normal/);
+  await page.getByRole('button', {name:'Evaluar parámetros',exact:true}).click();
+  await parameters.getByRole('button',{name:'Seca',exact:true}).click();
+  await parameters.getByRole('button',{name:'Aplicar evaluación',exact:true}).click();
+  assert.match(await page.getByRole('region',{name:'Resumen clínico'}).innerText(),/Seca/);
   await page.getByRole('button', { name: /Continuar en modelo genérico/ }).click();
   assert.equal(await page.getByRole('region', { name: 'Evaluación compartida de piel' }).count(), 0);
   await page.getByRole('button', { name: /^Migrar marcaciones a máscara/ }).click();
   const dialog = page.getByRole('dialog', { name: 'Elegir fotografías', exact: true });
   await dialog.waitFor();
+  await dialog.getByRole('region',{name:'Guía de fotografías'}).waitFor();
+  if(process.env.QA_SCREENSHOT_DIR)await page.screenshot({path:process.env.QA_SCREENSHOT_DIR+'\\guia-fotos.png'});
+  assert.equal(await dialog.getByRole('button',{name:'Ahora no',exact:true}).isVisible(),true);
   const workspace = page.getByRole('region', { name: 'Evaluación compartida de piel' });
   assert.equal(await page.getByTestId('generic-mark-count').innerText(), '1');
   assert.equal(await page.getByRole('group', { name: 'Modo de visor facial' }).count(), 0);
@@ -81,6 +105,7 @@ try {
   assert.ok(bounds.width <= 390 && bounds.x >= 0);
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1), false);
   await dialog.getByRole('button', { name: 'Cerrar selección de fotos', exact: true }).click();
+  assert.equal(await page.getByTestId('generic-mark-count').getAttribute('data-readonly'),'false','Cancelar fotos deja disponible el marcado original');
   await page.getByRole('button', { name: /Continuar en modelo genérico/ }).click();
   assert.equal(await page.getByTestId('generic-mark-count').isVisible(), true);
   assert.equal(await workspace.isVisible(), false);
@@ -91,7 +116,7 @@ try {
   await page.getByRole('group', { name: 'Modo de visor facial' }).waitFor();
   await page.getByRole('button', { name: 'Máscara del paciente', exact: true }).click();
   assert.equal(await page.getByRole('button', { name: 'Máscara del paciente', exact: true }).getAttribute('aria-pressed'), 'true');
-  assert.equal(await page.getByTestId('generic-mark-count').first().isVisible(), false);
+  assert.equal(await page.getByTestId('generic-mark-count').count(), 0);
   await page.getByRole('button', { name: 'Modelo anatómico', exact: true }).click();
   assert.equal(await page.getByRole('button', { name: 'Máscara del paciente', exact: true }).getAttribute('aria-pressed'), 'false');
   assert.equal(await workspace.isVisible(), false);
@@ -102,12 +127,26 @@ try {
   assert.equal(await page.getByRole('button', { name: 'Ocultar zonas', exact: true }).last().getAttribute('aria-pressed'), 'true');
   assert.equal(await workspace.isVisible(), true);
   assert.equal(await page.getByTestId('generic-mark-count').first().isVisible(), true);
+  assert.equal(await page.getByText(/asistencia IA|IA no disponible|Consultando herramientas/).count(),0);
+  assert.equal(writes.length,0);
+  assert.equal(aiRequests.length,0,'Sin permiso no se consulta ni se menciona la asistencia');
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1), false);
+  if(process.env.QA_REAL_VIEWERS){
+    await page.waitForFunction(()=>[...document.querySelectorAll('canvas')].filter(canvas=>canvas.checkVisibility()&&canvas.width>0).length===2);
+    const canvases=page.locator('canvas:visible');
+    const a=await canvases.nth(0).boundingBox(),b=await canvases.nth(1).boundingBox();
+    assert.ok(Math.abs(a.y-b.y)<2 && Math.abs(a.height-b.height)<2,'Ambos visores reales quedan alineados');
+  }
   if (process.env.QA_SCREENSHOT_DIR) await page.screenshot({ path: `${process.env.QA_SCREENSHOT_DIR}\\examen-desktop.png`, fullPage: true });
   await page.setViewportSize({ width: 390, height: 844 });
+  const mobileComparison=page.getByRole('group',{name:'Vista de comparación móvil'});
+  await mobileComparison.getByRole('button',{name:'Referencia',exact:true}).click();
+  assert.equal(await page.getByTestId('generic-mark-count').isVisible(),true);
+  await mobileComparison.getByRole('button',{name:'Máscara',exact:true}).click();
+  assert.equal(await page.getByTestId('generic-mark-count').isVisible(),false);
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1), false);
   if (process.env.QA_SCREENSHOT_DIR) await page.screenshot({ path: `${process.env.QA_SCREENSHOT_DIR}\\examen-mobile.png`, fullPage: true });
-  await page.getByRole('button', { name: 'Nuevo Examen', exact: true }).click();
+  await page.getByRole('button', { name: 'Nuevo examen', exact: true }).click();
   assert.equal(await page.getByRole('button', { name: /^Migrar marcaciones a máscara/ }).count(), 0);
   assert.equal(await page.getByTestId('generic-mark-count').first().innerText(), '0');
   await page.getByRole('button', { name: /^Crear máscara facial/ }).click();

@@ -73,7 +73,18 @@ try {
   });
   await page.goto(`${origin}/__clinical_capture_fixture__`);
   await page.waitForFunction(() => window.controller && window.makeFiles);
-  await page.evaluate(() => window.makeFiles());
+  const guide=page.getByRole('dialog',{name:'Elegir fotografías',exact:true});
+  await guide.getByRole('button',{name:'Ahora no',exact:true}).click();
+  await page.getByRole('button',{name:'Elegir fotografías',exact:true}).click();
+  const files=(await page.evaluate(async()=>Promise.all((await window.createFiles()).map(async file=>({
+    name:file.name,mimeType:file.type,base64:btoa(String.fromCharCode(...new Uint8Array(await file.arrayBuffer())))
+  }))))).map(({base64,...file})=>({...file,buffer:Buffer.from(base64,'base64')}));
+  const upload=page.locator('dialog[open] input[type=file]');
+  assert.equal(await upload.getAttribute('multiple'),'');
+  await upload.setInputFiles(files[0]);
+  await page.waitForFunction(()=>window.controller.getPhotos().length===1);
+  await page.waitForFunction(()=>!document.querySelector('dialog[open] input[type=file]').disabled);
+  await upload.setInputFiles(files.slice(1));
   const dialog = page.getByRole('dialog', { name: 'Revisar fotos juntas', exact: true });
   await dialog.waitFor();
   await page.waitForFunction(() => document.querySelectorAll('dialog input[type=checkbox]:checked').length === 3);
@@ -101,6 +112,10 @@ try {
   assert.equal(await page.evaluate(() => window.controller.getPhotos().length), 3);
   assert.equal(await page.evaluate(() => window.controller.getMarks().length), 0);
   assert.equal(await page.getByRole('button', { name: 'Buscar asistido', exact: true }).count(), 0);
+  await page.reload();
+  await page.waitForFunction(() => window.controller && window.makeFiles);
+  await page.locator('dialog[open] input[type=file]').setInputFiles(files);
+  await page.waitForFunction(()=>window.controller.getPhotos().length===3);
   await page.reload();
   await page.waitForFunction(() => window.controller && window.makeFiles);
   await page.evaluate(() => window.makeFiles(true));
@@ -134,5 +149,5 @@ try {
   assert.deepEqual(errors, []);
   assert.ok(external.every(url => /^https:\/\/(?:fonts\.googleapis\.com\/css2|odml\.pa\.googleapis\.com\/v1\/log)/.test(url)));
   console.log(JSON.stringify({ passed: true, groupedPhotos: 3, preselected: true, oneDialog: true, generatedMask: true,
-    libraryBatch: 3, libraryWithoutReupload: true, failedDetectionKeeps2D: true, viewports: [1440, 390] }));
+    singleAndBatchUpload:true, libraryBatch: 3, libraryWithoutReupload: true, failedDetectionKeeps2D: true, viewports: [1440, 390] }));
 } finally { await browser.close(); }

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef, useCallback, lazy, Suspense } from 'react';
+import { useState, useEffect, useMemo, useRef, useCallback, lazy, Suspense } from 'react';
 import { createPortal } from 'react-dom';
 import recordsFetch from "../../../../../utils/recordsFetch";
 import { motion, AnimatePresence } from 'framer-motion';
@@ -21,8 +21,10 @@ import type { SkinVisualReviewData } from '../skinVisualAI';
 import { useUnsavedChangesGuard } from '../../../../../hooks/useUnsavedChangesGuard';
 import type { FaceSimIntegration } from '../../../../../lab/faceSim/facialSimulationSession';
 import { legacySkinAnchor, skinAnatomicalOverlay, skinZoneAt } from '../skinAnatomy';
+import { useAuth } from '../../../../../context/AuthContext';
 
 const SkinExamWorkspace = lazy(() => import('../SkinExamWorkspace'));
+const PHOTOTYPE_COLORS: Record<string, string> = { I: '#f5dece', II: '#e8c0a3', III: '#d3a27e', IV: '#b67f59', V: '#8b573b', VI: '#593b2b' };
 
 // -- Constantes para el visor 3D facial ----------------------------------------
 const TERCIO_BOUNDARIES = (trazadoData as { hairline: {
@@ -394,6 +396,9 @@ export default function PhysicalExamTab({ recordId, physicalExams, consultationI
   const [showSkinWorkspace, setShowSkinWorkspace] = useState(false);
   const [mapView, setMapView] = useState<'generic' | 'mask' | 'split'>('generic');
   const [maskReady, setMaskReady] = useState(false);
+  const { hasFeature } = useAuth();
+  const [parameterDraft, setParameterDraft] = useState<PhysicalExam | null>(null);
+  const [parameterKey, setParameterKey] = useState<keyof typeof CLINICAL_FIELDS>('skin_type');
   const [showAnatomicalZones, setShowAnatomicalZones] = useState(false);
   const genericOverlay = useMemo(() => showAnatomicalZones ? skinAnatomicalOverlay() : undefined, [showAnatomicalZones]);
   const [legacyMigration, setLegacyMigration] = useState<FaceSimIntegration['legacyMigration']>();
@@ -479,11 +484,6 @@ export default function PhysicalExamTab({ recordId, physicalExams, consultationI
     setPreparedReview(null); setReviewDirty(false); setShowSkinWorkspace(false);
     setBodyMarks([]);
     setMessage(null);
-  };
-
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
-    const { name, value } = e.target;
-    setCurrentExam(prev => ({ ...prev, [name]: value }));
   };
 
   const handleNew = () => {
@@ -714,13 +714,41 @@ export default function PhysicalExamTab({ recordId, physicalExams, consultationI
   };
 
   const legacyFaceMarks = faceMarks.filter(m => !m.is3D);
+  const lesionSelector = <div className="flex flex-wrap items-center gap-2 border-b border-slate-200 bg-slate-50 p-3 text-gray-900">
+    <label htmlFor="physical-lesion-select" className="text-sm font-semibold">Lesión a marcar</label>
+    <input id="physical-lesion-select" list="lesion-options-main" value={selectedCategory}
+      onChange={event => setSelectedCategory(event.target.value)} placeholder="Seleccione o escriba una lesión…"
+      className="admin-focus-ring min-h-11 min-w-0 flex-1 rounded-lg border border-gray-200 bg-white px-3 text-sm" />
+    <datalist id="lesion-options-main">{LESION_CATALOG.map(lesion => <option key={lesion} value={lesion} />)}</datalist>
+  </div>;
+  const referenceView = <div className="min-w-0 overflow-hidden rounded-xl border border-slate-700 bg-slate-900">
+    <div className="flex min-h-[76px] flex-wrap items-center justify-between gap-2 px-3 py-2 text-white">
+      <div><h4 className="text-sm font-semibold">Modelo anatómico de referencia</h4>
+        <p className="text-xs text-slate-300">Las marcas originales se conservan</p></div>
+      <button type="button" aria-pressed={showAnatomicalZones} onClick={() => setShowAnatomicalZones(current => !current)}
+        className={`admin-focus-ring inline-flex min-h-11 items-center gap-2 rounded-lg border px-3 py-2 text-xs ${showAnatomicalZones ? 'border-gold bg-gold-light text-gray-900' : 'border-slate-500 text-white hover:bg-slate-800'}`}>
+        <Grid3X3 size={16} aria-hidden="true" />{showAnatomicalZones ? 'Ocultar zonas' : 'Mostrar zonas'}</button>
+    </div>
+    {(!showSkinWorkspace || !maskReady || mapView === 'generic') && lesionSelector}
+    <div className="relative">
+      <button type="button" onClick={() => setShowReferenceLines(v => !v)}
+        className="admin-focus-ring absolute right-2 top-2 z-10 rounded-lg border border-white/20 bg-slate-900/80 px-2 py-2 text-xs text-white">
+        {showReferenceLines ? <EyeOff size={12} className="mr-1 inline" /> : <Eye size={12} className="mr-1 inline" />}
+        {showReferenceLines ? 'Ocultar líneas' : 'Mostrar líneas'}</button>
+      <Clinical3DViewer readOnly={showSkinWorkspace && maskReady && mapView !== 'generic'} anatomicalOverlay={genericOverlay} markers={face3DMarkers} selectedPathology="lesion"
+        tercioBoundaries={showReferenceLines ? TERCIO_BOUNDARIES : null} referenceLines={showReferenceLines ? FACE_REFERENCE_LINES : []}
+        skipConfirmation onMarkerPlaced={handle3DMarkerPlaced}
+        onMarkerRadiusChange={(id, radius) => setFaceMarks(prev => prev.map(mark => mark.id === id ? { ...mark, radius3D: radius } : mark))}
+        height="min(62dvh,560px)" pointMarkerScale={0.5} />
+    </div>
+  </div>;
 
   return (
     <>
     <motion.div 
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
-      className={`flex flex-col md:flex-row h-auto gap-6 ${showSkinWorkspace ? '' : 'md:h-[800px]'}`}
+      className="flex h-auto min-w-0 flex-col gap-4"
     >
       {typeof document !== 'undefined' && createPortal(
         <>
@@ -786,8 +814,9 @@ export default function PhysicalExamTab({ recordId, physicalExams, consultationI
       )}
 
       {/* Sidebar List */}
-      <div className="w-full md:w-72 border-r-0 md:border-r border-b md:border-b-0 border-gray-100 pr-0 md:pr-6 pb-4 md:pb-0 flex flex-col gap-4 shrink-0">
-        <div className="font-bold text-gray-800 flex items-center gap-2">
+      <details className="rounded-xl border border-gray-200 bg-slate-50 p-3">
+        <summary className="admin-focus-ring cursor-pointer text-sm font-semibold text-gray-700">Historial de exámenes · {currentExams.length} en esta consulta</summary>
+        <div className="mt-3 font-bold text-gray-800 flex items-center gap-2">
           <div className="w-1 h-5 bg-[#deb887] rounded-full" />
           Historial de Exámenes
           <span className="ml-auto flex items-center gap-1">
@@ -800,9 +829,9 @@ export default function PhysicalExamTab({ recordId, physicalExams, consultationI
             )}
           </span>
         </div>
-        <div className="flex-1 overflow-y-auto space-y-3 max-h-[200px] md:max-h-none pr-2 custom-scrollbar">
+        <div className="mt-3 flex max-h-48 flex-wrap gap-2 overflow-auto">
           {currentExams.map((exam, index) => (
-            <motion.div
+            <motion.button type="button"
               key={exam.id || index}
               whileHover={{ scale: 1.02 }}
               whileTap={{ scale: 0.98 }}
@@ -810,7 +839,7 @@ export default function PhysicalExamTab({ recordId, physicalExams, consultationI
                 if ((reviewDirty || preparedReview) && !window.confirm('Hay una evaluación de piel sin guardar en el examen. ¿Descartarla?')) return;
                 loadExam(exam);
               }}
-              className={`p-4 rounded-xl cursor-pointer border transition-all shadow-sm ${
+              className={`admin-focus-ring min-w-40 p-3 rounded-xl cursor-pointer border text-left transition-colors shadow-sm ${
                 highlightedId === exam.id
                   ? 'ring-2 ring-[#b8944d] ring-offset-2 ring-offset-white animate-pulse'
                   : ''
@@ -827,25 +856,19 @@ export default function PhysicalExamTab({ recordId, physicalExams, consultationI
                 <span className={`w-2 h-2 rounded-full ${exam.skin_type ? 'bg-emerald-400' : 'bg-gray-300'}`} />
                 {exam.skin_type ? `Piel ${exam.skin_type}` : 'Sin datos'}
               </div>
-            </motion.div>
+            </motion.button>
           ))}
-          <motion.button 
-            whileHover={{ scale: 1.02 }}
-            whileTap={{ scale: 0.98 }}
-            onClick={handleNew}
-            className="w-full py-3 mt-2 border-2 border-dashed border-gray-200 rounded-xl text-gray-500 hover:border-[#deb887] hover:text-[#deb887] transition-colors font-medium flex items-center justify-center gap-2 bg-gray-50/50 hover:bg-[#deb887]/5"
-          >
-            <Plus className="w-4 h-4" />
-            Nuevo Examen
-          </motion.button>
         </div>
-      </div>
+      </details>
 
       {/* Main Content */}
-      <div className={`min-w-0 flex-1 flex flex-col gap-6 overflow-visible ${showSkinWorkspace ? '' : 'md:overflow-hidden'}`}>
+      <div className="flex min-w-0 flex-1 flex-col gap-4">
         {/* Toolbar */}
         <div className="flex flex-wrap gap-4 justify-between items-center bg-white p-4 rounded-xl border border-gray-100 shadow-sm shrink-0">
           <div className="flex gap-2">
+            <button type="button" aria-label="Nuevo examen" onClick={handleNew} disabled={saving}
+              className="admin-focus-ring flex min-h-11 items-center gap-2 rounded-lg border border-gray-200 px-3 text-sm text-gray-700 hover:bg-gray-50">
+              <Plus size={18} aria-hidden="true" /><span className="hidden sm:inline">Nuevo</span></button>
             <Tooltip content="Guardar cambios">
               <motion.button 
                 whileHover={{ scale: 1.05 }}
@@ -865,6 +888,7 @@ export default function PhysicalExamTab({ recordId, physicalExams, consultationI
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
                 onClick={handleDuplicate} 
+                aria-label="Duplicar examen"
                 className="p-2 hover:bg-gray-100 rounded-lg text-gray-600 border border-gray-200 transition-colors"
               >
                 <Copy size={18} />
@@ -876,6 +900,7 @@ export default function PhysicalExamTab({ recordId, physicalExams, consultationI
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
                 onClick={handleDelete}
+                aria-label="Eliminar examen"
                 disabled={deleting}
                 className="p-2 hover:bg-red-50 rounded-lg text-red-500 border border-red-100 transition-colors disabled:opacity-50"
               >
@@ -888,6 +913,7 @@ export default function PhysicalExamTab({ recordId, physicalExams, consultationI
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
                 onClick={handlePrint} 
+                aria-label="Imprimir examen"
                 className="p-2 hover:bg-gray-100 rounded-lg text-gray-600 border border-gray-200 transition-colors"
               >
                 <Printer size={18} />
@@ -924,9 +950,15 @@ export default function PhysicalExamTab({ recordId, physicalExams, consultationI
           )}
         </AnimatePresence>
 
-        <div className={`flex-1 flex flex-col gap-6 overflow-visible ${showSkinWorkspace ? '' : 'md:flex-row md:overflow-hidden'}`}>
+        <section aria-label="Resumen clínico" className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-gray-200 bg-slate-50 p-3">
+          <div className="min-w-0"><h3 className="text-sm font-semibold">Evaluación clínica</h3>
+            <p className="text-xs text-gray-600">{currentExam.skin_type ? `Piel ${currentExam.skin_type}` : 'Tipo de piel pendiente'} · {currentExam.phototype ? `Fototipo ${currentExam.phototype}` : 'Fototipo pendiente'} · {Object.keys(CLINICAL_FIELDS).filter(key => currentExam[key as keyof PhysicalExam]).length}/10 parámetros</p></div>
+          <button type="button" className="admin-focus-ring min-h-11 rounded-lg border border-gold bg-white px-4 py-2 text-sm font-semibold" disabled={saving}
+            onClick={() => { setParameterDraft({ ...currentExam }); setParameterKey('skin_type'); }}>Evaluar parámetros</button>
+        </section>
+        <div className="flex min-w-0 flex-col gap-4">
           {/* Left Column: Maps */}
-          <div className={`flex-1 flex flex-col min-w-0 ${showSkinWorkspace ? '' : 'overflow-y-auto custom-scrollbar pr-2'}`}>
+          <div className="flex min-w-0 flex-1 flex-col">
             {(!showSkinWorkspace || !maskReady) && <div className="mb-5 space-y-3 rounded-2xl border border-gray-200 bg-white p-4">
               <div><h3 className="text-sm font-bold text-gray-900">{showSkinWorkspace && maskReady ? 'Vista de evaluación facial' : '¿Dónde quieres marcar?'}</h3>
                 {(!showSkinWorkspace || !maskReady) && <p className="mt-1 text-xs text-gray-500">{currentExam.id && faceMarks.length > 0 ? 'Conserva el modelo actual o traslada sus marcas a una máscara con fotos.' : 'Usa el modelo genérico o crea una máscara con fotos del paciente.'}</p>}</div>
@@ -976,31 +1008,7 @@ export default function PhysicalExamTab({ recordId, physicalExams, consultationI
               ))}
             </div>
 
-            <div className={`mb-6 space-y-2 ${showSkinWorkspace && maskReady && mapView === 'mask' && activeTab === 'facial' ? 'hidden' : ''}`}>
-              <label className="block text-sm font-bold text-gray-700">Seleccionar Lesión para Marcar:</label>
-              <div className="relative">
-                <input 
-                  list="lesion-options-main"
-                  className="w-full p-3 pl-4 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#deb887] outline-none transition-all shadow-sm bg-white"
-                  value={selectedCategory}
-                  onChange={(e) => setSelectedCategory(e.target.value)}
-                  placeholder="Seleccione o escriba una lesión..."
-                />
-                <datalist id="lesion-options-main">
-                  {LESION_CATALOG.map(l => (
-                    <option key={l} value={l} />
-                  ))}
-                </datalist>
-              </div>
-              {activeTab === 'facial' && !selectedCategory && (
-                <p className="text-xs text-amber-600 flex items-center gap-1 bg-amber-50 px-3 py-1.5 rounded-lg border border-amber-100">
-                  <Info size={11} />
-                  Seleccione una lesión antes de marcar en el modelo 3D
-                </p>
-              )}
-            </div>
-
-            <section aria-label="Visor de evaluación facial" className="min-w-0 overflow-hidden rounded-2xl border border-gray-200 bg-white p-3 sm:p-4">
+            <section aria-label="Visor de evaluación facial" className="min-w-0 shrink-0 rounded-2xl border border-gray-200 bg-white p-3 sm:p-4">
             {showSkinWorkspace && maskReady && activeTab === 'facial' && <div className="mb-4 space-y-2 border-b border-gray-100 pb-3">
               <div role="group" aria-label="Modo de visor facial" className="inline-flex max-w-full flex-wrap gap-1 rounded-xl bg-slate-100 p-1">
                 {([
@@ -1014,49 +1022,23 @@ export default function PhysicalExamTab({ recordId, physicalExams, consultationI
               <p role="status" className="text-xs text-gray-500">{mapView === 'generic' ? 'Referencia anatómica: conserva todas las marcas originales.' :
                 mapView === 'mask' ? 'Máscara personalizada: marca aquí y revisa la correspondencia en las fotos desplegables.' : 'Comparación visual. Las marcas originales no se eliminan al migrar.'}</p>
             </div>}
-            <div className={showSkinWorkspace && maskReady && mapView === 'split' && activeTab === 'facial' ? 'grid items-start gap-4 xl:grid-cols-2' : 'space-y-4'}>
+            <div className="space-y-4">
             {showSkinWorkspace && <fieldset disabled={saving}
               className={`min-w-0 ${mapView === 'generic' || activeTab !== 'facial' ? 'hidden' : ''} ${saving ? 'pointer-events-none opacity-60' : ''}`}>
               <Suspense fallback={<p role="status">Abriendo evaluación de piel…</p>}>
                 <SkinExamWorkspace key={`${recordId}:${consultationId ?? 'none'}:${reviewSession}`}
                   recordId={recordId} review={workspaceReview.current} legacyMigration={legacyMigration}
                   context={{ skinType: currentExam.skin_type, phototype: currentExam.phototype, hydration: currentExam.hydration }}
+                  referenceView={referenceView} viewMode={mapView === 'split' ? 'split' : 'mask'} aiAllowed={hasFeature('skin_visual_ai')}
                   onPrepared={handleSkinPrepared} onDirty={handleSkinDirty} onCaptureReady={setMaskReady} />
               </Suspense>
             </fieldset>}
-            <div className={`min-w-0 flex-1 rounded-2xl border border-gray-100 shadow-sm overflow-hidden min-h-[420px] ${showSkinWorkspace && maskReady && mapView === 'mask' && activeTab === 'facial' ? 'hidden' : ''}`}>
+            {!(showSkinWorkspace && maskReady && mapView !== 'generic' && activeTab === 'facial') && <div className="min-w-0 rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
               {activeTab === 'facial' ? (
-                <div className="relative">
-                  <div className="flex flex-wrap items-center justify-between gap-2 bg-slate-900 px-3 py-2 text-white">
-                    <h4 className="text-sm font-semibold">Modelo anatómico de referencia</h4>
-                    <button type="button" aria-pressed={showAnatomicalZones} onClick={() => setShowAnatomicalZones(current => !current)}
-                      className={`admin-focus-ring inline-flex min-h-11 items-center gap-2 rounded-lg border px-3 py-2 text-xs ${showAnatomicalZones ? 'border-gold bg-gold-light text-gray-900' : 'border-slate-500 text-white hover:bg-slate-800'}`}>
-                      <Grid3X3 size={16} aria-hidden="true" />{showAnatomicalZones ? 'Ocultar zonas' : 'Mostrar zonas'}
-                    </button>
-                  </div>
-                  <button
-                    onClick={() => setShowReferenceLines(v => !v)}
-                    className="absolute top-20 right-2 z-10 flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg bg-gray-900/65 text-white hover:bg-gray-900/90 transition-colors border border-white/15 backdrop-blur-sm select-none"
-                    title={showReferenceLines ? 'Ocultar líneas de referencia' : 'Mostrar líneas de referencia'}
-                  >
-                    {showReferenceLines ? <EyeOff size={12} /> : <Eye size={12} />}
-                    {showReferenceLines ? 'Ocultar líneas' : 'Mostrar líneas'}
-                  </button>
-                  <Clinical3DViewer
-                    anatomicalOverlay={genericOverlay}
-                    markers={face3DMarkers}
-                    selectedPathology="lesion"
-                    tercioBoundaries={showReferenceLines ? TERCIO_BOUNDARIES : null}
-                    referenceLines={showReferenceLines ? FACE_REFERENCE_LINES : []}
-                    skipConfirmation={true}
-                    onMarkerPlaced={handle3DMarkerPlaced}
-                    onMarkerRadiusChange={(id, radius) => setFaceMarks(prev => prev.map(mark => mark.id === id ? { ...mark, radius3D: radius } : mark))}
-                    height="min(62dvh,560px)"
-                    pointMarkerScale={0.5}
-                  />
-                </div>
+                referenceView
               ) : (
                 <div className="flex flex-col bg-white h-full">
+                  {lesionSelector}
                   <Clinical3DViewer
                     markers={body3DMarkers}
                     selectedPathology="lesion"
@@ -1069,7 +1051,7 @@ export default function PhysicalExamTab({ recordId, physicalExams, consultationI
                   />
                 </div>
               )}
-            </div>
+            </div>}
             </div>
             </section>
             
@@ -1156,15 +1138,21 @@ export default function PhysicalExamTab({ recordId, physicalExams, consultationI
             </div>
           </div>
 
-          {/* Right Column: Clinical Parameters */}
-          <div className={`w-full gap-4 shrink-0 ${showSkinWorkspace ? 'grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3' : 'md:w-[350px] flex flex-col overflow-y-auto pr-2 custom-scrollbar'}`}>
-            <h3 className={`font-bold text-gray-800 border-b border-gray-100 pb-3 flex items-center gap-2 bg-white ${showSkinWorkspace ? 'col-span-full' : 'sticky top-0 z-10'}`}>
-              <div className="w-1 h-5 bg-[#deb887] rounded-full" />
-              Parámetros Clínicos
-            </h3>
+          <Dialog open={parameterDraft !== null} onClose={() => setParameterDraft(null)} labelledBy="clinical-parameters-title">
+          {parameterDraft && <div className="flex max-h-[90dvh] w-[min(60rem,calc(100vw-2rem))] flex-col overflow-hidden rounded-2xl bg-white text-gray-900">
+            <header className="shrink-0 border-b p-4"><h2 id="clinical-parameters-title" className="text-lg font-semibold">Evaluación clínica de la piel</h2>
+              <p className="text-sm text-gray-500">Selecciona un parámetro y registra tu valoración. No se calcula a partir de las fotos.</p></header>
+            <div className="grid min-h-0 overflow-auto md:grid-cols-[200px_minmax(0,1fr)]">
+            <nav aria-label="Parámetros clínicos" className="flex gap-2 overflow-auto bg-slate-50 p-3 md:flex-col">
+              {(Object.entries(CLINICAL_FIELDS) as [keyof typeof CLINICAL_FIELDS, (typeof CLINICAL_FIELDS)[keyof typeof CLINICAL_FIELDS]][]).map(([key, field]) =>
+                <button key={key} type="button" aria-pressed={parameterKey === key} onClick={() => setParameterKey(key)}
+                  className={`admin-focus-ring min-h-11 shrink-0 rounded-lg border p-3 text-left text-sm ${parameterKey === key ? 'border-gold-ink bg-gold-light' : 'border-transparent hover:bg-white'}`}>
+                  {field.label}<span className="block text-xs text-gray-500">{parameterDraft[key] || 'Sin registrar'}</span></button>)}
+            </nav>
+            <div className="min-w-0 p-5">
             
             {(Object.entries(CLINICAL_FIELDS) as [keyof typeof CLINICAL_FIELDS, (typeof CLINICAL_FIELDS)[keyof typeof CLINICAL_FIELDS]][]).map(([key, field]) => (
-              <div key={key} className="space-y-1.5 group">
+              <div key={key} hidden={parameterKey !== key} className="space-y-3">
                 <div className="flex items-center gap-2">
                   <label className="block text-sm font-bold text-gray-700 group-hover:text-[#deb887] transition-colors">{field.label}<FieldHelp text={HELP.physical[key] || ''} /></label>
                   <Tooltip content={(
@@ -1183,27 +1171,44 @@ export default function PhysicalExamTab({ recordId, physicalExams, consultationI
                     </button>
                   </Tooltip>
                 </div>
-                <Select
-                  value={currentExam[key] || ''}
-                  onChange={(value) => setCurrentExam(prev => ({ ...prev, [key]: value }))}
-                  options={field.options}
-                  placeholder="Seleccionar..."
-                />
+                <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                  {field.options.filter(Boolean).map(option => <button key={option} type="button" aria-pressed={parameterDraft[key] === option}
+                    className={`admin-focus-ring flex min-h-24 flex-col items-center justify-center gap-2 rounded-xl border p-3 text-sm ${parameterDraft[key] === option ? 'border-gold-ink bg-gold-light ring-1 ring-gold-ink' : 'border-gray-200 hover:bg-slate-50'}`}
+                    onClick={() => setParameterDraft(prev => prev ? { ...prev, [key]: option } : prev)}>
+                    <svg viewBox="0 0 64 64" aria-hidden="true" className="h-10 w-10 text-gold-ink">
+                      <path d="M17 21c0-22 30-22 30 0v15c0 25-30 25-30 0Z"
+                        fill={key === 'phototype' ? PHOTOTYPE_COLORS[option] ?? 'currentColor' : 'currentColor'}
+                        fillOpacity={key === 'phototype' ? 1 : .15} stroke="currentColor" strokeWidth="2" />
+                      <path d="M24 28h3m10 0h3m-8 3v7m-6 7q6 3 12 0" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+                      {key === 'skin_type' && ['Grasa', 'Mixta'].includes(option) && <path d="M22 18h20v7h-7v18h-6V25h-7Z" fill="currentColor" fillOpacity=".3" />}
+                      {key === 'skin_type' && option === 'Seca' && <path d="m20 34 4 3-3 3m20-6-4 3 3 3" fill="none" stroke="currentColor" strokeWidth="1.5" />}
+                      {key === 'skin_type' && option === 'Sensible' && <g fill="#dc6a62" fillOpacity=".5"><circle cx="23" cy="36" r="4" /><circle cx="41" cy="36" r="4" /></g>}
+                    </svg>
+                    <span>{option}</span>
+                  </button>)}
+                </div>
+                <p className="text-sm text-gray-600">{PARAMETER_TOOLTIPS[key]?.find(item => item.label === parameterDraft[key] || item.label.startsWith(`${parameterDraft[key]} (`))?.description}</p>
+                <button type="button" className="admin-focus-ring min-h-11 rounded-lg border px-3 text-sm" onClick={() => setParameterDraft(prev => prev ? { ...prev, [key]: '' } : prev)}>Dejar sin registrar</button>
               </div>
             ))}
 
-            <div className={`space-y-2 mt-4 pt-4 border-t border-gray-100 ${showSkinWorkspace ? 'col-span-full' : ''}`}>
+            <div className="mt-4 space-y-2 border-t border-gray-100 pt-4">
               <label className="block text-sm font-bold text-gray-700">Notas Adicionales<FieldHelp text={HELP.physical.lesions_description} /></label>
               <textarea
                 name="lesions_description"
                 rows={4}
                 className="w-full p-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#deb887] outline-none resize-none text-sm transition-all bg-gray-50/50 focus:bg-white"
                 placeholder="Observaciones generales..."
-                value={currentExam.lesions_description || ''}
-                onChange={handleChange}
+                value={parameterDraft.lesions_description || ''}
+                onChange={e => setParameterDraft(prev => prev ? { ...prev, lesions_description: e.target.value } : prev)}
               />
-            </div>
-          </div>
+            </div></div></div>
+            <footer className="flex shrink-0 justify-end gap-2 border-t p-4">
+              <button type="button" className="admin-focus-ring min-h-11 rounded-lg border px-4" onClick={() => setParameterDraft(null)}>Cancelar</button>
+              <button type="button" className="admin-focus-ring min-h-11 rounded-lg bg-gold px-4 font-semibold" onClick={() => { setCurrentExam(parameterDraft); setParameterDraft(null); }}>Aplicar evaluación</button>
+            </footer>
+            </div>}
+            </Dialog>
         </div>
       </div>
     </motion.div>

@@ -2369,15 +2369,14 @@ export default function FaceSimLab({ integration }: { integration?: FaceSimInteg
     setEvaluationMarks(marks); onMarksChange?.(marks);
   }, [onMarksChange]);
   const skinEditor = <Suspense fallback={<p role="status">Preparando evaluación de piel…</p>}>
-    {migration && <section aria-label="Migración de marcaciones faciales" className="space-y-2 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm">
-      {!clinical && <p>Sube o selecciona fotos, confirma su alineación y genera la máscara. Las marcas compatibles se trasladarán como pendientes de revisión; el modelo genérico y sus datos se conservan.</p>}
-      {migrationReport && <><p role="status">{migrationReport.added} marcaciones trasladadas en el último intento. {migrationReport.skipped.length} sin correspondencia.</p>
-        <details><summary className="admin-focus-ring cursor-pointer text-xs">Revisar traslado</summary>
-          <ul>{migrationReport.skipped.map(item => <li key={item.id}>Marca {item.id}: {item.reason}</li>)}</ul>
-          <button type="button" className="admin-focus-ring mt-2 rounded-lg border px-3 py-2" onClick={migrateLegacy} disabled={!personal || personal.captures !== photos}>Reintentar traslado sin duplicar</button></details></>}
-    </section>}
+    {migrationReport && migrationReport.skipped.length > 0 && <p role="status" className="rounded-lg bg-amber-50 p-3 text-sm text-amber-900">
+      {migrationReport.skipped.length} marca(s) sin trasladar. Se conservan en el modelo original.</p>}
     <SkinEvaluationEditor sources={skinSources} surface={(personal?.reviewBase ?? personal)?.surface}
       presentation={clinical ? 'mask-first' : 'comparison'}
+      referenceView={integration?.referenceView} viewMode={integration?.viewMode}
+      aiAllowed={integration ? integration.aiAllowed === true : true}
+      onRequestPhoto={clinical ? () => setClinicalCaptureOpen(true) : undefined}
+      migration={migration && migrationReport ? { ids: evaluationMarks.filter(mark => mark.id.startsWith(`legacy-exam:${migration.examId}:`)).map(mark => mark.id), skipped: migrationReport.skipped.length } : undefined}
       modelData={(personal?.reviewBase ?? personal)?.glb} recordId={integration?.recordId} context={integration?.context ?? {}}
       value={evaluationMarks} onChange={changeEvaluationMarks} />
   </Suspense>;
@@ -2429,11 +2428,7 @@ export default function FaceSimLab({ integration }: { integration?: FaceSimInteg
         setPersonal(maskReview.model); setMaskReview(null); setClinicalCaptureOpen(false);
         setWorkspace('simulate'); setAppearanceOpened(true); setEditorGroup('appearance');
       }} />
-    {personal || loadedPhotos.length ? <div className="flex items-center justify-between gap-3">
-      <p className="text-sm font-semibold text-gray-800">{personal ? 'Máscara del paciente' : 'Evaluación sobre fotografía'}</p>
-      <button type="button" className="admin-focus-ring min-h-11 rounded-lg border px-3 py-2 text-sm" onClick={() => setClinicalCaptureOpen(true)}>
-        Revisar fotos</button>
-    </div> : <div className="rounded-2xl border border-dashed border-gray-200 bg-gray-50 px-5 py-8 text-center">
+    {!personal && !loadedPhotos.length && <div className="rounded-2xl border border-dashed border-gray-200 bg-gray-50 px-5 py-8 text-center">
       <p className="font-medium text-gray-800">Crea la máscara con fotos del paciente</p>
       <button type="button" className="admin-focus-ring mt-3 min-h-11 rounded-xl bg-gold px-4 py-2 text-sm font-semibold text-gray-900" onClick={() => setClinicalCaptureOpen(true)}>Elegir fotografías</button>
     </div>}

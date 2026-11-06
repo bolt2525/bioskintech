@@ -27,6 +27,7 @@ try {
       import React from '/node_modules/.vite/deps/react.js';
       import ReactDOM from '/node_modules/.vite/deps/react-dom_client.js';
       import FaceSimLab from '/src/lab/faceSim/FaceSimLab.tsx';
+      import Viewer from '/src/components/admin/ficha-clinica/components/Clinical3DViewer.tsx';
       import atlas from '/src/lab/faceSim/genericFaceAtlas.json';
       import {personalSurfaceToGlb} from '/src/lab/faceSim/personalSurfaceGlb.ts';
       import {bufferToBase64,storeSurface} from '/src/lab/faceSim/facialSimulationSession.ts';
@@ -57,6 +58,8 @@ try {
         }
         if(!legacy)throw Error('Fixture sin anclaje migrable');
         root.render(React.createElement(FaceSimLab,{integration:{mode:'skin-exam',recordId:12,onController,onDirty,
+          referenceView:React.createElement('section',{'aria-label':'Modelo original'},React.createElement('header',{style:{minHeight:76}},'Modelo anatómico de referencia'),
+            React.createElement(Viewer,{markers:[{id:legacy.id,pathologyId:'lesion',label:legacy.category,position:legacy.position3D,normal:{x:0,y:0,z:1},rotation:[0,0,0]}],readOnly:true,height:'min(62dvh,560px)'})),
           legacyMigration:{examId:42,marks:[legacy]}}}));
         await new Promise(resolve=>requestAnimationFrame(resolve));
         const start=performance.now(),glb=await personalSurfaceToGlb(surface,canvas),exportMs=performance.now()-start;
@@ -89,13 +92,40 @@ try {
   await page.goto(`${origin}/__facial_mask_fixture__`);
   await page.waitForFunction(() => window.controller && window.makeFixture, null, { timeout: 120000 });
   await page.evaluate(() => window.makeFixture());
-  await page.waitForFunction(() => Array.from(document.querySelectorAll('input')).some(input => input.value === 'Área sintética'),
-    null, { timeout: 120000 });
   await page.waitForFunction(() => window.controller.getMarks().length === 2);
-  await page.getByText('1 marcaciones trasladadas en el último intento. 0 sin correspondencia.').waitFor();
-  await page.getByRole('button', { name: 'Validar región', exact: true }).and(page.locator(':enabled')).click();
-  await page.getByText('Revisar traslado', { exact: true }).click();
-  await page.getByRole('button', { name: 'Reintentar traslado sin duplicar', exact: true }).click();
+  const migration = page.getByRole('dialog',{name:'Compara y confirma las ubicaciones',exact:true});
+  await migration.waitFor();
+  assert.equal(await migration.getByRole('region',{name:'Modelo original'}).isVisible(),true);
+  assert.equal(await migration.locator('input[type="number"]').count(),0);
+  if(process.env.QA_SCREENSHOT_DIR)await page.screenshot({path:process.env.QA_SCREENSHOT_DIR+'\\traslado-modal.png',fullPage:true});
+  await migration.getByRole('button',{name:'Cancelar revisión',exact:true}).click();
+  assert.equal(await page.evaluate(()=>window.controller.getMarks().find(mark=>mark.id.startsWith('legacy-exam:')).status),'pending');
+  const originalAnchor=await page.evaluate(()=>window.controller.getMarks().find(mark=>mark.id.startsWith('legacy-exam:')).anchor);
+  await page.getByRole('button',{name:'Revisar traslado',exact:true}).click();
+  await migration.getByRole('button',{name:'Marca histórica sintética',exact:true}).click();
+  await migration.getByRole('button',{name:'Reubicar marca',exact:true}).click();
+  const migrationCanvas=migration.locator('canvas').first();
+  await migrationCanvas.scrollIntoViewIfNeeded();
+  let migrationBounds=await migrationCanvas.boundingBox();
+  await migrationCanvas.click({position:{x:migrationBounds.width*.55,y:migrationBounds.height*.55}});
+  await migration.getByText('Si todo está bien, confirma sin mover las marcas.',{exact:true}).waitFor();
+  assert.deepEqual(await page.evaluate(()=>window.controller.getMarks().find(mark=>mark.id.startsWith('legacy-exam:')).anchor),originalAnchor,
+    'Reubicar en el borrador no cambia el examen antes de confirmar');
+  await migration.getByRole('button',{name:'Cancelar revisión',exact:true}).click();
+  assert.deepEqual(await page.evaluate(()=>window.controller.getMarks().find(mark=>mark.id.startsWith('legacy-exam:')).anchor),originalAnchor);
+  await page.getByRole('button',{name:'Revisar traslado',exact:true}).click();
+  await migration.getByRole('button',{name:'Confirmar ubicaciones',exact:true}).click();
+  assert.equal(await page.evaluate(()=>window.controller.getMarks().find(mark=>mark.id.startsWith('legacy-exam:')).status),'validated');
+  await page.getByRole('button',{name:'Revisar traslado',exact:true}).click();
+  await migration.getByRole('button',{name:'Marca histórica sintética',exact:true}).click();
+  await migration.getByRole('button',{name:'Reubicar marca',exact:true}).click();
+  await migrationCanvas.scrollIntoViewIfNeeded();
+  migrationBounds=await migrationCanvas.boundingBox();
+  await migrationCanvas.click({position:{x:migrationBounds.width*.55,y:migrationBounds.height*.55}});
+  await migration.getByText('Si todo está bien, confirma sin mover las marcas.',{exact:true}).waitFor();
+  await migration.getByRole('button',{name:'Confirmar ubicaciones',exact:true}).click();
+  assert.notDeepEqual(await page.evaluate(()=>window.controller.getMarks().find(mark=>mark.id.startsWith('legacy-exam:')).anchor),originalAnchor,
+    'Confirmar conserva la nueva posición y la misma identidad');
   assert.equal(await page.evaluate(() => window.controller.getMarks().length), 2);
   const roundtrip = await page.evaluate(async () => {
     const { state, canvas, refs } = window.fixture;
@@ -112,9 +142,8 @@ try {
   assert.equal(await page.getByRole('button', { name: 'Morfología', exact: true }).count(), 0);
   const mask = page.getByRole('region', { name: 'Editor de evaluación de piel' });
   const photoViewport = page.getByRole('region', { name: 'Fotografía ampliable' });
-  assert.ok((await mask.getByRole('heading', { name: 'Máscara del paciente', exact: true }).boundingBox()).y <
-    (await photoViewport.boundingBox()).y, 'La máscara precede a las fotografías');
   await mask.getByRole('button', { name: 'Mostrar zonas', exact: true }).click();
+  await mask.getByRole('button', {name:/^Fotografías \(/}).click();
   assert.ok(await photoViewport.locator('svg polygon').count() > 0, 'Las zonas visibles se proyectan en la foto confirmada');
   await photoViewport.getByRole('button', { name: 'Ocultar zonas en foto', exact: true }).click();
   assert.equal(await photoViewport.locator('svg polygon').count(), 0);
@@ -135,6 +164,7 @@ try {
   const rect = await target.boundingBox();
   await page.mouse.click(rect.x+rect.width*spot.x,rect.y+rect.height*spot.y);
   await page.waitForFunction(() => window.controller.getMarks().length===3);
+  await page.getByRole('dialog',{name:'Revisar marca',exact:true}).getByRole('button',{name:'Cerrar',exact:true}).click();
   const placed = await page.evaluate(() => window.controller.getMarks().at(-1));
   assert.ok(placed.anchor, 'La marca fotográfica se refleja como un único anclaje en la máscara');
   assert.ok(Math.abs(placed.box.x+placed.box.width/2-spot.x)<.001);
@@ -150,22 +180,25 @@ try {
   assert.equal(await target.isDisabled(), true, 'La mano no añade marcas');
   await photoViewport.getByRole('button', { name: 'Desplazar foto', exact: true }).click();
   await photoViewport.getByRole('button', { name: 'Restablecer foto', exact: true }).click();
+  await mask.getByRole('button', {name:'Máscara 3D',exact:true}).click();
   const maskCanvas = mask.locator('canvas').first();
   await maskCanvas.scrollIntoViewIfNeeded();
   const maskBounds = await maskCanvas.boundingBox();
   await maskCanvas.click({position:{x:maskBounds.width*.55,y:maskBounds.height*.55}});
   await page.waitForFunction(() => window.controller.getMarks().length===4, null, {timeout:10000});
+  await page.getByRole('dialog',{name:'Revisar marca',exact:true}).getByRole('button',{name:'Cerrar',exact:true}).click();
   const maskMark = await page.evaluate(() => window.controller.getMarks().at(-1));
   assert.ok(maskMark.anchor, 'El raycast real de la máscara conserva el anclaje anatómico');
+  await mask.getByRole('button', {name:/^Fotografías \(/}).click();
   assert.equal(await photoViewport.getByRole('button', {name:'Seleccionar Lesión, pendiente',exact:true}).count(),2,
     'Ambas marcas, de foto y de máscara, se muestran en la fotografía sin duplicar identidades');
   if (process.env.QA_SCREENSHOT_DIR) await page.screenshot({path:process.env.QA_SCREENSHOT_DIR+'\\mascara-desktop.png',fullPage:true});
   await page.setViewportSize({ width: 390, height: 844 });
-  const photos = page.getByRole('button', { name: /Fotografías de referencia/ });
+  const photos = page.getByRole('button', { name: /^Fotografías \(/ });
+  await page.getByRole('button', {name:'Máscara 3D',exact:true}).click();
+  assert.equal(await photos.getAttribute('aria-pressed'), 'false');
   await photos.click();
-  assert.equal(await photos.getAttribute('aria-expanded'), 'false');
-  await photos.click();
-  assert.equal(await photos.getAttribute('aria-expanded'), 'true');
+  assert.equal(await photos.getAttribute('aria-pressed'), 'true');
   assert.equal(await page.evaluate(() => window.controller.getMarks().length), 4);
   assert.equal(await page.evaluate(() => window.controller.getMarks()[0].id), 'manual-fixture');
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1), false);
