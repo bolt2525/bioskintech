@@ -1,10 +1,10 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode, type PointerEvent } from 'react';
 import { Check, Images, Upload, X } from 'lucide-react';
 import { Dialog } from '../../components/ui/Dialog';
 import Clinical3DViewer from '../../components/admin/ficha-clinica/components/Clinical3DViewer';
 import Skin3DBoundary from '../../components/admin/ficha-clinica/components/Skin3DBoundary';
 import { FACE_OVAL } from './engine';
-import { moveFaceLandmark } from './faceContour';
+import { extendVisibleForehead, moveFaceLandmark, refinePhotoContour } from './faceContour';
 import genericFaceAtlas from './genericFaceAtlas.json' with { type: 'json' };
 
 type Landmark = { x: number; y: number; z: number };
@@ -23,7 +23,7 @@ const primary = 'admin-focus-ring inline-flex min-h-11 items-center justify-cent
 function PhotoGuide() {
   return <section aria-label="Guía de fotografías" className="rounded-2xl bg-slate-50 p-4">
     <div className="mb-3"><h3 className="font-semibold">Empieza con una foto de frente</h3>
-      <p className="text-sm text-gray-600">Añade ambos ángulos de 45° para ver mejor los laterales. Son opcionales.</p></div>
+      <p className="text-sm text-gray-600">Una frontal permite empezar. Con una frontal y una oblicua de 45° puedes comparar un lateral; con ambas oblicuas tienes referencias de los dos lados. Son opcionales, no garantizan precisión.</p></div>
     <div className="grid grid-cols-3 gap-2">
       {(['Oblicua izquierda', 'Frontal', 'Oblicua derecha'] as const).map((label, index) => <div key={label}
         className={`rounded-xl border p-2 text-center ${index === 1 ? 'border-gold bg-gold-light/40' : 'border-gray-200 bg-white'}`}>
@@ -51,17 +51,30 @@ function CaptureCard({ capture, onChange, disabled }: { capture: ClinicalCapture
   const [editing, setEditing] = useState(false);
   const [selected, setSelected] = useState(10);
   const [error, setError] = useState('');
+  const pixels = useRef<ImageData | null>(null);
+  const pointer = useRef<number | null>(null);
   useEffect(() => {
     const canvas = preview.current;
     if (canvas) { canvas.width = capture.canvas.width; canvas.height = capture.canvas.height;
       canvas.getContext('2d')?.drawImage(capture.canvas, 0, 0); }
+    pixels.current = capture.canvas.getContext('2d')?.getImageData(0, 0, capture.canvas.width, capture.canvas.height) ?? null;
   }, [capture.canvas]);
   function update(target: { x: number; y: number }) {
     if (!points || disabled) return;
-    const next = moveFaceLandmark(points, selected, target, capture.canvas.width / capture.canvas.height, genericFaceAtlas.triangles);
-    if (!next) { setError('Acerca el punto al borde original.'); return; }
+    const aspect = capture.canvas.width / capture.canvas.height;
+    let next = selected === 10
+      ? extendVisibleForehead(points, target, aspect, genericFaceAtlas.triangles, true)
+      : moveFaceLandmark(points, selected, target, aspect, genericFaceAtlas.triangles);
+    if (!next) { setError('Ese ajuste comprime o cruza la malla. Acerca el punto al límite anterior, por encima de las cejas.'); return; }
+    if (selected === 10 && pixels.current) next = refinePhotoContour(next, FACE_OVAL, genericFaceAtlas.triangles, pixels.current).landmarks;
     setPoints(next); setError('');
     if (included) onChange({ id: capture.id, landmarks: next });
+  }
+  function pointAt(e: PointerEvent<SVGSVGElement>) {
+    const r = e.currentTarget.getBoundingClientRect(), scale = Math.min(r.width / capture.canvas.width, r.height / capture.canvas.height);
+    const x = (e.clientX - r.left - (r.width - capture.canvas.width * scale) / 2) / (capture.canvas.width * scale);
+    const y = (e.clientY - r.top - (r.height - capture.canvas.height * scale) / 2) / (capture.canvas.height * scale);
+    if (x >= 0 && x <= 1 && y >= 0 && y <= 1) update({ x, y });
   }
   return <article className={`min-w-0 overflow-hidden rounded-2xl border ${included ? 'border-gold bg-gold-light/30' : 'border-gray-200 bg-gray-50'}`}>
     <div className="relative bg-slate-950">
@@ -71,18 +84,20 @@ function CaptureCard({ capture, onChange, disabled }: { capture: ClinicalCapture
         className={`absolute inset-0 h-full w-full ${editing ? 'touch-none cursor-crosshair' : 'pointer-events-none'}`}
         aria-label={editing ? `Ajustar límite de ${capture.label}` : undefined}
         onPointerDown={e => {
-          if (!editing) return;
-          const r = e.currentTarget.getBoundingClientRect(), scale = Math.min(r.width / capture.canvas.width, r.height / capture.canvas.height);
-          const x = (e.clientX - r.left - (r.width - capture.canvas.width * scale) / 2) / (capture.canvas.width * scale);
-          const y = (e.clientY - r.top - (r.height - capture.canvas.height * scale) / 2) / (capture.canvas.height * scale);
-          if (x >= 0 && x <= 1 && y >= 0 && y <= 1) update({ x, y });
-        }}>
+          if (!editing || disabled) return;
+          pointer.current = e.pointerId; e.currentTarget.setPointerCapture(e.pointerId); pointAt(e);
+        }}
+        onPointerMove={e => { if (editing && pointer.current === e.pointerId) pointAt(e); }}
+        onPointerUp={() => { pointer.current = null; }} onPointerCancel={() => { pointer.current = null; }}>
         <polygon points={FACE_OVAL.map(i => `${points[i].x * capture.canvas.width},${points[i].y * capture.canvas.height}`).join(' ')}
           fill="none" stroke="#38bdf8" strokeWidth={2} vectorEffect="non-scaling-stroke" />
         {FACE_OVAL.map(i => <circle key={i} cx={points[i].x * capture.canvas.width} cy={points[i].y * capture.canvas.height}
           r={(editing && i === selected ? .012 : .004) * capture.canvas.width} fill={editing && i === selected ? '#f59e0b' : '#38bdf8'}
           stroke="white" strokeWidth={1} vectorEffect="non-scaling-stroke"
-          onPointerDown={e => { if (editing) { e.stopPropagation(); setSelected(i); } }} />)}
+          onPointerDown={e => { if (editing && !disabled) {
+            e.stopPropagation(); setSelected(i); pointer.current = e.pointerId;
+            e.currentTarget.ownerSVGElement?.setPointerCapture(e.pointerId);
+          } }} />)}
       </svg>}
     </div>
     <div className="space-y-2 p-3">
@@ -96,9 +111,10 @@ function CaptureCard({ capture, onChange, disabled }: { capture: ClinicalCapture
           disabled={disabled} aria-expanded={editing} onClick={() => setEditing(value => !value)}>{editing ? 'Listo' : 'Ajustar borde'}</button>}
       </div>
       {editing && points && <div className="space-y-2 rounded-xl bg-white p-2">
+        <p className="text-xs text-slate-600">Arrastra el punto naranja o usa las coordenadas. Al mover Frente se reajusta toda la banda superior; las sienes solo se afinan si la foto muestra un borde claro. Si incluye fondo, ajusta ese borde manualmente.</p>
         <label className="block text-xs">Punto del borde
           <select className="admin-focus-ring mt-1 w-full rounded-lg border p-2" value={selected} onChange={e => setSelected(Number(e.target.value))}>
-            {FACE_OVAL.map((id, i) => <option key={id} value={id}>{id === 10 ? 'Frente' : id === 152 ? 'Mentón' : `Borde ${i + 1}`}</option>)}
+            {FACE_OVAL.map((id, i) => <option key={id} value={id}>{id === 10 ? 'Frente' : id === 152 ? 'Mentón' : [21, 54, 103, 67, 109, 338, 297, 332, 284, 251, 162, 389, 127, 356].includes(id) ? `Sien / frente · borde ${i + 1}` : `Mandíbula · borde ${i + 1}`}</option>)}
           </select>
         </label>
         <div className="grid grid-cols-2 gap-2">{(['x', 'y'] as const).map(axis => <label key={axis} className="text-xs">Posición {axis.toUpperCase()} (%)
@@ -152,9 +168,12 @@ export default function ClinicalCaptureFlow({ open, onClose, photos, busy, statu
           {source === 'library' && library}
           {!!photos.length && <>
             <p className="text-sm text-gray-600">{photos.length} foto(s) · revisa los bordes sugeridos y desmarca las que no quieras usar.</p>
-            {photos.length === 1 && <p className="rounded-xl bg-slate-50 px-3 py-2 text-sm text-gray-600">
-              Una frontal es suficiente. Las oblicuas son opcionales; con una sola foto la cobertura lateral y la profundidad son limitadas.
-            </p>}
+            <p role="status" className="rounded-xl bg-slate-50 px-3 py-2 text-sm text-gray-600">
+              {selected.length <= 1 ? 'Una frontal es suficiente. Añade una oblicua de 45° para comparar un lateral, o ambas para tener referencias de los dos lados. La cobertura lateral y la profundidad son limitadas con una sola foto.' :
+                selected.length === 2 ? 'Frontal + una oblicua: mejor referencia del lateral fotografiado. Añade la oblicua del lado opuesto para comparar ambos lados.' :
+                  'Frontal + ambas oblicuas de 45°: referencias angulares de los dos lados. Revisa que sean vistas distintas; más fotos no garantizan precisión.'}
+              {' '}Las oblicuas son opcionales.
+            </p>
             <div className={`grid gap-4 ${photos.length === 1 ? 'mx-auto max-w-lg' : 'md:grid-cols-2 xl:grid-cols-3'}`}>
               {photos.map(photo => <div key={`${photo.id}:${!!photo.landmarks}`} className="min-w-0 space-y-2">
                 <CaptureCard capture={photo} disabled={busy || blocked}

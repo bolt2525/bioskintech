@@ -1,5 +1,9 @@
 # Progreso de BioSkinTech App
 
+- ✅ 2026-11-06 Frente y marcas recalculadas.
+- Frente reajusta toda la banda superior, con arrastre y contracción revisada; sienes buscan bordes coherentes también hacia dentro. Guía explica frontal, frontal+oblicua y referencias bilaterales sin garantizar precisión.
+- Marcas cian/violeta con centro blanco, aro oscuro, tamaño legible bajo zoom y áreas rellenas pulsantes; nombres completos con oclusión por ancla. QA: 66 pruebas Node y tres recorridos sintéticos desktop/móvil, incluida medición de píxeles WebGL; sin fotos clínicas, proveedor real ni cambios de infraestructura.
+- Build final aprobado; lint sin errores nuevos (visor mantiene 49 errores/5 avisos previos y tab dos avisos previos), TypeScript conserva 12 errores ajenos. Skills: componentes, React, UX, validación y navegador; capturas sintéticas revisadas.
 - ✅ 2026-11-06 Frontal única: selección corregida.
 - Referencias dentro del margen fotográfico de 0,5 % producen aviso, no rechazo; las realmente fuera siguen bloqueadas con región identificada. Una frontal basta y las oblicuas son opcionales.
 - QA: 36 pruebas Node, recorrido sintético desktop/móvil con generación GLB real desde una frontal y build aprobados; lint focal sin errores. TypeScript conserva 12 errores previos. Skills UI/React/QA/navegador aplicadas; detector simulado, sin fotos clínicas ni IA real.

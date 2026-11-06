@@ -5,6 +5,7 @@ import { mapSkinCandidate } from '../../../../lab/faceSim/skinMultiView.ts';
 import { parseSkinReview, validBox } from './skinVisualAI.ts';
 import type { NormalizedBox, PhotoReference, ReviewedSkinMark, SkinContext } from './skinVisualAI';
 import type { EditablePoint } from './Clinical3DViewer';
+import { COLORS } from '../../../../constants/theme.ts';
 
 export type EvaluationAnchor = FaceAddress & { version: 1 };
 export type EvaluationOriginalSource = { provider: 'manual' } | ReviewedSkinMark['source'];
@@ -70,7 +71,8 @@ export function skinDisplayPoints(marks: readonly EvaluationMark[], sources: rea
     const normal = { x: a[1] * b[2] - a[2] * b[1], y: a[2] * b[0] - a[0] * b[2], z: a[0] * b[1] - a[1] * b[0] };
     const length = Math.hypot(normal.x, normal.y, normal.z);
     return [{ id: mark.id, type: 'free' as const, lineIds: [], ...position, size: isZonalSkinMark(mark.box) ? 1 : mark.box.width / .04,
-      color: mark.status === 'validated' ? '#22d3ee' : '#fbbf24', name: mark.label,
+      color: mark.status === 'validated' ? COLORS.skinValidated : COLORS.skinPending,
+      name: `${mark.label}${mark.status === 'pending' ? ' · Pendiente' : ''}`,
       ...(area.length === 4 && length > 0 ? { area: { radius: Math.max(...area.map(q =>
         Math.hypot(q.x - position.x, q.y - position.y, q.z - position.z))),
       normal: { x: normal.x / length, y: normal.y / length, z: normal.z / length } } } : {}) }];

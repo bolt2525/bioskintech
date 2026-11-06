@@ -337,7 +337,9 @@ export default function SkinEvaluationEditor({
   const points = useMemo(() => active && surface ? skinDisplayPoints(activeMarks, sources, surface) : [],
     [active, surface, activeMarks, sources]);
   const labels = useMemo(() => displayed.marks && displayed.names ? points.map(point => ({
-    id: point.id, position: { x: point.x, y: point.y + .04, z: point.z }, text: point.name ?? '', color: point.color,
+    id: point.id, position: { x: point.x, y: point.y + .07, z: point.z },
+    anchor: { x: point.x, y: point.y, z: point.z },
+    text: point.name ?? '', color: '#ffffff',
   })) : [], [points, displayed.marks, displayed.names]);
   const referencePoints = useMemo(() => referenceVisible && surface ? skinDisplayPoints(value, sources, surface, 'reference') : [],
     [referenceVisible, surface, value, sources]);
@@ -489,7 +491,7 @@ export default function SkinEvaluationEditor({
         onMouseEnter={() => hoverMark(mark.id)} onMouseLeave={() => hoverMark(null)} onFocus={() => hoverMark(mark.id)} onBlur={() => hoverMark(null)}
         style={hovered === mark.id ? { boxShadow: '0 0 0 2px #22d3ee' } : undefined}
         aria-pressed={selectedMark === mark.id} onClick={() => { setSelectedMark(mark.id); selectPhoto(mark.sourceId); setDetailOpen(true); }}>
-        <span className={`mr-2 inline-block h-2 w-2 rounded-full ${mark.status === 'validated' ? 'bg-green-700' : 'bg-amber-500'}`} />
+        <span className={`mr-2 inline-block h-2 w-2 rounded-full ${mark.status === 'validated' ? 'bg-cyan-500' : 'bg-purple-400'}`} />
         <span className="break-words">{mark.label}</span><span className="ml-2 text-xs text-gray-500">{isZonalSkinMark(mark.box) ? 'Zonal · ' : 'Puntual · '}{mark.status === 'validated' ? 'Confirmada' : 'Por revisar'}</span></button>)}
     </div>}
     {detailOpen && !migrationOpen && <Dialog open={!!activeMarks.find(mark => mark.id === selectedMark)} onClose={() => setDetailOpen(false)} labelledBy="skin-mark-title">

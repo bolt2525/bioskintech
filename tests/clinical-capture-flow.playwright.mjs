@@ -90,10 +90,26 @@ try {
   await page.waitForFunction(()=>window.controller.getPhotos().length===1);
   await page.waitForFunction(()=>!document.querySelector('dialog[open] input[type=file]').disabled);
   const single=page.getByRole('dialog',{name:'Revisar fotos juntas',exact:true});
-  await single.getByText(/Una frontal es suficiente\. Las oblicuas/).waitFor();
+  await single.getByText(/Una frontal es suficiente\. Añade una oblicua/).waitFor();
   await single.getByText(/Rostro cerca del borde:/).waitFor();
   assert.equal(await single.getByRole('checkbox').isDisabled(),false,'Aviso de borde no bloquea la selección');
   assert.equal(await single.getByRole('checkbox').isChecked(),true);
+  await single.getByRole('button',{name:'Ajustar borde',exact:true}).click();
+  const topBefore=await single.locator('polygon').getAttribute('points');
+  const top=single.locator('circle').first();
+  const box=await top.boundingBox();
+  assert.ok(box);
+  await page.mouse.move(box.x+box.width/2,box.y+box.height/2);
+  await page.mouse.down();
+  await page.mouse.move(box.x+box.width/2,box.y+box.height/2-16,{steps:6});
+  await page.mouse.up();
+  const topAfter=await single.locator('polygon').getAttribute('points');
+  assert.notEqual(topAfter,topBefore);
+  const beforeCoords=topBefore.split(' ').map(point=>point.split(',').map(Number));
+  const afterCoords=topAfter.split(' ').map(point=>point.split(',').map(Number));
+  assert.ok(afterCoords[0][1]<beforeCoords[0][1]-8,'El punto frontal sigue el arrastre');
+  assert.ok(afterCoords[1][1]<beforeCoords[1][1]-2 && afterCoords.at(-1)[1]<beforeCoords.at(-1)[1]-2,'Ambos lados de la frente se recalculan');
+  await single.getByRole('button',{name:'Listo',exact:true}).click();
   await single.getByRole('checkbox').uncheck();
   assert.equal(await single.getByRole('button',{name:'Confirmar fotos y generar máscara',exact:true}).isDisabled(),true);
   await single.getByRole('checkbox').check();
@@ -109,6 +125,7 @@ try {
   assert.equal(singleMask.photos.length,1);
   assert.equal(singleMask.photos[0].slot,'frontal');
   assert.ok(singleMask.mask?.glbBase64.length>0,'Se construyó GLB real con una frontal, sin IA');
+  assert.ok(singleMask.photos[0].alignment.landmarks[10].y<beforeCoords[0][1]/480-.01,'El límite corregido se conserva en la sesión editable');
   assert.equal(writes.length,0,'Generar una máscara no requiere escrituras de API');
   await page.reload();
   await page.waitForFunction(()=>window.controller&&window.makeFiles);
@@ -180,6 +197,6 @@ try {
   assert.deepEqual(errors, []);
   assert.ok(external.every(url => /^https:\/\/(?:fonts\.googleapis\.com\/css2|odml\.pa\.googleapis\.com\/v1\/log)/.test(url)));
   console.log(JSON.stringify({ passed: true, groupedPhotos: 3, preselected: true, oneDialog: true, generatedMask: true,
-    singleFrontalMask:true, nearBorderWarningSelectable:true,
+    singleFrontalMask:true, nearBorderWarningSelectable:true, foreheadDragRecalculatesBand:true,
     singleAndBatchUpload:true, libraryBatch: 3, libraryWithoutReupload: true, failedDetectionKeeps2D: true, viewports: [1440, 390] }));
 } finally { await browser.close(); }

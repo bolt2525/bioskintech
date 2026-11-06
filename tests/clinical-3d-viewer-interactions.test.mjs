@@ -57,6 +57,7 @@ function load() {
   const refs = [];
   let cursor = 0;
   const dom = new EventSurface(), window = new EventSurface(), mount = new EventSurface();
+  window.matchMedia = () => ({ matches: false });
   const animationFrames = new Map();
   let frameId = 0;
   const hooks = {
@@ -118,7 +119,7 @@ function load() {
           : 2 * cam.position.distanceTo(point) * Math.tan(THREE.MathUtils.degToRad(cam.fov) / 2) / cam.zoom / height,
       };
       if (name === './scalpGroom') return {};
-      if (name.endsWith('/theme')) return { COLORS: { annotation: '#00ffff' } };
+      if (name.endsWith('/theme')) return { COLORS: { annotation: '#00ffff', skinOutline: '#0f172a' } };
       return require(name);
     },
   };
@@ -521,5 +522,46 @@ test('sprites seleccionan/mueven el ancla sin esfera visible; array vacío ocult
   assert.equal(disposed, true);
   app.render({ annotationLabels: [] }).find(({ effect }) => effect.toString().includes('new THREE.CanvasTexture(canvas)')).effect();
   assert.equal(app.refs.annotationLabelsGroupRef.current.children.length, 0);
+  app.cleanup();
+});
+
+test('marcas de piel: núcleo blanco, aro oscuro y área rellena pulsante; respeta movimiento reducido', () => {
+  const point = { id: 'skin-zone', type: 'free', x: 0, y: 0, z: 0, lineIds: [], color: '#22d3ee',
+    area: { radius: .3, normal: { x: 0, y: 0, z: 1 } } };
+  const app = engine({ editablePoints: [point] });
+  const run = () => app.effects.find(({ effect }) => effect.toString().includes('ptGroup.userData.pointName')).effect();
+  run();
+  const group = app.refs.editablePointsGroupRef.current.children[0];
+  assert.equal(group.children.length, 4, 'Relleno, bordes del área y centro de tamaño legible');
+  const glyph=group.children.at(-1);
+  assert.equal(glyph.children.at(-1).material.color.getHexString(), 'ffffff');
+  assert.equal(glyph.children.at(-2).material.color.getHexString(), '22d3ee');
+  assert.equal(glyph.children.at(-3).material.color.getHexString(), '0f172a');
+  assert.ok(glyph.children.at(-1).material.transparent && glyph.children.at(-2).material.transparent,
+    'Centro y aro deben compartir la cola transparente con el borde oscuro');
+  assert.equal(group.userData.pulseMaterials.length, 2);
+  assert.ok(group.children[0].geometry.getAttribute('position').count > 100, 'Área adaptada a la superficie');
+  app.frame();
+  const initialScale=glyph.scale.x;
+  app.refs.cameraRef.current.zoom*=2;
+  app.frame();
+  assert.ok(Math.abs(glyph.scale.x/initialScale-.5)<1e-6, 'Centro conserva tamaño legible al acercar, sin cambiar el área');
+  app.window.matchMedia = () => ({ matches: true });
+  run();
+  assert.equal(app.refs.editablePointsGroupRef.current.children[0].userData.pulseMaterials, undefined);
+  app.cleanup();
+});
+
+test('etiqueta de piel no recorta letras y se oculta si su ancla queda detrás de la superficie', () => {
+  const label = { id: 'skin', text: 'Lesión', position: { x: 0, y: .07, z: 0 }, anchor: { x: 0, y: 0, z: 0 } };
+  const app = engine({ occludeAnnotations: true, annotationLabels: [label] });
+  app.effects.find(({ effect }) => effect.toString().includes('new THREE.CanvasTexture(canvas)')).effect();
+  const sprite = app.refs.annotationLabelsGroupRef.current.children[0];
+  app.frame();
+  assert.equal(sprite.visible, true);
+  assert.equal(sprite.material.depthTest, false);
+  sprite.userData.surfaceAnchor.z = -1;
+  app.frame(); app.frame();
+  assert.equal(sprite.visible, false, 'No muestra el nombre de una marca oculta');
   app.cleanup();
 });

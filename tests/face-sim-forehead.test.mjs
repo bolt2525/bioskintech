@@ -31,6 +31,28 @@ test('rechaza extensiones excesivas, hacia cejas, laterales o fuera de imagen', 
   assert.equal(extendVisibleForehead(fixture.landmarks, { ...target(0.1), x: 0.95 }, fixture.aspect, triangles), null);
   assert.equal(extendVisibleForehead(fixture.landmarks, { x: 0.5, y: -0.01 }, fixture.aspect, triangles), null);
 });
+test('edición clínica de frente recalcula la banda, admite bajar el límite y conserva cejas, relieve y UV', () => {
+  const before = structuredClone(fixture.landmarks);
+  const raised = extendVisibleForehead(before, target(.12), fixture.aspect, triangles, true);
+  assert.ok(raised);
+  for (const i of [109, 338, 67, 297]) {
+    assert.notEqual(raised[i].y, before[i].y, `Vecino ${i}: la frente no termina en un pico aislado`);
+  }
+  const loweredTarget = target(-.025);
+  const lowered = extendVisibleForehead(raised, loweredTarget, fixture.aspect, triangles, true);
+  assert.ok(lowered);
+  const direct = extendVisibleForehead(before, loweredTarget, fixture.aspect, triangles, true);
+  assert.ok(direct);
+  lowered.forEach((p, i) => {
+    assert.ok(Math.hypot(p.x - direct[i].x, p.y - direct[i].y) < 1e-9, 'Sin deriva por ajustes sucesivos');
+    assert.equal(p.z, before[i].z);
+  });
+  for (const i of [9, 33, 263, 70, 300, 152]) assert.deepEqual(lowered[i], before[i]);
+  assert.equal(extendVisibleForehead(before, target(-.2), fixture.aspect, triangles, true), null, 'No comprime la banda sobre las cejas');
+  const surface = buildPersonalSurface(lowered, fixture.aspect, triangles);
+  assert.ok(Math.abs(surface.uvs[21] - loweredTarget.y) < 1e-6);
+  assert.deepEqual(fixture.landmarks, before);
+});
 test('un borde capilar oscuro solo genera propuesta; sin borde no inventa frente', () => {
   const width = 500, height = 600;
   const data = new Uint8ClampedArray(width * height * 4);

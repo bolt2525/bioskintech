@@ -76,6 +76,9 @@ try {
   await page.getByRole('button', { name: 'Añadir marca en el centro', exact: true }).click();
   await page.getByRole('button', { name: 'Confirmar', exact: true }).click();
   const identity = await page.evaluate(() => window.marks[0].id);
+  const validatedDot=page.getByRole('button',{name:'Seleccionar Lesión, validada',exact:true});
+  assert.equal(await validatedDot.evaluate(node=>getComputedStyle(node).borderColor),'rgb(34, 211, 238)');
+  assert.match(await validatedDot.evaluate(node=>getComputedStyle(node).boxShadow),/rgb\(15, 23, 42\)/,'Borde oscuro sobre cualquier tono de foto');
   await page.getByRole('button', { name: 'Seleccionar Lesión, validada', exact: true }).click();
   await page.getByRole('button', { name: 'Cerrar', exact: true }).click();
   await page.getByRole('button', { name: /Oblicua.*sin confirmar/ }).click();
@@ -110,6 +113,9 @@ try {
   await page.getByRole('checkbox', { name: 'Confirmo el envío de este recorte a Gemini.' }).check();
   await page.getByRole('button', { name: 'Confirmar y buscar', exact: true }).click();
   await page.getByText('Revisión del último grupo de propuestas', { exact: true }).waitFor();
+  const pendingDot=page.getByRole('button',{name:'Seleccionar Uno, pendiente',exact:true});
+  assert.equal(await pendingDot.evaluate(node=>getComputedStyle(node).borderColor),'rgb(192, 132, 252)');
+  assert.match(await pendingDot.innerText(),/Pendiente/,'Estado legible sin depender solo del color');
   assert.equal(sent.length, 1); assert.equal(sent[0].temporary, true); assert.equal('recordId' in sent[0], false);
   assert.equal(sent[0].consent, true);
   const pixel = await page.evaluate(async base64 => {

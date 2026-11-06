@@ -40,8 +40,8 @@ export function moveFaceLandmark(
   return preservesTriangles(landmarks, next, triangles) ? next : null;
 }
 
-/** Amplía la banda superior completa; no estira ojos/cejas ni añade piel oculta como observada. */
-export function extendVisibleForehead(landmarks: Landmark[], target: P2, aspect: number, triangles: readonly number[]): Landmark[] | null {
+/** Reajusta la banda superior completa; bajar el límite requiere revisión explícita. */
+export function extendVisibleForehead(landmarks: Landmark[], target: P2, aspect: number, triangles: readonly number[], allowLowering = false): Landmark[] | null {
   if (landmarks.length < 468 || !Number.isFinite(aspect) || aspect <= 0
     || landmarks.some(p => ![p.x, p.y, p.z].every(Number.isFinite))
     || ![target.x, target.y].every(Number.isFinite) || target.x < 0 || target.x > 1 || target.y < 0 || target.y > 1) return null;
@@ -57,7 +57,9 @@ export function extendVisibleForehead(landmarks: Landmark[], target: P2, aspect:
   // Un centro recuperado por debajo de sus vecinos no es un ancla válida para extrapolar la frente.
   if (landmarks.some(p => projection(p) > projection(top) + height * 0.035)) return null;
   const dx = (target.x - top.x) * aspect, dy = target.y - top.y;
-  if (band < height * 0.025 || Math.hypot(dx, dy) > height * 0.35 || dx * axis.x + dy * axis.y < 0
+  const extension = dx * axis.x + dy * axis.y;
+  if (band < height * 0.025 || Math.hypot(dx, dy) > height * 0.35 || (!allowLowering && extension < 0)
+    || band + extension < height * 0.025
     || Math.abs(dx * axis.y - dy * axis.x) > height * 0.07) return null;
   const next = landmarks.map(p => {
     // Estiramiento afín por encima de cejas. El smoothstep saturado comprimía
@@ -176,7 +178,7 @@ export function proposeForeheadBoundary(
     reason: 'Borde oscuro candidato, no cabello identificado. Revisa que el punto quede sobre piel visible antes del cabello.' };
 }
 /**
- * Busca un borde cromático solo en una banda exterior estrecha del mentón/sienes.
+ * Busca un borde cromático en una banda estrecha a ambos lados del mentón/sienes.
  * Un borde ambiguo conserva MediaPipe: no se expande un óvalo por defecto.
  */
 export function refinePhotoContour(
@@ -212,18 +214,19 @@ export function refinePhotoContour(
     const baseline = contrast(p.x * width, p.y * height, nx, ny);
     const search = Math.min(24, Math.round(faceHeight * 0.045));
     let best = baseline, distance = 0;
-    for (let d = 2; d <= search; d++) {
+    for (let d = -search; d <= search; d++) {
+      if (Math.abs(d) < 2) continue;
       const score = contrast(p.x * width + nx * d, p.y * height + ny * d, nx, ny);
       if (score > best) { best = score; distance = d; }
     }
-    if (best < 45 || best < baseline * 1.8 || distance < 2) return null;
+    if (best < 45 || best < baseline * 1.8 || Math.abs(distance) < 2) return null;
     return { index, nx, ny, distance };
   });
   let next = landmarks, adjusted = 0;
   proposals.forEach((p, i) => {
     if (!p) return;
     const adjacent = [proposals[(i + oval.length - 1) % oval.length], proposals[(i + 1) % oval.length]];
-    if (!adjacent.some(q => q && Math.abs(q.distance - p.distance) <= faceHeight * 0.015)) return;
+    if (!adjacent.some(q => q && Math.sign(q.distance) === Math.sign(p.distance) && Math.abs(q.distance - p.distance) <= faceHeight * 0.015)) return;
     const origin = landmarks[p.index];
     const moved = moveFaceLandmark(next, p.index, { x: origin.x + p.nx * p.distance / width, y: origin.y + p.ny * p.distance / height }, aspect, triangles);
     if (moved) { next = moved; adjusted++; }

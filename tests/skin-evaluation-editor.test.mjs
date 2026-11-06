@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import atlas from '../src/lab/faceSim/genericFaceAtlas.json' with { type: 'json' };
+import { COLORS } from '../src/constants/theme.ts';
 import {
   anchorForPhoto, bestPhotoForAnchor, cropToOriginal, fromPersistedSkinReview,
   photoForAnchor, skinRequestContext, skinReviewSummaries, toPersistedSkinReview, validateEvaluationGroup,
@@ -80,6 +81,12 @@ test('proyección de puntos y áreas es derivada, conserva identidades y reutili
   assert.equal(mask.length, 1);
   assert.equal(generic.length, 1);
   assert.equal(mask[0].id, generic[0].id);
+  assert.equal(mask[0].color, COLORS.skinPending);
+  assert.equal(mask[0].color, generic[0].color);
+  assert.match(mask[0].name, /Pendiente/);
+  const validated = skinDisplayPoints([{ ...marks[0], status: 'validated' }], [source], surface);
+  assert.equal(validated[0].color, COLORS.skinValidated);
+  assert.equal(validated[0].name, mark.label);
   assert.ok(mask[0].area?.radius > 0);
   assert.ok(generic[0].area?.radius > 0);
   assert.ok(Math.abs(Math.hypot(...Object.values(mask[0].area.normal)) - 1) < 1e-8);

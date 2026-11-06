@@ -168,6 +168,20 @@ try {
     const canvases=page.locator('canvas:visible');
     const a=await canvases.nth(0).boundingBox(),b=await canvases.nth(1).boundingBox();
     assert.ok(Math.abs(a.y-b.y)<2 && Math.abs(a.height-b.height)<2,'Ambos visores reales quedan alineados');
+    const png=await canvases.nth(0).screenshot(process.env.QA_SCREENSHOT_DIR ? {path:`${process.env.QA_SCREENSHOT_DIR}\\marcas-contraste.png`} : {});
+    const colorCounts=await page.evaluate(async bytes=>{
+      const image=await createImageBitmap(new Blob([new Uint8Array(bytes)],{type:'image/png'}));
+      const canvas=document.createElement('canvas');canvas.width=image.width;canvas.height=image.height;
+      const ctx=canvas.getContext('2d');ctx.drawImage(image,0,0);image.close();
+      const pixels=ctx.getImageData(0,0,canvas.width,canvas.height).data;
+      let cyan=0,white=0;
+      for(let i=0;i<pixels.length;i+=4){
+        if(pixels[i]<100&&pixels[i+1]>150&&pixels[i+2]>170)cyan++;
+        if(pixels[i]>230&&pixels[i+1]>230&&pixels[i+2]>230)white++;
+      }
+      return {cyan,white};
+    },Array.from(png));
+    assert.ok(colorCounts.cyan>10&&colorCounts.white>10,`Marcación cian/blanca visible: ${JSON.stringify(colorCounts)}`);
   }
   if (process.env.QA_SCREENSHOT_DIR) await page.screenshot({ path: `${process.env.QA_SCREENSHOT_DIR}\\examen-desktop.png`, fullPage: true });
   await page.setViewportSize({ width: 390, height: 844 });

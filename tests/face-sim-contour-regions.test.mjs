@@ -144,6 +144,23 @@ test('borde visible: reduce el recorte del mentón sin expansión arbitraria en 
   assert.equal(unchanged.adjusted, 0);
   assert.equal(unchanged.landmarks, landmarks);
 });
+test('sienes con entrada visible: busca también hacia dentro y no incluye una banda de fondo por defecto', () => {
+  const { landmarks, triangles } = ovalFixture();
+  const image = ellipseImage();
+  for (let y = 0; y < image.height; y++) for (let x = 0; x < image.width; x++) {
+    const py = y / image.height, px = x / image.width;
+    const indent = .055 * Math.exp(-(((py - .30) / .09) ** 2));
+    const inside = ((px - .5) / (.305 - indent)) ** 2 + ((py - .5) / .405) ** 2 < 1;
+    image.data.set(inside ? [190, 145, 130, 255] : [15, 20, 25, 255], (y * image.width + x) * 4);
+  }
+  const result = refinePhotoContour(landmarks, FACE_OVAL, triangles, image);
+  const temples = FACE_OVAL.filter(id => landmarks[id].y > .25 && landmarks[id].y < .40);
+  assert.ok(temples.some(id => Math.abs(result.landmarks[id].x - .5) < Math.abs(landmarks[id].x - .5) - .005));
+  result.landmarks.forEach((p, i) => assert.equal(p.z, landmarks[i].z));
+  assert.deepEqual(result.landmarks[10], landmarks[10], 'El borde de frente confirmado no se mueve');
+  const surface = buildPersonalSurface(result.landmarks, .8, triangles);
+  assert.ok(surface.uvs.every(Number.isFinite));
+});
 
 function regionFixture(transform = p => p) {
   const landmarks = Array.from({ length: 478 }, () => ({ x: 0.5, y: 0.5, z: 0 }));

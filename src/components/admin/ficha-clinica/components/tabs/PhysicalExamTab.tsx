@@ -20,6 +20,7 @@ import type { EvaluationMark, PersistedSkinReview } from '../skinEvaluation';
 import type { SkinExamSave } from '../SkinExamWorkspace';
 import type { EditablePoint } from '../Clinical3DViewer';
 import type { SkinVisualReviewData } from '../skinVisualAI';
+import { COLORS } from '../../../../../constants/theme';
 import { useUnsavedChangesGuard } from '../../../../../hooks/useUnsavedChangesGuard';
 import type { FaceSimIntegration } from '../../../../../lab/faceSim/facialSimulationSession';
 import { legacySkinAnchor, skinAnatomicalOverlay, skinZoneAt } from '../skinAnatomy';
@@ -722,6 +723,7 @@ export default function PhysicalExamTab({ recordId, physicalExams, consultationI
     .map(m => ({
       id: m.id,
       pathologyId: 'lesion',
+      color: COLORS.skinValidated,
       label: m.category,
       type: (m.distribution === 'zonal' ? 'Zonal' : 'Puntual') as 'Puntual' | 'Zonal',
       position: m.position3D!,
@@ -738,6 +740,7 @@ export default function PhysicalExamTab({ recordId, physicalExams, consultationI
     .map(m => ({
       id: m.id,
       pathologyId: 'lesion',
+      color: COLORS.skinValidated,
       label: m.category,
       type: (m.distribution === 'zonal' ? 'Zonal' : 'Puntual') as 'Puntual' | 'Zonal',
       position: m.position3D!,
@@ -786,7 +789,8 @@ export default function PhysicalExamTab({ recordId, physicalExams, consultationI
   const zonalCount = [...listedFaceMarks, ...bodyMarks].filter(mark => mark.distribution === 'zonal').length +
     evaluationMarks.filter(mark => isZonalSkinMark(mark.box)).length + storedSkinRows.filter(mark => mark.box && isZonalSkinMark(mark.box)).length;
   const referenceLabels = useMemo(() => visibleReferencePoints.map(point => ({
-    id: point.id, position: { x: point.x, y: point.y + .04, z: point.z }, text: point.name ?? '', color: point.color,
+    id: point.id, position: { x: point.x, y: point.y + .07, z: point.z },
+    anchor: { x: point.x, y: point.y, z: point.z }, text: point.name ?? '', color: '#ffffff',
   })), [visibleReferencePoints]);
   function editEvaluation(id: string) {
     if (!showSkinWorkspace) {

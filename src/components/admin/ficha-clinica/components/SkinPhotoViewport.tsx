@@ -8,6 +8,7 @@ import type { EvaluationMark } from './skinEvaluation';
 import { skinRegionCells } from './skinAnatomy';
 import { isZonalSkinMark, visibleSkinTriangles } from './skinEvaluation';
 import { validBox, type NormalizedBox } from './skinVisualAI';
+import { COLORS } from '../../../../constants/theme';
 
 const button = 'admin-focus-ring inline-flex min-h-11 items-center justify-center gap-1 rounded-lg border px-3 py-2 text-sm disabled:opacity-40';
 export default function SkinPhotoViewport({ source, surface, showZones, onToggleZones, marks, selectedMark, disabled, onChoose, onSelect, hoveredMark, onHover, showNames = true }: {
@@ -87,14 +88,19 @@ export default function SkinPhotoViewport({ source, surface, showZones, onToggle
           aria-pressed={selectedMark === mark.id} onClick={() => onSelect(mark.id)}
           onMouseEnter={() => onHover?.(mark.id)} onMouseLeave={() => onHover?.(null)}
           onFocus={() => onHover?.(mark.id)} onBlur={() => onHover?.(null)}
-          className={`admin-focus-ring absolute z-10 rounded-full border-2 bg-white shadow-[0_0_10px_#22d3ee] ${mark.status === 'validated' ? 'border-cyan-400' : 'border-amber-400'} ${selectedMark === mark.id || hoveredMark === mark.id ? 'ring-4 ring-cyan-300' : ''} ${pan ? 'pointer-events-none' : ''}`}
+          className={`admin-focus-ring absolute z-10 rounded-full border-[3px] bg-white ${selectedMark === mark.id || hoveredMark === mark.id ? 'ring-4 ring-white/70' : ''} ${pan ? 'pointer-events-none' : ''}`}
           style={{ left: `${(box.x + box.width / 2) * 100}%`, top: `${(box.y + box.height / 2) * 100}%`,
+            borderColor: mark.status === 'validated' ? COLORS.skinValidated : COLORS.skinPending,
+            boxShadow: `0 0 0 2px ${COLORS.skinOutline}, 0 0 12px ${mark.status === 'validated' ? COLORS.skinValidated : COLORS.skinPending}`,
             width: Math.max(12, Math.min(24, mark.box.width * 450)), height: Math.max(12, Math.min(24, mark.box.width * 450)), transform: 'translate(-50%, -50%)' }}>
-            {showNames && <span className="pointer-events-none absolute bottom-full left-1/2 mb-2 -translate-x-1/2 whitespace-nowrap rounded bg-slate-950/80 px-2 py-1 text-xs text-white">{mark.label}</span>}
+            {showNames && <span className="pointer-events-none absolute bottom-full left-1/2 mb-2 w-max max-w-52 -translate-x-1/2 break-words rounded border border-white/40 bg-slate-950/95 px-2 py-1 text-xs font-semibold text-white">{mark.label}{mark.status === 'pending' ? ' · Pendiente' : ''}</span>}
           </button>)}
         {marks.filter(item => !item.projected && validBox(item.box) && isZonalSkinMark(item.box)).map(({ mark, box }) =>
-          <span key={mark.id} aria-hidden="true" className={`pointer-events-none absolute rounded-[50%] border-2 motion-safe:animate-pulse ${mark.status === 'validated' ? 'border-cyan-400 bg-cyan-400/20' : 'border-amber-400 border-dashed bg-amber-400/20'}`}
-            style={{ left: `${box.x * 100}%`, top: `${box.y * 100}%`, width: `${box.width * 100}%`, height: `${box.height * 100}%` }} />)}
+          <span key={mark.id} aria-hidden="true" className={`pointer-events-none absolute rounded-[50%] border-2 motion-safe:animate-pulse ${mark.status === 'pending' ? 'border-dashed' : ''}`}
+            style={{ left: `${box.x * 100}%`, top: `${box.y * 100}%`, width: `${box.width * 100}%`, height: `${box.height * 100}%`,
+              borderColor: mark.status === 'validated' ? COLORS.skinValidated : COLORS.skinPending,
+              backgroundColor: `${mark.status === 'validated' ? COLORS.skinValidated : COLORS.skinPending}40`,
+              boxShadow: `0 0 0 1px ${COLORS.skinOutline}` }} />)}
       </div>
     </div>
     <p className="px-3 py-2 text-xs text-gray-500">{pan ? 'Arrastra para recorrer la foto. Desactiva la mano para marcar.' : 'Pulsa sobre la foto para marcar. El zoom no cambia las coordenadas guardadas.'}</p>

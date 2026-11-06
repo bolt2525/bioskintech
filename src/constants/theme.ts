@@ -23,6 +23,9 @@ export const COLORS = {
   goldLight:  '#f5e6d3',
   goldInk:    '#8b6840',
   annotation: '#c62828',
+  skinValidated: '#22d3ee',
+  skinPending: '#c084fc',
+  skinOutline: '#0f172a',
 
   // Estados
   success: 'text-emerald-600',

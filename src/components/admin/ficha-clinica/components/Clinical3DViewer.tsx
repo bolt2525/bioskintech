@@ -42,6 +42,7 @@ export interface Marker3D {
   type: MarkerType;
   pathologyId: string;
   label?: string;
+  color?: string;
   position: { x: number; y: number; z: number };
   rotation: number[];
   normal: { x: number; y: number; z: number };
@@ -65,6 +66,45 @@ export interface EditablePoint {
   color?: string;
   area?: { radius: number; normal: { x: number; y: number; z: number } };
   size?: number;
+}
+
+function createSurfacePatch(center: THREE.Vector3, normal: THREE.Vector3, radius: number, faceMesh: THREE.Object3D | null) {
+  const radialSegments = 32, rings = 4;
+  const vertices: number[] = [normal.x * 0.008, normal.y * 0.008, normal.z * 0.008];
+  const indices: number[] = [];
+  const raycaster = new THREE.Raycaster();
+  const up = Math.abs(normal.y) < 0.9 ? new THREE.Vector3(0, 1, 0) : new THREE.Vector3(1, 0, 0);
+  const tangent = new THREE.Vector3().crossVectors(up, normal).normalize();
+  const bitangent = new THREE.Vector3().crossVectors(normal, tangent).normalize();
+  for (let ring = 1; ring <= rings; ring++) {
+    const ringRadius = radius * (ring / rings);
+    for (let segment = 0; segment < radialSegments; segment++) {
+      const angle = (segment / radialSegments) * Math.PI * 2;
+      const candidate = center.clone().addScaledVector(tangent, Math.cos(angle) * ringRadius)
+        .addScaledVector(bitangent, Math.sin(angle) * ringRadius);
+      raycaster.set(candidate.clone().addScaledVector(normal, radius + 0.5), normal.clone().negate());
+      const hits = faceMesh ? raycaster.intersectObject(faceMesh, true) : [];
+      const projected = hits.length > 0 ? hits[0].point.clone().addScaledVector(normal, 0.008)
+        : candidate.addScaledVector(normal, 0.008);
+      projected.sub(center);
+      vertices.push(projected.x, projected.y, projected.z);
+    }
+  }
+  for (let segment = 0; segment < radialSegments; segment++) {
+    indices.push(0, 1 + segment, 1 + ((segment + 1) % radialSegments));
+  }
+  for (let ring = 1; ring < rings; ring++) {
+    const innerStart = 1 + (ring - 1) * radialSegments, outerStart = 1 + ring * radialSegments;
+    for (let segment = 0; segment < radialSegments; segment++) {
+      const next = (segment + 1) % radialSegments;
+      indices.push(innerStart + segment, outerStart + segment, outerStart + next);
+      indices.push(innerStart + segment, outerStart + next, innerStart + next);
+    }
+  }
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
+  geometry.setIndex(indices); geometry.computeVertexNormals();
+  return geometry;
 }
 
 /** Plano de corte ilustrativo: posición 0..1 sobre el eje del modelo. */
@@ -144,7 +184,7 @@ function applyAnnotationDepth(group: THREE.Object3D | null, occlude: boolean, de
     for (const material of materials) {
       if (!defaults.has(material)) defaults.set(material, { depthTest: material.depthTest, depthWrite: material.depthWrite });
       const original = defaults.get(material)!;
-      material.depthTest = occlude ? true : original.depthTest;
+      material.depthTest = drawable.userData.surfaceAnchor ? false : occlude ? true : original.depthTest;
       material.depthWrite = occlude ? false : original.depthWrite;
     }
   });
@@ -353,6 +393,8 @@ export interface AnnotationLabel {
   position: { x: number; y: number; z: number };
   text: string;
   color?: string;
+  /** Oculta toda la etiqueta al ocultarse su ancla, sin recortar letras contra la piel. */
+  anchor?: { x: number; y: number; z: number };
 }
 
 interface AnnotationInteractionProps {
@@ -1225,6 +1267,7 @@ const ThreeEngine: React.FC<AnnotationInteractionProps & {
       sprite.position.set(label.position.x, label.position.y, label.position.z);
       sprite.center.set(0, 0);
       sprite.userData.annotationLabelId = label.id;
+      if (label.anchor) sprite.userData.surfaceAnchor = new THREE.Vector3(label.anchor.x, label.anchor.y, label.anchor.z);
       sprite.userData.aspect = canvas.width / canvas.height;
       sprite.renderOrder = 1004;
       group.add(sprite);
@@ -3219,6 +3262,16 @@ const ThreeEngine: React.FC<AnnotationInteractionProps & {
         if (height > 0) annotationLabelsGroupRef.current?.children.forEach(label => {
           const units = worldUnitsPerPixel(cameraRef.current!, label.position, height);
           label.scale.set(units * 26 * label.userData.aspect, units * 26, 1);
+          if (label.userData.surfaceAnchor && hoverFrameCount % 2 === 0) {
+            label.visible = !callbacks.current.occludeAnnotations
+              || isSurfacePositionVisible(label.userData.surfaceAnchor, cameraRef.current!, faceMeshRef.current);
+          }
+        });
+        if (height > 0) editablePointsGroupRef.current?.children.forEach(point => {
+          const glyph = point.children.find(child => child.userData.screenGlyph);
+          if (!glyph) return;
+          const units = worldUnitsPerPixel(cameraRef.current!, point.position, height);
+          glyph.scale.setScalar(units * 7 * glyph.userData.size / .044);
         });
       }
       const sync = callbacks.current.cameraSync, pose = sync?.pose;
@@ -3784,56 +3837,9 @@ const ThreeEngine: React.FC<AnnotationInteractionProps & {
       sprite.position.y += verticalOffset;
     };
 
-    const createSurfacePatch = (center: THREE.Vector3, normal: THREE.Vector3, radius: number) => {
-      const radialSegments = 32;
-      const rings = 4;
-      const vertices: number[] = [normal.x * 0.008, normal.y * 0.008, normal.z * 0.008];
-      const indices: number[] = [];
-      const raycaster = new THREE.Raycaster();
-      const up = Math.abs(normal.y) < 0.9 ? new THREE.Vector3(0, 1, 0) : new THREE.Vector3(1, 0, 0);
-      const tangent = new THREE.Vector3().crossVectors(up, normal).normalize();
-      const bitangent = new THREE.Vector3().crossVectors(normal, tangent).normalize();
-
-      for (let ring = 1; ring <= rings; ring++) {
-        const ringRadius = radius * (ring / rings);
-        for (let segment = 0; segment < radialSegments; segment++) {
-          const angle = (segment / radialSegments) * Math.PI * 2;
-          const candidate = center.clone()
-            .addScaledVector(tangent, Math.cos(angle) * ringRadius)
-            .addScaledVector(bitangent, Math.sin(angle) * ringRadius);
-          raycaster.set(candidate.clone().addScaledVector(normal, radius + 0.5), normal.clone().negate());
-          const hits = faceMesh ? raycaster.intersectObject(faceMesh, true) : [];
-          const projected = hits.length > 0
-            ? hits[0].point.clone().addScaledVector(normal, 0.008)
-            : candidate.addScaledVector(normal, 0.008);
-          projected.sub(center);
-          vertices.push(projected.x, projected.y, projected.z);
-        }
-      }
-
-      for (let segment = 0; segment < radialSegments; segment++) {
-        indices.push(0, 1 + segment, 1 + ((segment + 1) % radialSegments));
-      }
-      for (let ring = 1; ring < rings; ring++) {
-        const innerStart = 1 + (ring - 1) * radialSegments;
-        const outerStart = 1 + ring * radialSegments;
-        for (let segment = 0; segment < radialSegments; segment++) {
-          const next = (segment + 1) % radialSegments;
-          indices.push(innerStart + segment, outerStart + segment, outerStart + next);
-          indices.push(innerStart + segment, outerStart + next, innerStart + next);
-        }
-      }
-
-      const geometry = new THREE.BufferGeometry();
-      geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
-      geometry.setIndex(indices);
-      geometry.computeVertexNormals();
-      return geometry;
-    };
-
     markers.forEach((marker) => {
       const pathology = PATHOLOGIES.find(p => p.id === marker.pathologyId);
-      const colorHex = pathology?.color || '#ffffff';
+      const colorHex = marker.color ?? pathology?.color ?? '#ffffff';
       const color = new THREE.Color(colorHex);
       const pos = new THREE.Vector3(marker.position.x, marker.position.y, marker.position.z);
 
@@ -3868,9 +3874,9 @@ const ThreeEngine: React.FC<AnnotationInteractionProps & {
 
         const radius = marker.radius || 0.16;
         markerGroup.userData.markerRadius = radius;
-        const zonalColor = new THREE.Color('#14b8a6');
+        const zonalColor = new THREE.Color(marker.color ?? '#14b8a6');
 
-        const haloGeo = createSurfacePatch(pos, normal, radius);
+        const haloGeo = createSurfacePatch(pos, normal, radius, faceMesh);
         const haloMat = new THREE.MeshBasicMaterial({
           color: zonalColor, transparent: true, opacity: 0.25, depthWrite: false,
           depthTest: true, side: THREE.DoubleSide,
@@ -3893,7 +3899,7 @@ const ThreeEngine: React.FC<AnnotationInteractionProps & {
         coreMesh.position.copy(normal).multiplyScalar(radius * 0.12);
         markerGroup.add(coreMesh);
 
-        const hitGeo = createSurfacePatch(pos, normal, radius * 1.15);
+        const hitGeo = createSurfacePatch(pos, normal, radius * 1.15, faceMesh);
         const hitMat = new THREE.MeshBasicMaterial({
           transparent: true, opacity: 0, depthWrite: false, depthTest: true,
           side: THREE.DoubleSide,
@@ -3950,23 +3956,35 @@ const ThreeEngine: React.FC<AnnotationInteractionProps & {
       if (pt.color && !isIncomplete) {
         const tint = new THREE.Color(pt.color);
         if (pt.area && pt.area.radius > 0) {
+          const normal = new THREE.Vector3(pt.area.normal.x, pt.area.normal.y, pt.area.normal.z).normalize();
+          const fill = new THREE.Mesh(createSurfacePatch(ptGroup.position, normal, pt.area.radius, faceMeshRef.current),
+            new THREE.MeshBasicMaterial({ color: tint, toneMapped: false, transparent: true, opacity: .25, side: THREE.DoubleSide, depthWrite: false }));
+          const outline = new THREE.Mesh(new THREE.RingGeometry(pt.area.radius * .92, pt.area.radius * 1.02, 48),
+            new THREE.MeshBasicMaterial({ color: COLORS.skinOutline, toneMapped: false, transparent: true, opacity: .85, side: THREE.DoubleSide, depthWrite: false }));
           const halo = new THREE.Mesh(new THREE.RingGeometry(pt.area.radius * .94, pt.area.radius, 48),
-            new THREE.MeshBasicMaterial({ color: tint, transparent: true, opacity: .7, side: THREE.DoubleSide, depthWrite: false }));
-          halo.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1),
-            new THREE.Vector3(pt.area.normal.x, pt.area.normal.y, pt.area.normal.z).normalize());
-          halo.position.copy(new THREE.Vector3(pt.area.normal.x, pt.area.normal.y, pt.area.normal.z).multiplyScalar(.008));
-          ptGroup.add(halo);
-          if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) ptGroup.userData.pulseMaterials = [halo.material];
+            new THREE.MeshBasicMaterial({ color: tint, toneMapped: false, transparent: true, opacity: .7, side: THREE.DoubleSide, depthWrite: false }));
+          for (const disk of [outline, halo]) {
+            disk.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), normal);
+            disk.position.copy(normal).multiplyScalar(disk === halo ? .014 : .01);
+          }
+          ptGroup.add(fill, outline, halo);
+          if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) ptGroup.userData.pulseMaterials = [fill.material, halo.material];
         }
         const size = Math.max(.5, Math.min(1.5, pt.size ?? 1));
-        const ring = new THREE.Mesh(new THREE.SphereGeometry(0.036 * size, 16, 16),
-          new THREE.MeshBasicMaterial({ color: tint, transparent: true, opacity: 0.75, depthTest: false }));
+        const glyph = new THREE.Group();
+        glyph.userData.screenGlyph = true;
+        glyph.userData.size = Math.max(1, size);
+        const outline = new THREE.Mesh(new THREE.SphereGeometry(0.044, 16, 16),
+          new THREE.MeshBasicMaterial({ color: COLORS.skinOutline, toneMapped: false, transparent: true, opacity: .9, depthTest: false, depthWrite: false }));
+        outline.renderOrder = 999;
+        const ring = new THREE.Mesh(new THREE.SphereGeometry(0.036, 16, 16),
+          new THREE.MeshBasicMaterial({ color: tint, toneMapped: false, transparent: true, depthTest: false, depthWrite: false }));
         ring.renderOrder = 1000;
-        const core = new THREE.Mesh(new THREE.SphereGeometry(0.026 * size, 16, 16),
-          new THREE.MeshStandardMaterial({ color: '#ffffff', emissive: tint, emissiveIntensity: 0.4, transparent: true, depthTest: false }));
+        const core = new THREE.Mesh(new THREE.SphereGeometry(0.026, 16, 16),
+          new THREE.MeshBasicMaterial({ color: '#ffffff', toneMapped: false, transparent: true, depthTest: false, depthWrite: false }));
         core.renderOrder = 1002;
-        core.userData.baseEmissive = tint.clone();
-        ptGroup.add(ring, core);
+        glyph.add(outline, ring, core);
+        ptGroup.add(glyph);
         group.add(ptGroup);
         return;
       }
