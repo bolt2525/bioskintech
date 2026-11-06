@@ -128,6 +128,8 @@ function lab() {
       if (name === '@mediapipe/tasks-vision') return { FaceLandmarker };
       if (name === './personalSurfaceGlb') return { personalSurfaceToGlb: async () => new ArrayBuffer(8) };
       if (name.endsWith('Clinical3DViewer')) return { default: () => null };
+      if (name.endsWith('/ClinicalCaptureFlow')) return { default: () => null };
+      if (name.endsWith('/skinLegacyMigration')) return loadLocal(fileURLToPath(new URL('../src/components/admin/ficha-clinica/components/skinLegacyMigration.ts', import.meta.url)));
       if (name.endsWith('injectables.json')) return { default: [] };
       if (name.startsWith('./')) {
         const base = fileURLToPath(new URL(`../src/lab/faceSim/${name.slice(2)}`, import.meta.url));

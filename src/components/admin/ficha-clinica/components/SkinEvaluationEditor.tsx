@@ -232,7 +232,7 @@ export default function SkinEvaluationEditor({
 
   return <section aria-label="Editor de evaluación de piel" className="space-y-4 rounded-xl border border-gray-200 bg-gray-50 p-4 text-gray-900">
     <h3 className="font-bold">Evaluación de piel</h3>
-    <p className="text-sm">Las propuestas son orientativas, no diagnósticos. La evaluación manual funciona sin IA. Las fotos no se guardan automáticamente.</p>
+    <p className="text-xs text-gray-500">Fotos originales · guardado manual · propuestas orientativas, no diagnósticos</p>
     {!source ? <div className="space-y-2"><p>No hay fotografías disponibles.</p>{onRequestPhoto && <button type="button" className={button} disabled={disabled} onClick={onRequestPhoto}>Solicitar foto</button>}</div> :
       <>
         <div className="flex flex-wrap gap-2" aria-label="Fotografías disponibles">
@@ -255,7 +255,7 @@ export default function SkinEvaluationEditor({
           {status?.enabled && <button type="button" className={button} aria-pressed={interaction === 'assisted'} disabled={disabled}
             onClick={() => setInteraction('assisted')}>Buscar asistido</button>}
         </div>
-        <div className="grid gap-4 lg:grid-cols-2">
+        <div className="grid gap-4" style={{ gridTemplateColumns: 'repeat(auto-fit,minmax(min(100%,360px),1fr))' }}>
           <div className={view === 'photo' ? '' : 'hidden lg:block'}>
             <p className="mb-1 text-sm">Foto original: pulsa para {interaction === 'manual' ? 'añadir una marca manual' :
               interaction === 'observation' ? 'vincular una observación a la misma región' : 'elegir una zona para recortar'}. Vista seleccionada: {source.label}.</p>

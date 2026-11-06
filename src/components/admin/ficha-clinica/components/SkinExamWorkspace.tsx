@@ -50,10 +50,11 @@ async function json(response: Response) {
   return value;
 }
 
-export default function SkinExamWorkspace({ recordId, context, review, onPrepared, onDirty, legacyMigration }: {
+export default function SkinExamWorkspace({ recordId, context, review, onPrepared, onDirty, legacyMigration, onCaptureReady }: {
   recordId: number; context: SkinContext; review: Review;
   onPrepared: (review: PersistedSkinReview) => void; onDirty: () => void;
   legacyMigration?: FaceSimIntegration['legacyMigration'];
+  onCaptureReady?: (ready: boolean) => void;
 }) {
   const prior = useMemo(() => {
     try { return { refs: priorReferences(review), error: reviewIntegrity(review) }; }
@@ -64,9 +65,8 @@ export default function SkinExamWorkspace({ recordId, context, review, onPrepare
     const old = fromLegacySkinReview(review as string | SkinVisualReviewData | undefined, initialRefs);
     return old.length ? old : fromPersistedSkinReview(review as string | PersistedSkinReview | undefined, initialRefs);
   }, [review, initialRefs]);
-  const [slot, setSlot] = useState<SimulationPhotoSlot>('frontal');
-  const [library, setLibrary] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [hasPhotos, setHasPhotos] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [ready, setReady] = useState(!simulationId(review));
@@ -81,11 +81,13 @@ export default function SkinExamWorkspace({ recordId, context, review, onPrepare
     controller.current = next;
     if (!next) return;
     setControllerReady(true);
+    setHasPhotos(next.getPhotos().length > 0);
     for (const capture of next.getPhotos()) {
-      const item = pending.current.get(capture.id);
-      if (item && (item.canvas === capture.canvas || item.file === capture.original)) {
+      const entry = [...pending.current].find(([, item]) => item.canvas === capture.canvas || (!!item.file && item.file === capture.original));
+      if (entry) {
+        const [key, item] = entry;
         cache.current.set(capture.id, { recordId, canvas: capture.canvas, original: capture.original, reference: item.reference });
-        pending.current.delete(capture.id);
+        pending.current.delete(key);
       }
     }
   }, [recordId]);
@@ -165,33 +167,41 @@ export default function SkinExamWorkspace({ recordId, context, review, onPrepare
     } finally { if (operation.current === task) { operation.current = null; setBusy(false); } }
   }
 
-  return <section aria-label="Evaluación compartida de piel" className="space-y-3 rounded-xl border border-gray-200 bg-white p-3">
-    <p className="text-sm">El trabajo es temporal hasta que prepares la evaluación y guardes el examen. Preparar sube las fotos originales al expediente.</p>
-    {legacyMigration && <p role="status" className="text-sm">Migración del examen #{legacyMigration.examId}: selecciona fotos del expediente o súbelas en Capturas, confirma la alineación y genera la máscara. Después se trasladarán las marcas compatibles para revisión, sin borrar el legacy.</p>}
-    {initialMarks.length > 0 && !simulationId(review) && <p className="text-sm">La revisión anterior se conserva. Para modificarla, vincula cada foto anterior a su vista asignada antes de preparar.</p>}
-    {Object.entries(initialRefs).length > 0 && !simulationId(review) && <ul className="text-sm">
-      {Object.entries(initialRefs).map(([name, photo]) => <li key={name}>{name}: foto clínica #{photo.id}</li>)}</ul>}
-    <div className="flex flex-wrap gap-2">
-      <label className="text-sm">Vista para foto del expediente <select className={button} value={slot} disabled={busy}
-        onChange={e => setSlot(e.target.value as SimulationPhotoSlot)}>{SIMULATION_PHOTO_SLOTS.map(name => <option key={name} value={name}>{name}</option>)}</select></label>
-      <button type="button" className={button} disabled={busy} onClick={() => setLibrary(!library)}>{library ? 'Cerrar biblioteca' : 'Usar foto del expediente'}</button>
-      <button type="button" className={button} disabled={busy || !ready || !!prior.error} onClick={prepare}>{busy ? 'Preparando…' : 'Preparar evaluación para guardar'}</button>
-    </div>
-    {library && <fieldset disabled={busy} className={busy ? 'pointer-events-none opacity-60' : ''}><SimulationPhotoLibrary recordId={recordId} onSelect={async (photo, file) => {
-      const expected = initialRefs[slot];
-      if (expected && (expected.id !== photo.id || expected.r2Key !== photo.r2Key)) throw new Error('Esta vista está reservada para la fotografía de la revisión anterior.');
-      if (!controller.current) throw new Error('El editor aún no está listo.');
-      pending.current.set(slot, { file, reference: photo });
-      try { await controller.current.importPhoto(file, slot); setLibrary(false); }
-      catch (e) { pending.current.delete(slot); throw e; }
-    }} /></fieldset>}
+  async function importLibraryPhotos(items: { photo: PhotoReference; file: File }[]) {
+    const editor = controller.current;
+    if (!editor) throw new Error('El editor aún no está listo.');
+    const expected = items.map(({ photo }) => Object.entries(initialRefs).find(([, ref]) => ref.id === photo.id && ref.r2Key === photo.r2Key));
+    if (initialMarks.length && !simulationId(review) && expected.some(item => !item)) {
+      throw new Error('Selecciona las fotografías originales de la revisión anterior.');
+    }
+    for (const item of items) pending.current.set(`photo-${item.photo.id}`, { file: item.file, reference: item.photo });
+    try {
+      if (initialMarks.length && !simulationId(review)) {
+        for (const [index, item] of items.entries()) {
+          await controller.current!.importPhoto(item.file, expected[index]![0] as SimulationPhotoSlot);
+        }
+      } else await editor.importPhotos(items.map(item => item.file));
+    } catch (e) {
+      for (const item of items) pending.current.delete(`photo-${item.photo.id}`);
+      throw e;
+    }
+  }
+
+  return <section aria-label="Evaluación compartida de piel" className="min-w-0 space-y-3">
+    {initialMarks.length > 0 && !simulationId(review) && <p className="text-sm text-amber-800">Para editar la revisión anterior, selecciona sus fotos originales del expediente. Las marcas se conservan.</p>}
     {error && <p role="alert" className="text-sm text-red-700">{error}</p>}
     {prior.error && <p role="alert" className="text-sm text-red-700">{prior.error}</p>}
     {notice && <p role="status" className="text-sm">{notice}</p>}
     <fieldset disabled={busy || !ready} aria-busy={busy || !ready} className={busy || !ready ? 'pointer-events-none opacity-60' : ''}>
     <Suspense fallback={<p role="status">Abriendo el editor…</p>}>
-      <FaceSimLab integration={{ mode: 'skin-exam', recordId, context, initialMarks, onController, onDirty: changed, onMarksChange: changed, legacyMigration }} />
+      <FaceSimLab integration={{ mode: 'skin-exam', recordId, context, initialMarks, onController, onDirty: changed, onMarksChange: changed,
+        legacyMigration, onCaptureReady, photoLibrary: <SimulationPhotoLibrary recordId={recordId} selection="multiple"
+          onSelect={(photo, file) => importLibraryPhotos([{ photo, file }])} onSelectMany={importLibraryPhotos} /> }} />
     </Suspense>
     </fieldset>
+    {hasPhotos && <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-gray-200 bg-gray-50 p-3">
+      <p className="text-xs text-gray-500">Preparar sube fotos y máscara. Guardar examen confirma los cambios.</p>
+      <button type="button" className={button} disabled={busy || !ready || !!prior.error} onClick={prepare}>{busy ? 'Preparando…' : 'Preparar para guardar'}</button>
+    </div>}
   </section>;
 }

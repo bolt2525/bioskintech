@@ -391,6 +391,7 @@ export default function PhysicalExamTab({ recordId, physicalExams, consultationI
   const [reviewDirty, setReviewDirty] = useState(false);
   const [showSkinWorkspace, setShowSkinWorkspace] = useState(false);
   const [mapView, setMapView] = useState<'generic' | 'mask' | 'split'>('generic');
+  const [maskReady, setMaskReady] = useState(false);
   const [legacyMigration, setLegacyMigration] = useState<FaceSimIntegration['legacyMigration']>();
   const workspaceReview = useRef<PhysicalExam['skin_visual_review']>();
   useUnsavedChangesGuard(reviewDirty || preparedReview !== null);
@@ -713,7 +714,7 @@ export default function PhysicalExamTab({ recordId, physicalExams, consultationI
     <motion.div 
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
-      className="flex flex-col md:flex-row h-auto md:h-[800px] gap-6"
+      className={`flex flex-col md:flex-row h-auto gap-6 ${showSkinWorkspace ? '' : 'md:h-[800px]'}`}
     >
       {typeof document !== 'undefined' && createPortal(
         <>
@@ -835,7 +836,7 @@ export default function PhysicalExamTab({ recordId, physicalExams, consultationI
       </div>
 
       {/* Main Content */}
-      <div className="flex-1 flex flex-col gap-6 overflow-visible md:overflow-hidden">
+      <div className={`min-w-0 flex-1 flex flex-col gap-6 overflow-visible ${showSkinWorkspace ? '' : 'md:overflow-hidden'}`}>
         {/* Toolbar */}
         <div className="flex flex-wrap gap-4 justify-between items-center bg-white p-4 rounded-xl border border-gray-100 shadow-sm shrink-0">
           <div className="flex gap-2">
@@ -917,28 +918,38 @@ export default function PhysicalExamTab({ recordId, physicalExams, consultationI
           )}
         </AnimatePresence>
 
-        <div className="flex-1 flex flex-col md:flex-row gap-6 overflow-visible md:overflow-hidden">
+        <div className={`flex-1 flex flex-col gap-6 overflow-visible ${showSkinWorkspace ? '' : 'md:flex-row md:overflow-hidden'}`}>
           {/* Left Column: Maps */}
-          <div className="flex-1 flex flex-col overflow-y-auto min-w-0 custom-scrollbar pr-2">
-            <div className="mb-6 space-y-3">
-              <p className="text-sm text-gray-600">Puedes marcar en el modelo genérico o abrir el flujo de máscara facial con fotos. Ambos se conservan de forma independiente.</p>
-              <button type="button" className="admin-focus-ring rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm"
-                aria-expanded={showSkinWorkspace} disabled={saving} onClick={() => {
-                  if (showSkinWorkspace && reviewDirty && !window.confirm('Hay cambios de piel sin preparar. ¿Descartarlos?')) return;
-                  if (showSkinWorkspace && reviewDirty) setReviewDirty(false);
-                  if (!showSkinWorkspace) workspaceReview.current = preparedReview ?? currentExam.skin_visual_review;
-                  if (!showSkinWorkspace) setMapView('mask');
-                  setShowSkinWorkspace(current => !current);
-                }}>{showSkinWorkspace ? 'Cerrar evaluación de piel' : 'Abrir evaluación de piel'}</button>
-              {currentExam.id && faceMarks.length > 0 && <button type="button"
-                className="admin-focus-ring ml-2 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm" disabled={saving}
+          <div className={`flex-1 flex flex-col min-w-0 ${showSkinWorkspace ? '' : 'overflow-y-auto custom-scrollbar pr-2'}`}>
+            <div className="mb-5 space-y-3 rounded-2xl border border-gray-200 bg-white p-4">
+              <div><h3 className="text-sm font-bold text-gray-900">{showSkinWorkspace && maskReady ? 'Vista de evaluación facial' : '¿Dónde quieres marcar?'}</h3>
+                {(!showSkinWorkspace || !maskReady) && <p className="mt-1 text-xs text-gray-500">{currentExam.id && faceMarks.length > 0 ? 'Conserva el modelo actual o traslada sus marcas a una máscara con fotos.' : 'Usa el modelo genérico o crea una máscara con fotos del paciente.'}</p>}</div>
+              {(!showSkinWorkspace || !maskReady) && <div className="grid gap-3 sm:grid-cols-2">
+              <button type="button" disabled={saving} aria-pressed={!showSkinWorkspace || mapView === 'generic'}
+                className="admin-focus-ring min-h-14 rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-left text-sm font-semibold text-gray-800 hover:border-gold"
                 onClick={() => {
+                  if (showSkinWorkspace && !maskReady) {
+                    if (reviewDirty && !window.confirm('¿Descartar los cambios temporales de piel y continuar en el modelo genérico? Las marcas originales se conservan.')) return;
+                    setShowSkinWorkspace(false); setReviewDirty(false);
+                  }
+                  setMapView('generic'); setActiveTab('facial');
+                }}>
+                {currentExam.id ? 'Continuar en modelo genérico' : 'Marcar en modelo genérico'}
+                <span className="mt-1 block text-xs font-normal text-gray-500">Sin fotos · marcas originales intactas</span>
+              </button>
+              <button type="button" disabled={saving} aria-expanded={showSkinWorkspace}
+                className="admin-focus-ring min-h-14 rounded-xl border border-gold bg-gold-light/50 px-4 py-3 text-left text-sm font-semibold text-gray-800 hover:bg-gold-light"
+                onClick={() => {
+                  if (showSkinWorkspace) { setMapView('mask'); setActiveTab('facial'); return; }
                   if (reviewDirty && !window.confirm('Se reiniciará el editor de piel sin preparar. ¿Continuar con la migración?')) return;
                   workspaceReview.current = preparedReview ?? currentExam.skin_visual_review;
-                  setLegacyMigration({ examId: currentExam.id!, marks: structuredClone(faceMarks) });
-                  setReviewSession(value => value + 1); setReviewDirty(false); setShowSkinWorkspace(true); setMapView('split'); setActiveTab('facial');
-                }}>Migrar marcaciones a máscara</button>}
-              {showSkinWorkspace && <div role="group" aria-label="Modo de visor facial" className="flex flex-wrap gap-2">
+                  setLegacyMigration(currentExam.id && faceMarks.length > 0 ? { examId: currentExam.id, marks: structuredClone(faceMarks) } : undefined);
+                  setMaskReady(false); setReviewSession(value => value + 1); setReviewDirty(false); setShowSkinWorkspace(true); setMapView('mask'); setActiveTab('facial');
+                }}>{currentExam.skin_visual_review ? 'Abrir máscara y evaluación' : currentExam.id && faceMarks.length > 0 ? 'Migrar marcaciones a máscara' : 'Crear máscara facial'}
+                <span className="mt-1 block text-xs font-normal text-gray-500">Fotos del expediente o nuevas · revisión guiada</span>
+              </button>
+              </div>}
+              {showSkinWorkspace && maskReady && <div role="group" aria-label="Modo de visor facial" className="flex flex-wrap gap-2 border-t border-gray-100 pt-3">
                 {(['generic', 'mask', 'split'] as const).map(mode => <button key={mode} type="button" aria-pressed={mapView === mode}
                   className="admin-focus-ring rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm"
                   onClick={() => { setMapView(mode); setActiveTab('facial'); }}>
@@ -965,7 +976,7 @@ export default function PhysicalExamTab({ recordId, physicalExams, consultationI
               ))}
             </div>
 
-            <div className="mb-6 space-y-2">
+            <div className={`mb-6 space-y-2 ${showSkinWorkspace && maskReady && mapView === 'mask' && activeTab === 'facial' ? 'hidden' : ''}`}>
               <label className="block text-sm font-bold text-gray-700">Seleccionar Lesión para Marcar:</label>
               <div className="relative">
                 <input 
@@ -989,17 +1000,17 @@ export default function PhysicalExamTab({ recordId, physicalExams, consultationI
               )}
             </div>
 
-            <div className={showSkinWorkspace && mapView === 'split' && activeTab === 'facial' ? 'grid gap-4 xl:grid-cols-2' : 'space-y-4'}>
+            <div className={showSkinWorkspace && maskReady && mapView === 'split' && activeTab === 'facial' ? 'grid items-start gap-4 xl:grid-cols-2' : 'space-y-4'}>
             {showSkinWorkspace && <fieldset disabled={saving}
               className={`min-w-0 ${mapView === 'generic' || activeTab !== 'facial' ? 'hidden' : ''} ${saving ? 'pointer-events-none opacity-60' : ''}`}>
               <Suspense fallback={<p role="status">Abriendo evaluación de piel…</p>}>
                 <SkinExamWorkspace key={`${recordId}:${consultationId ?? 'none'}:${reviewSession}`}
                   recordId={recordId} review={workspaceReview.current} legacyMigration={legacyMigration}
                   context={{ skinType: currentExam.skin_type, phototype: currentExam.phototype, hydration: currentExam.hydration }}
-                  onPrepared={handleSkinPrepared} onDirty={handleSkinDirty} />
+                  onPrepared={handleSkinPrepared} onDirty={handleSkinDirty} onCaptureReady={setMaskReady} />
               </Suspense>
             </fieldset>}
-            <div className={`min-w-0 flex-1 rounded-2xl border border-gray-100 shadow-sm overflow-hidden min-h-[420px] ${showSkinWorkspace && mapView === 'mask' && activeTab === 'facial' ? 'hidden' : ''}`}>
+            <div className={`min-w-0 flex-1 rounded-2xl border border-gray-100 shadow-sm overflow-hidden min-h-[420px] ${showSkinWorkspace && maskReady && mapView === 'mask' && activeTab === 'facial' ? 'hidden' : ''}`}>
               {activeTab === 'facial' ? (
                 <div className="relative">
                   <button
@@ -1123,8 +1134,8 @@ export default function PhysicalExamTab({ recordId, physicalExams, consultationI
           </div>
 
           {/* Right Column: Clinical Parameters */}
-          <div className="w-full md:w-[350px] flex flex-col gap-4 overflow-y-auto pr-2 shrink-0 custom-scrollbar">
-            <h3 className="font-bold text-gray-800 border-b border-gray-100 pb-3 flex items-center gap-2 sticky top-0 bg-white z-10">
+          <div className={`w-full gap-4 shrink-0 ${showSkinWorkspace ? 'grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3' : 'md:w-[350px] flex flex-col overflow-y-auto pr-2 custom-scrollbar'}`}>
+            <h3 className={`font-bold text-gray-800 border-b border-gray-100 pb-3 flex items-center gap-2 bg-white ${showSkinWorkspace ? 'col-span-full' : 'sticky top-0 z-10'}`}>
               <div className="w-1 h-5 bg-[#deb887] rounded-full" />
               Parámetros Clínicos
             </h3>
@@ -1158,7 +1169,7 @@ export default function PhysicalExamTab({ recordId, physicalExams, consultationI
               </div>
             ))}
 
-            <div className="space-y-2 mt-4 pt-4 border-t border-gray-100">
+            <div className={`space-y-2 mt-4 pt-4 border-t border-gray-100 ${showSkinWorkspace ? 'col-span-full' : ''}`}>
               <label className="block text-sm font-bold text-gray-700">Notas Adicionales<FieldHelp text={HELP.physical.lesions_description} /></label>
               <textarea
                 name="lesions_description"

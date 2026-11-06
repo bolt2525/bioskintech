@@ -5,6 +5,7 @@ import type { PhotoSurfacePatch } from './multiViewHead';
 import type { PhotoReference, SkinContext } from '../../components/admin/ficha-clinica/components/skinVisualAI';
 import type { EvaluationMark } from '../../components/admin/ficha-clinica/components/skinEvaluation';
 import type { Mark } from '../../components/admin/ficha-clinica/components/FaceMapCanvas';
+import type { ReactNode } from 'react';
 import atlas from './genericFaceAtlas.json' with { type: 'json' };
 
 export type SimulationPhotoSlot = 'frontal' | 'izquierda' | 'derecha' | 'extra_a' | 'extra_b';
@@ -60,6 +61,7 @@ export interface FaceSimController {
   snapshot(references: Record<string, PhotoReference>): Promise<FacialSimulationState>;
   restore(state: FacialSimulationState, photos: Record<string, HTMLCanvasElement>, originals?: Record<string, Blob>): Promise<void>;
   importPhoto(file: File, slot: SimulationPhotoSlot): Promise<void>;
+  importPhotos(files: File[]): Promise<void>;
   reset(): void;
 }
 export interface FaceSimIntegration {
@@ -71,6 +73,8 @@ export interface FaceSimIntegration {
   initialMarks?: EvaluationMark[];
   onMarksChange?: (marks: EvaluationMark[]) => void;
   legacyMigration?: { examId: number; marks: readonly Mark[] };
+  photoLibrary?: ReactNode;
+  onCaptureReady?: (ready: boolean) => void;
 }
 
 export function storeSurface(surface: PersonalSurface | EstimatedHeadSurface): StoredSurface {

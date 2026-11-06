@@ -84,6 +84,7 @@ try {
   await page.waitForFunction(() => window.controller.getMarks().length === 2);
   await page.getByText('1 marcaciones trasladadas en el último intento. 0 sin correspondencia.').waitFor();
   await page.getByRole('button', { name: 'Validar región', exact: true }).and(page.locator(':enabled')).click();
+  await page.getByText('Revisar traslado', { exact: true }).click();
   await page.getByRole('button', { name: 'Reintentar traslado sin duplicar', exact: true }).click();
   assert.equal(await page.evaluate(() => window.controller.getMarks().length), 2);
   const roundtrip = await page.evaluate(async () => {
