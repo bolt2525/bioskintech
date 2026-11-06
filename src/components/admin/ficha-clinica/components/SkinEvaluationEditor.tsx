@@ -3,16 +3,16 @@ import { Grid3X3, Images } from 'lucide-react';
 import { Dialog } from '../../../ui/Dialog';
 import Clinical3DViewer from './Clinical3DViewer';
 import Skin3DBoundary from './Skin3DBoundary';
-import type { Marker3D } from './Clinical3DViewer';
+import type { EditablePoint, Marker3D } from './Clinical3DViewer';
 import LESION_CATALOG from '../../../../data/skin-lesion-catalog.json';
-import { locateSurfacePoint, surfacePoint } from '../../../../lab/faceSim/faceTransfer';
+import { locateSurfacePoint } from '../../../../lab/faceSim/faceTransfer';
 import type { PersonalSurface } from '../../../../lab/faceSim/faceTransfer';
 import type { SkinPhotoSource } from '../../../../lab/faceSim/skinMultiView';
 import recordsFetch from '../../../../utils/recordsFetch';
 import { SkinRequestScope, parseSkinAnalysis, parseSkinStatus, prepareSkinPhoto, validBox } from './skinVisualAI';
 import type { NormalizedBox, PhotoReference, SkinContext, SkinStatus } from './skinVisualAI';
 import {
-  anchorForPhoto, bestPhotoForAnchor, cropToOriginal, photoForAnchor, skinRequestContext, validateEvaluationGroup,
+  anchorForPhoto, bestPhotoForAnchor, cropToOriginal, photoForAnchor, skinRequestContext, validateEvaluationGroup, isZonalSkinMark, resizeSkinBox, skinDisplayPoints,
 } from './skinEvaluation';
 import type { EvaluationMark } from './skinEvaluation';
 import { skinAnatomicalOverlay, skinZoneAt } from './skinAnatomy';
@@ -36,11 +36,16 @@ export interface SkinEvaluationEditorProps {
   viewMode?: 'mask' | 'split';
   aiAllowed?: boolean;
   migration?: { ids: string[]; skipped: number };
+  active?: boolean;
+  referenceVisible?: boolean;
+  onReferencePoints?: (points: EditablePoint[]) => void;
+  selectedReferenceId?: string;
 }
 
 const button = 'admin-focus-ring min-h-11 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 hover:bg-gray-100 disabled:opacity-50 aria-pressed:border-gold-ink aria-pressed:bg-gold-light aria-pressed:text-gold-ink aria-pressed:ring-1 aria-pressed:ring-gold-ink';
 const field = 'admin-focus-ring w-full rounded-lg border border-gray-300 bg-white p-2 text-sm text-gray-900';
 const full: NormalizedBox = { x: 0, y: 0, width: 1, height: 1 };
+const noMarkers: Marker3D[] = [];
 
 function CanvasImage({ image, crop = full, label }: { image: CanvasImageSource; crop?: NormalizedBox; label: string }) {
   const ref = useRef<HTMLCanvasElement>(null);
@@ -73,7 +78,7 @@ function pointBox(x: number, y: number): NormalizedBox {
 
 export default function SkinEvaluationEditor({
   sources, surface, modelData, recordId, value, onChange, context, photoReferences, disabled = false, onRequestPhoto, presentation = 'comparison',
-  referenceView, viewMode = 'mask', aiAllowed = true, migration,
+  referenceView, viewMode = 'mask', aiAllowed = true, migration, active = true, referenceVisible = false, onReferencePoints, selectedReferenceId,
 }: SkinEvaluationEditorProps) {
   const [selectedId, setSelectedId] = useState('');
   const source = sources.find(s => s.id === selectedId) ?? sources[0];
@@ -102,6 +107,16 @@ export default function SkinEvaluationEditor({
   const [migrationOpen, setMigrationOpen] = useState(false);
   const [migrationDraft, setMigrationDraft] = useState<EvaluationMark[] | null>(null);
   const [comparisonSide, setComparisonSide] = useState<'mask' | 'reference'>('mask');
+  const [lesion, setLesion] = useState('');
+  const [distribution, setDistribution] = useState<'point' | 'zone'>('point');
+  const [deletedMark, setDeletedMark] = useState<EvaluationMark | null>(null);
+  const [wide, setWide] = useState(() => window.matchMedia('(min-width: 768px)').matches);
+  useEffect(() => {
+    const media = window.matchMedia('(min-width: 768px)');
+    const changed = () => setWide(media.matches);
+    media.addEventListener('change', changed);
+    return () => media.removeEventListener('change', changed);
+  }, []);
   const migrationShown = useRef(false);
   const overlay = useMemo(() => showZones && surface ? skinAnatomicalOverlay(surface) : undefined, [showZones, surface]);
   const request = useRef(new SkinRequestScope());
@@ -111,6 +126,13 @@ export default function SkinEvaluationEditor({
   const activeMarks = migrationDraft ?? value;
   const currentMarks = useRef(activeMarks);
   currentMarks.current = activeMarks;
+  useEffect(() => {
+    if (active && selectedReferenceId) {
+      setSelectedMark(selectedReferenceId); setDetailOpen(true);
+      const mark = currentMarks.current.find(item => item.id === selectedReferenceId);
+      if (mark) setSelectedId(mark.sourceId);
+    }
+  }, [active, selectedReferenceId]);
   function updateMarks(marks: EvaluationMark[]) {
     if (migrationDraft) setMigrationDraft(marks);
     else onChange(marks);
@@ -124,18 +146,19 @@ export default function SkinEvaluationEditor({
   useLayoutEffect(() => {
     request.current.cancel(); setBusy(false); setConsent(false); setCropOpen(false);
     setGroup([]); setIncluded([]); setSelectedId(''); setSelectedMark(null); setError(''); setNotice('');
+    setDeletedMark(null);
   }, [recordId]);
 
   useEffect(() => {
     let active = true;
     let opened: ImageBitmap | null = null;
     setBitmap(null); setBitmapError('');
-    if (source?.original) createImageBitmap(source.original).then(result => {
+    if (active && cropOpen && source?.original) createImageBitmap(source.original).then(result => {
       if (!active) { result.close(); return; }
       opened = result; setBitmap({ source: source.original!, image: result });
     }).catch(() => { if (active) setBitmapError('No se pudo abrir la foto original.'); });
     return () => { active = false; opened?.close(); };
-  }, [source?.id, source?.original]);
+  }, [active, cropOpen, source?.id, source?.original]);
 
   useEffect(() => {
     if (!aiAllowed) { statusRequest.current.cancel(); setStatus(null); setStatusError(''); setStatusLoading(false); setInteraction('manual'); return; }
@@ -161,18 +184,22 @@ export default function SkinEvaluationEditor({
   function selectPhoto(id: string) {
     request.current.cancel(); setBusy(false); setConsent(false); setError(''); setSelectedId(id);
   }
+  function moveMark(mark: EvaluationMark, box: NormalizedBox, selected: SkinPhotoSource) {
+    if (mark.crop && mark.sourceId !== selected.id) {
+      setError('Reubica esta marca desde su foto original para conservar la evidencia del análisis.'); return;
+    }
+    const movedBox = resizeSkinBox(box, mark.box.width, mark.box.height);
+    updateMarks(currentMarks.current.map(item => item.id === mark.id ? { ...item, sourceId: selected.id, box: movedBox,
+      anchor: anchorForPhoto(movedBox, selected, surface), observations: undefined, status: 'pending', reviewedAt: undefined,
+      source: item.source.provider === 'edited' ? item.source : { provider: 'edited', original: item.source } } : item));
+    setRelocating(false); setNotice('Ubicación actualizada. Confirma cuando termines de revisar.');
+  }
   function chooseRegion(box: NormalizedBox, selected = source, anchor = selected && anchorForPhoto(box, selected, surface)) {
     if (!selected || disabled) return;
     if (relocating && selectedMark) {
       const mark = currentMarks.current.find(item => item.id === selectedMark);
       if (!mark) return;
-      if (mark.crop && mark.sourceId !== selected.id) {
-        setError('Reubica esta marca desde su foto original para conservar la evidencia del análisis.'); return;
-      }
-      updateMarks(currentMarks.current.map(item => item.id === mark.id ? { ...item, sourceId: selected.id, box,
-        anchor, observations: undefined, status: 'pending', reviewedAt: undefined,
-        source: item.source.provider === 'edited' ? item.source : { provider: 'edited', original: item.source } } : item));
-      setRelocating(false); setNotice('Ubicación actualizada. Confirma cuando termines de revisar.'); return;
+      moveMark(mark, box, selected); return;
     }
     if (interaction === 'observation') {
       const mark = latest.current.find(item => item.id === selectedMark);
@@ -192,8 +219,13 @@ export default function SkinEvaluationEditor({
   function addManual(box: NormalizedBox, selected = source, anchor = selected && anchorForPhoto(box, selected, surface)) {
     if (!selected || disabled) return;
     if (migrationOpen) { setNotice('Selecciona una marca y pulsa Reubicar para cambiar su posición.'); return; }
-    const mark: EvaluationMark = { id: crypto.randomUUID(), sourceId: selected.id, category: 'other',
-      label: 'Lesión', note: anchor ? skinZoneAt(anchor) ?? '' : '', box, status: 'pending', source: { provider: 'manual' }, ...(anchor ? { anchor } : {}) };
+    const label = lesion.trim() || 'Lesión';
+    const region = distribution === 'zone' ? resizeSkinBox(box, .14) : box;
+    const placedAnchor = region === box ? anchor : anchorForPhoto(region, selected, surface);
+    const mark: EvaluationMark = { id: crypto.randomUUID(), sourceId: selected.id,
+      category: Object.entries(LESION_CATALOG).find(([, name]) => name === label)?.[0] ?? 'other',
+      label, note: placedAnchor ? skinZoneAt(placedAnchor) ?? '' : '', box: region,
+      status: 'pending', source: { provider: 'manual' }, ...(placedAnchor ? { anchor: placedAnchor } : {}) };
     onChange([...latest.current, mark]); setSelectedMark(mark.id); setDetailOpen(true);
   }
   function on3D(marker: Marker3D) {
@@ -265,17 +297,18 @@ export default function SkinEvaluationEditor({
       if (task.current()) { setError(e instanceof Error ? e.message : 'No se pudo analizar.'); setStatusVersion(v => v + 1); }
     } finally { if (task.current()) setBusy(false); }
   }
-  const visible = source ? activeMarks.flatMap(mark => {
+  const visible = useMemo(() => active && source ? activeMarks.flatMap(mark => {
     if (mark.sourceId === source.id) return [{ mark, box: mark.box, projected: false }];
     const observation = mark.observations?.find(item => item.sourceId === source.id);
     if (observation) return [{ mark, box: observation.box, projected: false }];
     const point = mark.anchor && photoForAnchor(mark.anchor, source, surface);
     return point ? [{ mark, box: pointBox(point.x, point.y), projected: true }] : [];
-  }) : [];
-  const points = surface ? activeMarks.flatMap(mark => {
-    const p = mark.anchor && surfacePoint(mark.anchor, surface);
-    return p ? [{ id: mark.id, type: 'free' as const, lineIds: [], ...p, color: mark.status === 'validated' ? '#15803d' : '#b45309', name: mark.label }] : [];
-  }) : [];
+  }) : [], [active, source, activeMarks, surface]);
+  const points = useMemo(() => active && surface ? skinDisplayPoints(activeMarks, sources, surface) : [],
+    [active, surface, activeMarks, sources]);
+  const referencePoints = useMemo(() => referenceVisible && surface ? skinDisplayPoints(value, sources, surface, 'reference') : [],
+    [referenceVisible, surface, value, sources]);
+  useEffect(() => { onReferencePoints?.(referencePoints); }, [onReferencePoints, referencePoints]);
   const maskPane = <div className="min-w-0 overflow-hidden rounded-xl border border-slate-700 bg-slate-900">
     <div className="flex min-h-[76px] flex-wrap items-center justify-between gap-2 px-3 py-2 text-white">
       <div><h4 className="text-sm font-semibold">Máscara del paciente</h4>
@@ -283,14 +316,14 @@ export default function SkinEvaluationEditor({
       <button type="button" className={`admin-focus-ring inline-flex min-h-11 items-center gap-2 rounded-lg border px-3 py-2 text-xs ${showZones ? 'border-gold bg-gold-light text-gray-900' : 'border-slate-500 text-white hover:bg-slate-800'}`}
         aria-pressed={showZones} onClick={() => setShowZones(current => !current)}><Grid3X3 size={16} aria-hidden="true" />{showZones ? 'Ocultar zonas' : 'Mostrar zonas'}</button>
     </div>
-    {surface && modelData ? <Skin3DBoundary onPhoto={() => { setView('photo'); setPhotosOpen(true); }}><Clinical3DViewer modelData={modelData} markers={[]} editablePoints={points}
+    {surface && modelData ? <Skin3DBoundary onPhoto={() => { setView('photo'); setPhotosOpen(true); }}><Clinical3DViewer modelData={modelData} markers={noMarkers} editablePoints={points}
       pointMode={disabled || (migrationOpen && !relocating) ? 'none' : 'add'} anatomicalOverlay={overlay}
       onMarkerPlaced={on3D} onEditablePointClicked={id => {
         setSelectedMark(id);
         if (!migrationOpen) setDetailOpen(true);
         const mark = currentMarks.current.find(item => item.id === id);
         if (mark && sources.some(item => item.id === mark.sourceId)) selectPhoto(mark.sourceId);
-      }} selectedPointId={selectedMark ?? undefined} skipConfirmation cameraPreset="face-surface"
+      }} labInteraction selectedPointId={selectedMark ?? undefined} skipConfirmation cameraPreset="face-surface"
       height={presentation === 'mask-first' ? 'min(62dvh,560px)' : '420px'} occludeAnnotations /></Skin3DBoundary> :
       <p className="bg-white p-4 text-sm text-gray-700">Máscara 3D no disponible; puedes continuar en la fotografía 2D.</p>}
   </div>;
@@ -315,11 +348,12 @@ export default function SkinEvaluationEditor({
       <button type="button" className={button} aria-pressed={comparisonSide === 'reference'} onClick={() => setComparisonSide('reference')}>Referencia</button>
     </div>}
     <div className={`grid items-stretch gap-3 ${referenceView ? 'md:grid-cols-2' : ''}`}>
-      <div className={`min-w-0 ${comparisonSide === 'reference' && referenceView ? 'hidden md:block' : ''}`}>{maskPane}</div>
-      {referenceView && <div className={`min-w-0 ${comparisonSide === 'mask' ? 'hidden md:block' : ''}`}>{referenceView}</div>}
+      {(wide || comparisonSide === 'mask' || !referenceView) && <div className="min-w-0">{maskPane}</div>}
+      {referenceView && (wide || comparisonSide === 'reference') && <div className="min-w-0">{referenceView}</div>}
     </div>
   </div>;
 
+  if (!active) return null;
   return <section aria-label="Editor de evaluación de piel" className="min-w-0 space-y-4 text-gray-900">
     {!source ? <div className="space-y-2"><p>No hay fotografías disponibles.</p>{onRequestPhoto && <button type="button" className={button} disabled={disabled} onClick={onRequestPhoto}>Solicitar foto</button>}</div> :
       <>
@@ -327,9 +361,16 @@ export default function SkinEvaluationEditor({
           <button type="button" className={button} aria-pressed={view === 'photo'} onClick={() => setView('photo')}>Foto</button>
           <button type="button" className={button} aria-pressed={view === '3d'} onClick={() => setView('3d')}>3D</button>
         </div>}
-        <div className={`flex flex-wrap gap-2 ${presentation === 'mask-first' && !status?.enabled && !value.some(mark => mark.id === selectedMark && mark.sourceId !== source.id) ? 'hidden' : ''}`}>
-          <button type="button" className={button} aria-pressed={interaction === 'manual'} disabled={disabled}
-            onClick={() => setInteraction('manual')}>Marcar manual</button>
+        <div className="flex flex-wrap items-end gap-2 rounded-xl border border-slate-200 bg-slate-50 p-3">
+          <label className="min-w-0 flex-[1_1_220px] text-sm font-semibold">Lesión a marcar
+            <input className={`${field} mt-1 min-h-11`} list="skin-evaluation-catalog" value={lesion} maxLength={300}
+              placeholder="Seleccione o escriba una lesión…" autoComplete="off" disabled={disabled} onChange={event => setLesion(event.target.value)} /></label>
+          <div role="group" aria-label="Tipo de marcación" className="flex gap-1">
+            <button type="button" className={button} aria-pressed={distribution === 'point'} disabled={disabled} onClick={() => setDistribution('point')}>Puntual</button>
+            <button type="button" className={button} aria-pressed={distribution === 'zone'} disabled={disabled} onClick={() => setDistribution('zone')}>Zonal</button>
+          </div>
+          {(status?.enabled || interaction !== 'manual') && <button type="button" className={button} aria-pressed={interaction === 'manual'} disabled={disabled}
+            onClick={() => setInteraction('manual')}>Marcar manual</button>}
           {value.some(mark => mark.id === selectedMark && mark.sourceId !== source.id) && <button type="button" className={button}
             aria-pressed={interaction === 'observation'} disabled={disabled} onClick={() => setInteraction('observation')}>
             Vincular observación a la región seleccionada</button>}
@@ -342,7 +383,7 @@ export default function SkinEvaluationEditor({
             <button type="button" className={button} aria-pressed={photosOpen} onClick={() => setPhotosOpen(true)}>
               <Images size={16} className="mr-1 inline" aria-hidden="true" />Fotografías ({sources.length})</button>
             {onRequestPhoto && <button type="button" className={button} onClick={onRequestPhoto} disabled={disabled}>Revisar fotos</button>}
-            {migration && <button type="button" className={button} disabled={disabled || !migration.ids.length}
+            {!!migration?.ids.length && <button type="button" className={button} disabled={disabled}
               onClick={() => { setMigrationDraft(value); setMigrationOpen(true); setDetailOpen(false); }}>Revisar traslado</button>}
           </div>
           {!migrationOpen && (photosOpen ? photoPane : viewMode === 'split' && referenceView ? comparisonPane : maskPane)}
@@ -354,7 +395,7 @@ export default function SkinEvaluationEditor({
         {aiAllowed && (statusLoading ? <p role="status" className="text-sm">Consultando herramientas…</p> : statusError ?
           <div role="alert" className="rounded-lg bg-amber-50 p-3 text-xs text-amber-900">No se pudo consultar la asistencia IA. El marcado manual sigue disponible. <button type="button" className={button} title={statusError} onClick={() => setStatusVersion(v => v + 1)}>Reintentar</button></div> :
           status?.enabled ? <div className="space-y-2">
-            <Dialog open={cropOpen} onClose={() => { if (!busy) { setCropOpen(false); setConsent(false); } }} labelledBy="skin-crop-title">
+            {cropOpen && <Dialog open onClose={() => { if (!busy) { setCropOpen(false); setConsent(false); } }} labelledBy="skin-crop-title">
               <div className="w-[min(56rem,calc(100vw-2rem))] space-y-3 rounded-lg border border-gray-300 bg-white p-4">
               <h4 id="skin-crop-title" className="font-semibold">Seleccionar recorte original</h4>
               <p className="text-sm">Disponible: {status.remainingUsd.toFixed(3)} USD estimados. Se enviará solo el recorte seleccionado a Gemini; no se guardará la foto automáticamente.</p>
@@ -375,11 +416,16 @@ export default function SkinEvaluationEditor({
                 {busy ? 'Solicitando propuestas…' : 'Confirmar y buscar'}</button>
               {busy && <button type="button" className={button} onClick={() => { request.current.cancel(); setBusy(false); setNotice('Espera cancelada; el envío iniciado podría tener coste.'); }}>Cancelar espera</button>}
               <button type="button" className={button} disabled={busy} onClick={() => { setCropOpen(false); setConsent(false); }}>Cerrar</button>
-            </div></Dialog>
+            </div></Dialog>}
           </div> : null)}
       </>}
     {error && <p role="alert" className="text-sm text-red-700">{error}</p>}
     {notice && <p role="status" className="text-sm">{notice}</p>}
+    {deletedMark && <div role="status" className="flex items-center gap-3 rounded-xl bg-slate-50 p-3 text-sm">Marca eliminada.
+      <button type="button" className={button} disabled={disabled} onClick={() => {
+        if (!latest.current.some(mark => mark.id === deletedMark.id)) onChange([...latest.current, deletedMark]);
+        setDeletedMark(null);
+      }}>Deshacer eliminación</button></div>}
     {group.some(id => value.some(m => m.id === id && m.status === 'pending')) && <div className="space-y-2 rounded-lg border border-amber-400 bg-amber-50 p-3">
       <p className="text-sm font-semibold">Revisión del último grupo de propuestas</p>
       {group.map(id => { const mark = value.find(m => m.id === id); return mark && <label key={id} className="block text-sm">
@@ -396,9 +442,9 @@ export default function SkinEvaluationEditor({
     </div>}
     {!migrationOpen && !!value.length && <div className="flex max-h-32 flex-wrap gap-2 overflow-auto rounded-xl border border-gray-200 p-3" aria-label="Marcas de la evaluación">
       {value.map(mark => <button key={mark.id} type="button" className={button}
-        aria-pressed={selectedMark === mark.id} onClick={() => { setSelectedMark(mark.id); setDetailOpen(true); }}>
+        aria-pressed={selectedMark === mark.id} onClick={() => { setSelectedMark(mark.id); selectPhoto(mark.sourceId); setDetailOpen(true); }}>
         <span className={`mr-2 inline-block h-2 w-2 rounded-full ${mark.status === 'validated' ? 'bg-green-700' : 'bg-amber-500'}`} />
-        {mark.label}<span className="ml-2 text-xs text-gray-500">{mark.status === 'validated' ? 'Confirmada' : 'Por revisar'}</span></button>)}
+        <span className="break-words">{mark.label}</span><span className="ml-2 text-xs text-gray-500">{isZonalSkinMark(mark.box) ? 'Zonal · ' : 'Puntual · '}{mark.status === 'validated' ? 'Confirmada' : 'Por revisar'}</span></button>)}
     </div>}
     {detailOpen && !migrationOpen && <Dialog open={!!activeMarks.find(mark => mark.id === selectedMark)} onClose={() => setDetailOpen(false)} labelledBy="skin-mark-title">
     <div className="max-h-[85dvh] w-[min(30rem,calc(100vw-2rem))] overflow-auto rounded-2xl bg-white p-5 text-gray-900">
@@ -411,6 +457,18 @@ export default function SkinEvaluationEditor({
       <details><summary className="admin-focus-ring cursor-pointer text-sm text-gray-600">Observaciones de la marca</summary><label className="mt-2 block text-sm">Observación
         <textarea className={field} rows={2} maxLength={3000} value={mark.note} disabled={disabled}
           onChange={e => edit(mark.id, { note: e.target.value })} /></label></details>
+      <div role="group" aria-label="Distribución de la marca" className="flex gap-2">
+        <button type="button" className={button} aria-pressed={!isZonalSkinMark(mark.box)} disabled={disabled}
+          onClick={() => edit(mark.id, { box: resizeSkinBox(mark.box, .04) })}>Puntual</button>
+        <button type="button" className={button} aria-pressed={isZonalSkinMark(mark.box)} disabled={disabled}
+          onClick={() => edit(mark.id, { box: resizeSkinBox(mark.box, .14) })}>Zonal</button>
+      </div>
+      <label className="block text-sm">Tamaño de la marca: {Math.round(Math.max(mark.box.width, mark.box.height) * 100)} %
+        <input aria-label="Tamaño de la marca" type="range" className="w-full" min={isZonalSkinMark(mark.box) ? .07 : .01}
+          max={isZonalSkinMark(mark.box) ? .6 : .06} step=".01" disabled={disabled}
+          value={Math.max(mark.box.width, mark.box.height)}
+          onChange={event => edit(mark.id, { box: resizeSkinBox(mark.box, Number(event.target.value)) })} /></label>
+      {isZonalSkinMark(mark.box) && <p className="text-xs text-gray-500">Área aproximada de referencia, no un contorno clínico exacto. Solo se proyecta donde hay correspondencia fiable.</p>}
       <details><summary className="admin-focus-ring cursor-pointer text-sm text-gray-600">Ajustar área de la marca</summary>
       <fieldset disabled={disabled} className="mt-2 grid grid-cols-2 gap-2"><legend className="text-sm">Región en foto original (%)</legend>
         {(['x', 'y', 'width', 'height'] as const).map(key => <label key={key} className="text-xs">
@@ -424,7 +482,9 @@ export default function SkinEvaluationEditor({
         <button type="button" className={button} disabled={disabled} onClick={() => { setRelocating(true); setDetailOpen(false); }}>Reubicar marca</button>
         <button type="button" className={button} disabled={disabled || mark.status === 'validated' || !mark.label.trim() || !validBox(mark.box)}
           onClick={() => { onChange(validateEvaluationGroup(latest.current, [mark.id])); setDetailOpen(false); }}>Validar región</button>
-        <button type="button" className={button} disabled={disabled} onClick={() => { onChange(latest.current.filter(m => m.id !== mark.id)); setDetailOpen(false); }}>Descartar región</button>
+        <button type="button" className={`${button} !text-red-700`} disabled={disabled} onClick={() => {
+          setDeletedMark(mark); onChange(latest.current.filter(m => m.id !== mark.id)); setDetailOpen(false); setRelocating(false);
+        }}>Eliminar marca</button>
       </div>
     </div>)}
     <button type="button" className={`${button} mt-4`} onClick={() => setDetailOpen(false)}>Cerrar</button>

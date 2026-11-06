@@ -192,6 +192,12 @@ try {
   await mask.getByRole('button', {name:/^Fotografías \(/}).click();
   assert.equal(await photoViewport.getByRole('button', {name:'Seleccionar Lesión, pendiente',exact:true}).count(),2,
     'Ambas marcas, de foto y de máscara, se muestran en la fotografía sin duplicar identidades');
+  await page.getByRole('button',{name:/Lesión.*Puntual.*Por revisar/}).last().click();
+  const detail=page.getByRole('dialog',{name:'Revisar marca',exact:true});
+  await detail.getByRole('group',{name:'Distribución de la marca',exact:true}).getByRole('button',{name:'Zonal',exact:true}).click();
+  await detail.getByRole('slider',{name:'Tamaño de la marca',exact:true}).press('ArrowRight');
+  await detail.getByRole('button',{name:'Cerrar',exact:true}).click();
+  assert.ok(await page.evaluate(()=>window.controller.getMarks().at(-1).box.width)>.14);
   if (process.env.QA_SCREENSHOT_DIR) await page.screenshot({path:process.env.QA_SCREENSHOT_DIR+'\\mascara-desktop.png',fullPage:true});
   await page.setViewportSize({ width: 390, height: 844 });
   const photos = page.getByRole('button', { name: /^Fotografías \(/ });

@@ -21,6 +21,7 @@ try {
       ${process.env.QA_REAL_VIEWERS ? "import ActualViewer from '/src/components/admin/ficha-clinica/components/Clinical3DViewer.tsx?qa-original';" : ''}
       export default function Viewer(props){const {markers=[],modelData}=props;return React.createElement(React.Fragment,null,
         React.createElement('output',{'data-testid':modelData?'mask-preview':'generic-mark-count','data-readonly':!!props.readOnly},String(markers.length)),
+        React.createElement('output',{'data-testid':modelData?'mask-point-count':'reference-point-count'},String(props.editablePoints?.length??0)),
         ${process.env.QA_REAL_VIEWERS ? 'React.createElement(ActualViewer,props)' : 'null'})}
     ` });
     if (url.pathname.endsWith('/FaceSimLab.tsx')) return route.fulfill({ contentType: 'application/javascript',
@@ -43,6 +44,7 @@ try {
       import atlas from '/src/lab/faceSim/genericFaceAtlas.json';
       import {personalSurfaceToGlb} from '/src/lab/faceSim/personalSurfaceGlb.ts';
       import {storeSurface,bufferToBase64} from '/src/lab/faceSim/facialSimulationSession.ts';
+      import {anchorForPhoto} from '/src/components/admin/ficha-clinica/components/skinEvaluation.ts';
       import '/src/index.css';
       window.originalLegacy=[{id:'old-face',x:0,y:0,is3D:true,category:'Lesión antigua',
         position3D:{x:0,y:0,z:1},normal3D:{x:0,y:0,z:1}}];
@@ -57,11 +59,17 @@ try {
         const surface={positions:Float32Array.from(atlas.positions),indices:Uint32Array.from(atlas.triangles),
           uvs:Float32Array.from(landmarks.flatMap(p=>[p.x,p.y])),projection:{cx:.5,cy:.5,k:.16,aspect:.75}};
         const glb=await personalSurfaceToGlb(surface,canvas);
+        const box={x:.48,y:.48,width:.04,height:.04};
+        const anchor=anchorForPhoto(box,{id:'frontal',label:'Frontal',group:'front',confirmed:true,canvas,
+          mapping:{landmarks,direction:[0,0,1],manual:false}},surface);
+        if(!anchor)throw Error('Fixture sin correspondencia');
+        const marks=[{id:'new-skin',sourceId:'frontal',category:'other',label:'Punto sincronizado',note:'',box,anchor,
+          status:'validated',reviewedAt:'2026-11-06T00:00:00.000Z',source:{provider:'manual'}}];
         await window.captureController.restore({version:1,atlas:{modelId:atlas.modelId,version:1,glbSha256:atlas.provenance.glbSha256},
           photos:[{slot:'frontal',photo:{id:81,r2Key:'clinics/synthetic/records/12/photos/81.png'},alignment:{
             frame:{top:.05,bottom:.95,left:.1,right:.9,axisTop:{x:.5,y:.05},axisBottom:{x:.5,y:.95},source:'manual'},landmarks,captureConfirmed:true}}],
           mask:{view:'frontal',surface:storeSurface(surface),renderSurface:storeSurface(surface),glbBase64:bufferToBase64(glb),
-            depth:1,depthDetails:'Sintético',diagnostics:[],closedHead:false},marks:[]},{frontal:canvas});
+            depth:1,depthDetails:'Sintético',diagnostics:[],closedHead:false},marks},{frontal:canvas});
       };
     </script>`;
     return route.fulfill({ contentType: 'text/html', body: html
@@ -83,6 +91,11 @@ try {
   await parameters.getByRole('button',{name:'Seca',exact:true}).click();
   await parameters.getByRole('button',{name:'Aplicar evaluación',exact:true}).click();
   assert.match(await page.getByRole('region',{name:'Resumen clínico'}).innerText(),/Seca/);
+  await page.getByRole('button',{name:'Editar Lesión antigua',exact:true}).click();
+  const legacyDetail=page.getByRole('dialog',{name:'Detalles de la Lesión',exact:false});
+  await legacyDetail.getByRole('slider',{name:'Tamaño de la marca anatómica',exact:true}).press('ArrowRight');
+  await legacyDetail.getByRole('button',{name:'Reubicar marca',exact:true}).click();
+  await page.getByRole('button',{name:'Cancelar reubicación anatómica',exact:true}).click();
   await page.getByRole('button', { name: /Continuar en modelo genérico/ }).click();
   assert.equal(await page.getByRole('region', { name: 'Evaluación compartida de piel' }).count(), 0);
   await page.getByRole('button', { name: /^Migrar marcaciones a máscara/ }).click();
@@ -120,6 +133,11 @@ try {
   await page.getByRole('button', { name: 'Modelo anatómico', exact: true }).click();
   assert.equal(await page.getByRole('button', { name: 'Máscara del paciente', exact: true }).getAttribute('aria-pressed'), 'false');
   assert.equal(await workspace.isVisible(), false);
+  await page.getByTestId('reference-point-count').filter({hasText:'1'}).waitFor();
+  assert.equal(await page.getByRole('region',{name:'Editor de evaluación de piel'}).count(),0,'No se monta la máscara oculta');
+  if(process.env.QA_REAL_VIEWERS)assert.equal(await page.locator('canvas').count(),1,JSON.stringify(await page.locator('canvas').evaluateAll(nodes=>nodes.map(node=>({
+    label:node.getAttribute('aria-label'),parents:[node.parentElement,node.parentElement?.parentElement,node.closest('section')].map(item=>item?.outerHTML.slice(0,250))
+  })))));
   await page.getByRole('button', { name: 'Comparar ambos', exact: true }).click();
   assert.equal(await page.getByTestId('generic-mark-count').first().innerText(), '1', 'La migración conserva el modelo y sus marcas originales');
   const genericZones = page.getByRole('button', { name: 'Mostrar zonas', exact: true }).last();
@@ -143,7 +161,7 @@ try {
   await mobileComparison.getByRole('button',{name:'Referencia',exact:true}).click();
   assert.equal(await page.getByTestId('generic-mark-count').isVisible(),true);
   await mobileComparison.getByRole('button',{name:'Máscara',exact:true}).click();
-  assert.equal(await page.getByTestId('generic-mark-count').isVisible(),false);
+  assert.equal(await page.getByTestId('generic-mark-count').count(),0,'En móvil no se monta la referencia oculta');
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1), false);
   if (process.env.QA_SCREENSHOT_DIR) await page.screenshot({ path: `${process.env.QA_SCREENSHOT_DIR}\\examen-mobile.png`, fullPage: true });
   await page.getByRole('button', { name: 'Nuevo examen', exact: true }).click();

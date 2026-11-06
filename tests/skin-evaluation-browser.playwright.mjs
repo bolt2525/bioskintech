@@ -37,6 +37,8 @@ try {
       const original=document.createElement('canvas');original.width=1200;original.height=900;
       original.getContext('2d').fillStyle='#bd3322';original.getContext('2d').fillRect(0,0,1200,900);
       const blob=await new Promise(resolve=>original.toBlob(resolve,'image/png'));
+      const decode=window.createImageBitmap.bind(window);window.originalDecodes=0;
+      window.createImageBitmap=(input,...args)=>{if(input===blob)window.originalDecodes++;return decode(input,...args);};
       const canvas=document.createElement('canvas');canvas.width=160;canvas.height=120;
       canvas.getContext('2d').fillStyle='#00ff00';canvas.getContext('2d').fillRect(0,0,160,120);
       const sources=['frontal','izquierda'].map((id,index)=>({id,label:index?'Oblicua':'Frontal',group:index?'left':'front',
@@ -44,6 +46,8 @@ try {
       function App(){
         const [marks,setMarks]=React.useState([]);
         const [allow,setAllow]=React.useState(true);
+        const [presentation,setPresentation]=React.useState('comparison');
+        window.setPresentation=setPresentation;
         window.setAssistanceAllowed=setAllow;
         window.marks=marks;
         window.roundtrip=()=>{
@@ -53,7 +57,7 @@ try {
           setMarks(fromPersistedSkinReview(JSON.parse(JSON.stringify(persisted)),refs));
           return persisted;
         };
-        return React.createElement(Editor,{sources,value:marks,onChange:setMarks,context:{},aiAllowed:allow});
+        return React.createElement(Editor,{sources,value:marks,onChange:setMarks,context:{},aiAllowed:allow,presentation});
       }
       ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(App));
     </script>`;
@@ -64,6 +68,7 @@ try {
   await page.goto(`${origin}/__skin_editor_fixture__`);
   await page.getByRole('button', { name: 'Añadir marca en el centro', exact: true }).waitFor();
   assert.equal(await page.getByRole('button', { name: 'Buscar asistido', exact: true }).count(), 0);
+  assert.equal(await page.evaluate(()=>window.originalDecodes),0,'Sin recorte no se decodifica el original completo');
   await page.getByRole('button', { name: 'Añadir marca en el centro', exact: true }).click();
   await page.getByRole('button', { name: 'Validar región', exact: true }).click();
   const identity = await page.evaluate(() => window.marks[0].id);
@@ -84,11 +89,17 @@ try {
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1), false);
   enabled = true;
   await page.reload();
+  await page.waitForFunction(()=>window.setPresentation);
+  await page.evaluate(()=>window.setPresentation('mask-first'));
+  await page.getByRole('button',{name:'Máscara 3D',exact:true}).waitFor();
+  assert.equal(await page.getByRole('combobox',{name:'Lesión a marcar',exact:true}).isVisible(),true);
   await page.getByRole('button', { name: 'Buscar asistido', exact: true }).click();
+  await page.getByRole('button',{name:/^Fotografías \(/}).click();
   await page.getByRole('button', { name: 'Seleccionar zona central', exact: true }).click();
   const preview = page.getByRole('img', { name: 'Vista previa del recorte original', exact: true });
   await preview.waitFor();
   await page.waitForFunction(() => document.querySelector('[aria-label="Vista previa del recorte original"]')?.width > 1);
+  assert.equal(await page.evaluate(()=>window.originalDecodes),1,'El original solo se abre al encuadrar');
   const before = await preview.evaluate(canvas => canvas.width);
   await page.getByLabel(/^Ancho:/).press('ArrowRight');
   await page.waitForFunction(width => document.querySelector('[aria-label="Vista previa del recorte original"]').width !== width, before);
@@ -136,6 +147,20 @@ try {
   await page.getByRole('button',{name:'Añadir marca en el centro',exact:true}).click();
   assert.equal(await page.evaluate(()=>window.marks.length),2,'Revocar asistencia devuelve la interacción al marcado manual');
   assert.equal(sent.length,1,'Revocar no permite más análisis');
+  await page.getByRole('dialog',{name:'Revisar marca',exact:true}).getByRole('button',{name:'Cerrar',exact:true}).click();
+  await page.getByRole('combobox',{name:'Lesión a marcar',exact:true}).fill('Zona manual sintética');
+  await page.getByRole('group',{name:'Tipo de marcación',exact:true}).getByRole('button',{name:'Zonal',exact:true}).click();
+  await page.getByRole('button',{name:'Añadir marca en el centro',exact:true}).click();
+  const detail=page.getByRole('dialog',{name:'Revisar marca',exact:true});
+  assert.equal(await detail.getByRole('combobox',{name:'Lesión o descripción',exact:true}).inputValue(),'Zona manual sintética');
+  const oldWidth=await page.evaluate(()=>window.marks.at(-1).box.width);
+  await detail.getByRole('slider',{name:'Tamaño de la marca',exact:true}).press('ArrowRight');
+  assert.ok(await page.evaluate(()=>window.marks.at(-1).box.width)>oldWidth);
+  await detail.getByRole('button',{name:'Eliminar marca',exact:true}).click();
+  assert.equal(await page.evaluate(()=>window.marks.length),2);
+  await page.getByRole('button',{name:'Deshacer eliminación',exact:true}).click();
+  assert.equal(await page.evaluate(()=>window.marks.length),3);
+  assert.equal(await page.evaluate(()=>window.marks.at(-1).label),'Zona manual sintética');
   assert.deepEqual(errors, []); assert.deepEqual(external, []);
   console.log(JSON.stringify({ passed: true, viewports: [1440, 390], syntheticAnalyses: sent.length, sameIdentityMultiview: true }));
 } finally { await browser.close(); }

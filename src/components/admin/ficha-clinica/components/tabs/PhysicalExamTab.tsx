@@ -17,6 +17,7 @@ import { HELP } from '../../data/fieldHelpTexts';
 import { Dialog } from '../../../../ui/Dialog';
 import { skinReviewSummaries } from '../skinEvaluation';
 import type { PersistedSkinReview } from '../skinEvaluation';
+import type { EditablePoint } from '../Clinical3DViewer';
 import type { SkinVisualReviewData } from '../skinVisualAI';
 import { useUnsavedChangesGuard } from '../../../../../hooks/useUnsavedChangesGuard';
 import type { FaceSimIntegration } from '../../../../../lab/faceSim/facialSimulationSession';
@@ -203,12 +204,13 @@ const EMPTY_EXAM: Omit<PhysicalExam, 'record_id'> = {
 
 // Modal Component for Editing Marks
 const MarkEditModal = ({
-  mark, onSave, onCancel, categories,
+  mark, onSave, onCancel, categories, onMove,
   tercio, suggestedZones, zoneGroups,
 }: {
   mark: Mark;
   onSave: (m: Mark) => void;
   onCancel: () => void;
+  onMove?: (mark: Mark) => void;
   categories: string[];
   tercio?: string;
   suggestedZones?: string[];
@@ -226,7 +228,7 @@ const MarkEditModal = ({
         initial={{ opacity: 0, scale: 0.9 }}
         animate={{ opacity: 1, scale: 1 }}
         exit={{ opacity: 0, scale: 0.9 }}
-        className="w-[min(28rem,calc(100vw-2rem))] rounded-lg border border-gray-100 bg-white p-6 shadow-2xl"
+        className="max-h-[90dvh] w-[min(28rem,calc(100vw-2rem))] overflow-auto rounded-lg border border-gray-100 bg-white p-6 shadow-2xl"
       >
         <h3 id="lesion-details-title" className="text-xl font-bold mb-4 text-gray-800 flex items-center gap-2 border-b border-gray-100 pb-4">
           <div className="w-1.5 h-6 bg-[#deb887] rounded-full" />
@@ -291,10 +293,16 @@ const MarkEditModal = ({
                   onChange={() => setEditedMark({...editedMark, distribution: 'zonal'})}
                   className="text-[#deb887] focus:ring-[#deb887]"
                 />
-                <span className="text-sm group-hover:text-[#deb887] transition-colors font-medium">Zonal (Toda la zona)</span>
+                <span className="text-sm group-hover:text-[#deb887] transition-colors font-medium">Zonal (Área aproximada)</span>
               </label>
             </div>
           </div>
+
+          {mark.is3D && <label className="block text-sm font-semibold text-gray-700">Tamaño de la marca
+            <input aria-label="Tamaño de la marca anatómica" className="mt-2 w-full" type="range"
+              min={editedMark.distribution === 'zonal' ? .06 : .08} max={editedMark.distribution === 'zonal' ? 1.5 : .32}
+              step=".01" value={editedMark.radius3D ?? .16}
+              onChange={event => setEditedMark({ ...editedMark, radius3D: Number(event.target.value) })} /></label>}
 
           <div className="space-y-2">
             <label className="block text-sm font-bold text-gray-700">Zona / Ubicación</label>
@@ -355,7 +363,9 @@ const MarkEditModal = ({
           </div>
         </div>
 
-        <div className="flex justify-end gap-3 mt-6 pt-4 border-t border-gray-100">
+        <div className="flex flex-wrap justify-end gap-3 mt-6 pt-4 border-t border-gray-100">
+          {onMove && mark.is3D && <button type="button" className="admin-focus-ring min-h-11 rounded-xl border border-gray-200 px-4 py-2 text-sm text-gray-700"
+            onClick={() => onMove(editedMark)}>Reubicar marca</button>}
           <motion.button 
             whileHover={{ scale: 1.02 }}
             whileTap={{ scale: 0.98 }}
@@ -396,6 +406,10 @@ export default function PhysicalExamTab({ recordId, physicalExams, consultationI
   const [showSkinWorkspace, setShowSkinWorkspace] = useState(false);
   const [mapView, setMapView] = useState<'generic' | 'mask' | 'split'>('generic');
   const [maskReady, setMaskReady] = useState(false);
+  const [referencePoints, setReferencePoints] = useState<EditablePoint[]>([]);
+  const [selectedReferenceId, setSelectedReferenceId] = useState<string>();
+  const visibleReferencePoints = useMemo(() => referencePoints.filter(point => !point.id.startsWith(`legacy-exam:${currentExam.id}:`)),
+    [referencePoints, currentExam.id]);
   const { hasFeature } = useAuth();
   const [parameterDraft, setParameterDraft] = useState<PhysicalExam | null>(null);
   const [parameterKey, setParameterKey] = useState<keyof typeof CLINICAL_FIELDS>('skin_type');
@@ -414,7 +428,9 @@ export default function PhysicalExamTab({ recordId, physicalExams, consultationI
   const [isModalOpen, setIsModalOpen] = useState(false);
   // 3D region context for modal suggestions
   const [pendingRegion, setPendingRegion] = useState<FacialRegion | null>(null);
+  const [relocatingLegacy, setRelocatingLegacy] = useState<{ id: string; tab: 'facial' | 'corporal' } | null>(null);
   const [showReferenceLines, setShowReferenceLines] = useState(true);
+  useEffect(() => { setRelocatingLegacy(null); }, [activeTab, mapView]);
   // Warning modal para confirmación de guardado con campos incompletos
   const [saveWarning, setSaveWarning] = useState<{ messages: string[]; payload: PhysicalExam } | null>(null);
 
@@ -447,6 +463,9 @@ export default function PhysicalExamTab({ recordId, physicalExams, consultationI
   useEffect(() => { setSelectedCategory(''); }, [activeTab]);
 
   const loadExam = (exam: PhysicalExam) => {
+    setRelocatingLegacy(null);
+    setReferencePoints([]);
+    setSelectedReferenceId(undefined);
     setLegacyMigration(undefined); setMapView('generic');
     setCurrentExam(exam);
     setReviewSession(value => value + 1);
@@ -477,6 +496,9 @@ export default function PhysicalExamTab({ recordId, physicalExams, consultationI
   };
 
   const resetExam = () => {
+    setRelocatingLegacy(null);
+    setReferencePoints([]);
+    setSelectedReferenceId(undefined);
     setLegacyMigration(undefined); setMapView('generic');
     setReviewSession(value => value + 1);
     setCurrentExam({ ...EMPTY_EXAM, record_id: recordId });
@@ -594,6 +616,14 @@ export default function PhysicalExamTab({ recordId, physicalExams, consultationI
 
   // 3D model click ? identify tercio ? open modal with suggestions
   const handle3DMarkerPlaced = (marker3D: Marker3D) => {
+    if (relocatingLegacy?.tab === 'facial') {
+      const region = getFacialRegion(marker3D.position);
+      const anchor = legacySkinAnchor(marker3D.position, marker3D.normal);
+      setFaceMarks(marks => marks.map(mark => mark.id === relocatingLegacy.id ? { ...mark,
+        position3D: marker3D.position, normal3D: marker3D.normal, rotation3D: marker3D.rotation,
+        tercio: region.tercio, notes: anchor ? skinZoneAt(anchor) ?? mark.notes : mark.notes } : mark));
+      setRelocatingLegacy(null); return;
+    }
     if (!selectedCategory) {
       alert('Por favor seleccione una lesión/categoría primero');
       return;
@@ -672,6 +702,7 @@ export default function PhysicalExamTab({ recordId, physicalExams, consultationI
       rotation: m.rotation3D || [0, 0, 0],
       zone: m.notes || m.tercio || '',
       radius: m.radius3D ?? 0.16,
+      size: (m.radius3D ?? .16) / .16,
     })), [faceMarks]);
 
   // Body 3D markers (no zone detection)
@@ -687,9 +718,15 @@ export default function PhysicalExamTab({ recordId, physicalExams, consultationI
       rotation: m.rotation3D || [0, 0, 0],
       zone: m.notes || '',
       radius: m.radius3D ?? 0.16,
+      size: (m.radius3D ?? .16) / .16,
     })), [bodyMarks]);
 
   const handleBody3DMarkerPlaced = (marker3D: Marker3D) => {
+    if (relocatingLegacy?.tab === 'corporal') {
+      setBodyMarks(marks => marks.map(mark => mark.id === relocatingLegacy.id ? { ...mark,
+        position3D: marker3D.position, normal3D: marker3D.normal, rotation3D: marker3D.rotation } : mark));
+      setRelocatingLegacy(null); return;
+    }
     if (!selectedCategory) {
       alert('Por favor seleccione una lesión/categoría primero');
       return;
@@ -736,6 +773,8 @@ export default function PhysicalExamTab({ recordId, physicalExams, consultationI
         {showReferenceLines ? <EyeOff size={12} className="mr-1 inline" /> : <Eye size={12} className="mr-1 inline" />}
         {showReferenceLines ? 'Ocultar líneas' : 'Mostrar líneas'}</button>
       <Clinical3DViewer readOnly={showSkinWorkspace && maskReady && mapView !== 'generic'} anatomicalOverlay={genericOverlay} markers={face3DMarkers} selectedPathology="lesion"
+        editablePoints={visibleReferencePoints} occludeAnnotations labInteraction
+        onEditablePointClicked={id => { setSelectedReferenceId(id); setMapView('mask'); }}
         tercioBoundaries={showReferenceLines ? TERCIO_BOUNDARIES : null} referenceLines={showReferenceLines ? FACE_REFERENCE_LINES : []}
         skipConfirmation onMarkerPlaced={handle3DMarkerPlaced}
         onMarkerRadiusChange={(id, radius) => setFaceMarks(prev => prev.map(mark => mark.id === id ? { ...mark, radius3D: radius } : mark))}
@@ -758,6 +797,7 @@ export default function PhysicalExamTab({ recordId, physicalExams, consultationI
                 mark={editingMark} 
                 onSave={saveMarkFromModal} 
                 onCancel={() => { setIsModalOpen(false); setPendingRegion(null); }}
+                onMove={mark => { saveMarkFromModal(mark); setRelocatingLegacy({ id: mark.id, tab: activeTab }); }}
                 categories={LESION_CATALOG}
                 tercio={pendingRegion?.tercio}
                 suggestedZones={activeTab === 'facial' ? pendingRegion?.suggestions : undefined}
@@ -1017,12 +1057,17 @@ export default function PhysicalExamTab({ recordId, physicalExams, consultationI
                   { mode: 'split', label: 'Comparar ambos', description: 'Modelo anatómico y máscara, uno al lado del otro en pantallas amplias.', Icon: Columns2 },
                 ] as const).map(({ mode, label, description, Icon }) => <button key={mode} type="button" aria-pressed={mapView === mode}
                   title={description} className={`admin-focus-ring inline-flex min-h-11 items-center gap-2 rounded-lg border px-3 py-2 text-sm font-medium transition-colors ${mapView === mode ? 'border-gold-ink bg-gold-light text-gold-ink shadow-sm ring-1 ring-gold-ink' : 'border-transparent text-gray-600 hover:bg-white'}`}
-                  onClick={() => setMapView(mode)}><Icon size={17} aria-hidden="true" />{label}{mapView === mode && <Check size={16} aria-hidden="true" />}</button>)}
+                  onClick={() => { setSelectedReferenceId(undefined); setMapView(mode); }}><Icon size={17} aria-hidden="true" />{label}{mapView === mode && <Check size={16} aria-hidden="true" />}</button>)}
               </div>
               <p role="status" className="text-xs text-gray-500">{mapView === 'generic' ? 'Referencia anatómica: conserva todas las marcas originales.' :
                 mapView === 'mask' ? 'Máscara personalizada: marca aquí y revisa la correspondencia en las fotos desplegables.' : 'Comparación visual. Las marcas originales no se eliminan al migrar.'}</p>
             </div>}
             <div className="space-y-4">
+            {relocatingLegacy && <div role="status" className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-gold-light p-3 text-sm text-gray-900">
+              Pulsa la nueva ubicación en el modelo anatómico.
+              <button type="button" className="admin-focus-ring min-h-11 rounded-lg border border-gray-300 bg-white px-3 py-2"
+                onClick={() => setRelocatingLegacy(null)}>Cancelar reubicación anatómica</button>
+            </div>}
             {showSkinWorkspace && <fieldset disabled={saving}
               className={`min-w-0 ${mapView === 'generic' || activeTab !== 'facial' ? 'hidden' : ''} ${saving ? 'pointer-events-none opacity-60' : ''}`}>
               <Suspense fallback={<p role="status">Abriendo evaluación de piel…</p>}>
@@ -1030,6 +1075,9 @@ export default function PhysicalExamTab({ recordId, physicalExams, consultationI
                   recordId={recordId} review={workspaceReview.current} legacyMigration={legacyMigration}
                   context={{ skinType: currentExam.skin_type, phototype: currentExam.phototype, hydration: currentExam.hydration }}
                   referenceView={referenceView} viewMode={mapView === 'split' ? 'split' : 'mask'} aiAllowed={hasFeature('skin_visual_ai')}
+                  active={mapView !== 'generic' && activeTab === 'facial'} referenceVisible={mapView !== 'mask' && activeTab === 'facial'}
+                  onReferencePoints={setReferencePoints}
+                  selectedReferenceId={selectedReferenceId}
                   onPrepared={handleSkinPrepared} onDirty={handleSkinDirty} onCaptureReady={setMaskReady} />
               </Suspense>
             </fieldset>}
@@ -1110,6 +1158,7 @@ export default function PhysicalExamTab({ recordId, physicalExams, consultationI
                       <div className="flex gap-1 shrink-0 ml-2">
                         <Tooltip content="Editar">
                           <button 
+                            aria-label={`Editar ${mark.category}`}
                             onClick={() => initiateEditMark(mark)}
                             className="text-blue-500 hover:bg-blue-50 p-1.5 rounded-lg transition-colors"
                           >
@@ -1118,6 +1167,7 @@ export default function PhysicalExamTab({ recordId, physicalExams, consultationI
                         </Tooltip>
                         <Tooltip content="Eliminar">
                           <button 
+                            aria-label={`Eliminar ${mark.category}`}
                             onClick={() => activeTab === 'facial' ? removeFaceMark(mark.id) : removeBodyMark(mark.id)}
                             className="text-red-500 hover:bg-red-50 p-1.5 rounded-lg transition-colors"
                           >

@@ -1,9 +1,10 @@
-import { locatePhotoPoint, photoPoint, surfacePoint, genericFaceAtlas } from '../../../../lab/faceSim/faceTransfer.ts';
+import { locatePhotoPoint, photoPoint, modelPoint, surfacePoint, genericFaceAtlas } from '../../../../lab/faceSim/faceTransfer.ts';
 import type { FaceAddress, PersonalSurface } from '../../../../lab/faceSim/faceTransfer';
 import type { SkinPhotoSource } from '../../../../lab/faceSim/skinMultiView';
 import { mapSkinCandidate } from '../../../../lab/faceSim/skinMultiView.ts';
 import { parseSkinReview, validBox } from './skinVisualAI.ts';
 import type { NormalizedBox, PhotoReference, ReviewedSkinMark, SkinContext } from './skinVisualAI';
+import type { EditablePoint } from './Clinical3DViewer';
 
 export type EvaluationAnchor = FaceAddress & { version: 1 };
 export type EvaluationOriginalSource = { provider: 'manual' } | ReviewedSkinMark['source'];
@@ -35,6 +36,48 @@ export interface PersistedSkinMark {
 }
 export interface PersistedSkinReview { version: 2; annotations: PersistedSkinMark[]; simulationId?: number }
 
+export function isZonalSkinMark(box: NormalizedBox): boolean {
+  return box.width > .06 || box.height > .06;
+}
+
+export function resizeSkinBox(box: NormalizedBox, width: number, height = width): NormalizedBox {
+  const w = Math.max(.01, Math.min(1, width)), h = Math.max(.01, Math.min(1, height));
+  return { x: Math.max(0, Math.min(1 - w, box.x + box.width / 2 - w / 2)),
+    y: Math.max(0, Math.min(1 - h, box.y + box.height / 2 - h / 2)), width: w, height: h };
+}
+
+/** Proyección de presentación: nunca crea ni modifica marcaciones legacy. */
+export function skinDisplayPoints(marks: readonly EvaluationMark[], sources: readonly SkinPhotoSource[], surface: PersonalSurface,
+  target: 'mask' | 'reference' = 'mask'): EditablePoint[] {
+  const project = (anchor: EvaluationAnchor) => target === 'reference' ? modelPoint(anchor) : surfacePoint(anchor, surface);
+  return marks.flatMap(mark => {
+    const position = mark.anchor && project(mark.anchor);
+    if (!position) return [];
+    const photo = sources.find(item => item.id === mark.sourceId);
+    const area = photo && isZonalSkinMark(mark.box) ? [
+      [mark.box.x, mark.box.y + mark.box.height / 2], [mark.box.x + mark.box.width, mark.box.y + mark.box.height / 2],
+      [mark.box.x + mark.box.width / 2, mark.box.y], [mark.box.x + mark.box.width / 2, mark.box.y + mark.box.height],
+    ].flatMap(([x, y]) => {
+      if (x < .001 || x > .999 || y < .001 || y > .999) return [];
+      const anchor = anchorForPhoto({ x: x - .001, y: y - .001, width: .002, height: .002 }, photo, surface);
+      const point = anchor && project(anchor);
+      return point ? [point] : [];
+    }) : [];
+    const positions = target === 'reference' ? genericFaceAtlas.positions : surface.positions;
+    const vertices = genericFaceAtlas.triangles.slice(mark.anchor!.triangle * 3, mark.anchor!.triangle * 3 + 3)
+      .map(id => Array.from(positions.slice(id * 3, id * 3 + 3)));
+    const a = vertices[1].map((n, i) => n - vertices[0][i]), b = vertices[2].map((n, i) => n - vertices[0][i]);
+    const normal = { x: a[1] * b[2] - a[2] * b[1], y: a[2] * b[0] - a[0] * b[2], z: a[0] * b[1] - a[1] * b[0] };
+    const length = Math.hypot(normal.x, normal.y, normal.z);
+    return [{ id: mark.id, type: 'free' as const, lineIds: [], ...position, size: isZonalSkinMark(mark.box) ? 1 : mark.box.width / .04,
+      color: mark.status === 'validated' ? '#15803d' : '#b45309', name: mark.label,
+      ...(area.length === 4 && length > 0 ? { area: { radius: Math.max(...area.map(q =>
+        Math.hypot(q.x - position.x, q.y - position.y, q.z - position.z))),
+      normal: { x: normal.x / length, y: normal.y / length, z: normal.z / length } } } : {}) }];
+  });
+}
+
+const visibility = new WeakMap<PersonalSurface, WeakMap<SkinPhotoSource, boolean[]>>();
 export function skinRequestContext(context: SkinContext): SkinContext {
   const result: SkinContext = {};
   for (const key of ['skinType', 'phototype', 'hydration'] as const) {
@@ -57,7 +100,11 @@ export function cropToOriginal(box: NormalizedBox, crop: NormalizedBox): Normali
 export function visibleSkinTriangles(source: SkinPhotoSource, surface: PersonalSurface): boolean[] {
   const direction = source.mapping?.direction;
   if (!direction || direction.length !== 3 || !direction.every(Number.isFinite)) return [];
-  return Array.from({ length: genericFaceAtlas.triangles.length / 3 }, (_, triangle) => {
+  let sources = visibility.get(surface);
+  if (!sources) { sources = new WeakMap(); visibility.set(surface, sources); }
+  const cached = sources.get(source);
+  if (cached) return cached;
+  const result = Array.from({ length: genericFaceAtlas.triangles.length / 3 }, (_, triangle) => {
     const ids = genericFaceAtlas.triangles.slice(triangle * 3, triangle * 3 + 3);
     if (ids.some((id, i) => surface.indices[triangle * 3 + i] !== id)) return false;
     const [a, b, c] = ids.map(id => Array.from(surface.positions.slice(id * 3, id * 3 + 3)));
@@ -67,6 +114,8 @@ export function visibleSkinTriangles(source: SkinPhotoSource, surface: PersonalS
     const length = Math.hypot(...normal) * Math.hypot(...direction);
     return length > 0 && normal.reduce((sum, n, i) => sum + n * direction[i], 0) / length > 0.12;
   });
+  sources.set(source, result);
+  return result;
 }
 
 export function anchorForPhoto(box: NormalizedBox, source: SkinPhotoSource, surface?: PersonalSurface): EvaluationAnchor | undefined {

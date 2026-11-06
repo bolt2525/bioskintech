@@ -6,7 +6,7 @@ import type { PersonalSurface } from '../../../../lab/faceSim/faceTransfer';
 import type { SkinPhotoSource } from '../../../../lab/faceSim/skinMultiView';
 import type { EvaluationMark } from './skinEvaluation';
 import { skinRegionCells } from './skinAnatomy';
-import { visibleSkinTriangles } from './skinEvaluation';
+import { isZonalSkinMark, visibleSkinTriangles } from './skinEvaluation';
 import { validBox, type NormalizedBox } from './skinVisualAI';
 
 const button = 'admin-focus-ring inline-flex min-h-11 items-center justify-center gap-1 rounded-lg border px-3 py-2 text-sm disabled:opacity-40';
@@ -85,9 +85,10 @@ export default function SkinPhotoViewport({ source, surface, showZones, onToggle
           aria-label={`Seleccionar ${mark.label}, ${mark.status === 'validated' ? 'validada' : 'pendiente'}${projected ? ', correspondencia estimada' : ''}`}
           aria-pressed={selectedMark === mark.id} onClick={() => onSelect(mark.id)}
           className={`admin-focus-ring absolute z-10 rounded-full border-2 bg-white ${mark.status === 'validated' ? 'border-green-700' : 'border-amber-600'} ${selectedMark === mark.id ? 'ring-4 ring-gold-ink' : ''} ${pan ? 'pointer-events-none' : ''}`}
-          style={{ left: `${(box.x + box.width / 2) * 100}%`, top: `${(box.y + box.height / 2) * 100}%`, width: 18, height: 18, transform: 'translate(-50%, -50%)' }} />)}
-        {marks.filter(item => !item.projected && validBox(item.box) && (item.box.width > .06 || item.box.height > .06)).map(({ mark, box }) =>
-          <span key={mark.id} aria-hidden="true" className={`pointer-events-none absolute border-2 ${mark.status === 'validated' ? 'border-green-700' : 'border-amber-500 border-dashed'}`}
+          style={{ left: `${(box.x + box.width / 2) * 100}%`, top: `${(box.y + box.height / 2) * 100}%`,
+            width: Math.max(12, Math.min(24, mark.box.width * 450)), height: Math.max(12, Math.min(24, mark.box.width * 450)), transform: 'translate(-50%, -50%)' }} />)}
+        {marks.filter(item => !item.projected && validBox(item.box) && isZonalSkinMark(item.box)).map(({ mark, box }) =>
+          <span key={mark.id} aria-hidden="true" className={`pointer-events-none absolute rounded-[50%] border-2 ${mark.status === 'validated' ? 'border-green-700 bg-green-700/10' : 'border-amber-500 border-dashed bg-amber-500/10'}`}
             style={{ left: `${box.x * 100}%`, top: `${box.y * 100}%`, width: `${box.width * 100}%`, height: `${box.height * 100}%` }} />)}
       </div>
     </div>

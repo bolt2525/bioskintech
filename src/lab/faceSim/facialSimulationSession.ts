@@ -6,6 +6,7 @@ import type { PhotoReference, SkinContext } from '../../components/admin/ficha-c
 import type { EvaluationMark } from '../../components/admin/ficha-clinica/components/skinEvaluation';
 import type { Mark } from '../../components/admin/ficha-clinica/components/FaceMapCanvas';
 import type { ReactNode } from 'react';
+import type { EditablePoint } from '../../components/admin/ficha-clinica/components/Clinical3DViewer';
 import atlas from './genericFaceAtlas.json' with { type: 'json' };
 
 export type SimulationPhotoSlot = 'frontal' | 'izquierda' | 'derecha' | 'extra_a' | 'extra_b';
@@ -78,6 +79,10 @@ export interface FaceSimIntegration {
   referenceView?: ReactNode;
   viewMode?: 'mask' | 'split';
   aiAllowed?: boolean;
+  active?: boolean;
+  referenceVisible?: boolean;
+  onReferencePoints?: (points: EditablePoint[]) => void;
+  selectedReferenceId?: string;
 }
 
 export function storeSurface(surface: PersonalSurface | EstimatedHeadSurface): StoredSurface {

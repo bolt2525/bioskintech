@@ -50,6 +50,7 @@ export interface Marker3D {
   scale?: { x: number; y: number };
   points?: { x: number; y: number; z: number }[];
   isAddPointMode?: boolean;
+  size?: number;
 }
 
 export interface EditablePoint {
@@ -62,6 +63,8 @@ export interface EditablePoint {
   name?: string;
   /** Color CSS del núcleo; activa estilo de alto contraste con aro oscuro. */
   color?: string;
+  area?: { radius: number; normal: { x: number; y: number; z: number } };
+  size?: number;
 }
 
 /** Plano de corte ilustrativo: posición 0..1 sobre el eje del modelo. */
@@ -363,6 +366,7 @@ interface AnnotationInteractionProps {
 }
 
 const EMPTY_ANNOTATION_LABELS: readonly AnnotationLabel[] = [];
+const EMPTY_POINT_IDS: string[] = [];
 
 /** No interceptar Escape de formularios, selectores o diálogos de la aplicación. */
 function shouldCancelAnnotation(event: KeyboardEvent, doc: Document) {
@@ -871,8 +875,8 @@ const ThreeEngine: React.FC<AnnotationInteractionProps & {
   pendingBrushColor = COLORS.annotation, pendingBrushThickness = 1.0,
   onFreehandLineComplete, onShapeComplete, onElementSelected, onFreehandLineUpdated, onSurfaceShapeUpdated, onGridStepChange, onSnapPointChange,
   haShapeConfig = { fanLines: 5, fanAngle: 25, gridCells: 4, fernBranches: 5 },
-  incompletePointIds = [],
-  highlightedPointIds = [],
+  incompletePointIds = EMPTY_POINT_IDS,
+  highlightedPointIds = EMPTY_POINT_IDS,
   onEditablePointHovered,
   onBackgroundClick,
   onEstimatedSurfaceInteraction,
@@ -3796,11 +3800,12 @@ const ThreeEngine: React.FC<AnnotationInteractionProps & {
         const markerGroup = new THREE.Group();
         markerGroup.position.copy(pos);
         markerGroup.userData.markerId = marker.id ?? `m-${Date.now()}`;
-        const coreGeo = new THREE.SphereGeometry(0.06 * pointMarkerScale, 12, 12);
+        const size = Math.max(.5, Math.min(2, marker.size ?? 1));
+        const coreGeo = new THREE.SphereGeometry(0.06 * pointMarkerScale * size, 12, 12);
         const coreMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
         markerGroup.add(new THREE.Mesh(coreGeo, coreMat));
 
-        const outerGeo = new THREE.SphereGeometry(0.12 * pointMarkerScale, 16, 16);
+        const outerGeo = new THREE.SphereGeometry(0.12 * pointMarkerScale * size, 16, 16);
         const outerMat = new THREE.MeshPhysicalMaterial({
           color, emissive: color, emissiveIntensity: 1.5,
           transparent: true, opacity: 0.8, roughness: 0, transmission: 0.9, thickness: 0.5,
@@ -3903,10 +3908,19 @@ const ThreeEngine: React.FC<AnnotationInteractionProps & {
       const isIncomplete = incompletePointIds.includes(pt.id);
       if (pt.color && !isIncomplete) {
         const tint = new THREE.Color(pt.color);
-        const ring = new THREE.Mesh(new THREE.SphereGeometry(0.036, 16, 16),
+        if (pt.area && pt.area.radius > 0) {
+          const halo = new THREE.Mesh(new THREE.RingGeometry(pt.area.radius * .94, pt.area.radius, 48),
+            new THREE.MeshBasicMaterial({ color: tint, transparent: true, opacity: .7, side: THREE.DoubleSide, depthWrite: false }));
+          halo.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1),
+            new THREE.Vector3(pt.area.normal.x, pt.area.normal.y, pt.area.normal.z).normalize());
+          halo.position.copy(new THREE.Vector3(pt.area.normal.x, pt.area.normal.y, pt.area.normal.z).multiplyScalar(.008));
+          ptGroup.add(halo);
+        }
+        const size = Math.max(.5, Math.min(1.5, pt.size ?? 1));
+        const ring = new THREE.Mesh(new THREE.SphereGeometry(0.036 * size, 16, 16),
           new THREE.MeshBasicMaterial({ color: 0x0f172a, transparent: true, opacity: 0.6, depthTest: false }));
         ring.renderOrder = 1000;
-        const core = new THREE.Mesh(new THREE.SphereGeometry(0.026, 16, 16),
+        const core = new THREE.Mesh(new THREE.SphereGeometry(0.026 * size, 16, 16),
           new THREE.MeshStandardMaterial({ color: tint, emissive: tint, emissiveIntensity: 0.55, transparent: true, depthTest: false }));
         core.renderOrder = 1002;
         core.userData.baseEmissive = tint.clone();
@@ -4478,8 +4492,8 @@ export default function Clinical3DViewer({
   onGridStepChange,
   onSnapPointChange,
   haShapeConfig = { fanLines: 5, fanAngle: 25, gridCells: 4, fernBranches: 5 },
-  incompletePointIds = [],
-  highlightedPointIds = [],
+  incompletePointIds = EMPTY_POINT_IDS,
+  highlightedPointIds = EMPTY_POINT_IDS,
   onEditablePointHovered,
   onBackgroundClick,
   onEstimatedSurfaceInteraction,

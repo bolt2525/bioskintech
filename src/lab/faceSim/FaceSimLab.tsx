@@ -2373,7 +2373,9 @@ export default function FaceSimLab({ integration }: { integration?: FaceSimInteg
       {migrationReport.skipped.length} marca(s) sin trasladar. Se conservan en el modelo original.</p>}
     <SkinEvaluationEditor sources={skinSources} surface={(personal?.reviewBase ?? personal)?.surface}
       presentation={clinical ? 'mask-first' : 'comparison'}
-      referenceView={integration?.referenceView} viewMode={integration?.viewMode}
+      referenceView={integration?.referenceView} viewMode={integration?.viewMode} active={integration?.active}
+      referenceVisible={integration?.referenceVisible} onReferencePoints={integration?.onReferencePoints}
+      selectedReferenceId={integration?.selectedReferenceId}
       aiAllowed={integration ? integration.aiAllowed === true : true}
       onRequestPhoto={clinical ? () => setClinicalCaptureOpen(true) : undefined}
       migration={migration && migrationReport ? { ids: evaluationMarks.filter(mark => mark.id.startsWith(`legacy-exam:${migration.examId}:`)).map(mark => mark.id), skipped: migrationReport.skipped.length } : undefined}
@@ -2382,7 +2384,7 @@ export default function FaceSimLab({ integration }: { integration?: FaceSimInteg
   </Suspense>;
 
   if (clinical) return <div className="min-w-0 space-y-3">
-    <ClinicalCaptureFlow open={clinicalCaptureOpen} onClose={() => {
+    {clinicalCaptureOpen && <ClinicalCaptureFlow open onClose={() => {
       if (hasPendingPhotos || buildingPersonal) return;
       setClinicalCaptureOpen(false); setMaskReview(null);
     }} photos={PHOTO_SLOTS.flatMap(entry => {
@@ -2427,7 +2429,7 @@ export default function FaceSimLab({ integration }: { integration?: FaceSimInteg
         if (!maskReview || maskReview.photos !== photos) return;
         setPersonal(maskReview.model); setMaskReview(null); setClinicalCaptureOpen(false);
         setWorkspace('simulate'); setAppearanceOpened(true); setEditorGroup('appearance');
-      }} />
+      }} />}
     {!personal && !loadedPhotos.length && <div className="rounded-2xl border border-dashed border-gray-200 bg-gray-50 px-5 py-8 text-center">
       <p className="font-medium text-gray-800">Crea la máscara con fotos del paciente</p>
       <button type="button" className="admin-focus-ring mt-3 min-h-11 rounded-xl bg-gold px-4 py-2 text-sm font-semibold text-gray-900" onClick={() => setClinicalCaptureOpen(true)}>Elegir fotografías</button>

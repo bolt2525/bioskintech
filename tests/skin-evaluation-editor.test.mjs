@@ -4,6 +4,7 @@ import atlas from '../src/lab/faceSim/genericFaceAtlas.json' with { type: 'json'
 import {
   anchorForPhoto, bestPhotoForAnchor, cropToOriginal, fromPersistedSkinReview,
   photoForAnchor, skinRequestContext, skinReviewSummaries, toPersistedSkinReview, validateEvaluationGroup,
+  isZonalSkinMark, resizeSkinBox, skinDisplayPoints, visibleSkinTriangles,
 } from '../src/components/admin/ficha-clinica/components/skinEvaluation.ts';
 
 const ref = { id: 5, r2Key: 'clinics/1/records/2/photos/5.jpg' };
@@ -55,4 +56,34 @@ test('no proyecta fotos sin correspondencia o con cara oculta', () => {
   assert.ok(photoForAnchor(anchor, source, surface));
   assert.equal(photoForAnchor(anchor, hidden, surface), null);
   assert.equal(bestPhotoForAnchor(anchor, [hidden, source], surface)?.id, 'frontal');
+});
+
+test('puntos y zonas se redimensionan sin salir de la foto ni perder su identidad al guardar', () => {
+  const point = resizeSkinBox({ x: .97, y: .97, width: .02, height: .02 }, .14);
+  assert.ok(point.x + point.width <= 1 && point.y + point.height <= 1);
+  assert.equal(isZonalSkinMark(point), true);
+  assert.equal(isZonalSkinMark(resizeSkinBox(point, .04)), false);
+  const zonal = { ...mark, box: point };
+  const restored = fromPersistedSkinReview(toPersistedSkinReview(validateEvaluationGroup([zonal], [zonal.id]), { frontal: ref }), { frontal: ref });
+  assert.equal(restored[0].id, zonal.id);
+  assert.deepEqual(restored[0].box, point);
+});
+
+test('proyección de puntos y áreas es derivada, conserva identidades y reutiliza cobertura', () => {
+  const box = { x: .45, y: .45, width: .1, height: .1 };
+  const anchor = anchorForPhoto(box, source, surface);
+  assert.ok(anchor);
+  const marks = [{ ...mark, box, anchor }];
+  const before = structuredClone(marks);
+  const mask = skinDisplayPoints(marks, [source], surface);
+  const generic = skinDisplayPoints(marks, [source], surface, 'reference');
+  assert.equal(mask.length, 1);
+  assert.equal(generic.length, 1);
+  assert.equal(mask[0].id, generic[0].id);
+  assert.ok(mask[0].area?.radius > 0);
+  assert.ok(generic[0].area?.radius > 0);
+  assert.ok(Math.abs(Math.hypot(...Object.values(mask[0].area.normal)) - 1) < 1e-8);
+  assert.deepEqual(marks, before, 'Proyectar no modifica el registro');
+  assert.deepEqual(skinDisplayPoints([{ ...mark }], [source], surface), [], 'Sin anclaje permanece 2D');
+  assert.equal(visibleSkinTriangles(source, surface), visibleSkinTriangles(source, surface));
 });
