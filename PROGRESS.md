@@ -1,5 +1,10 @@
 # Progreso de BioSkinTech App
 
+- ✅ 2026-11-05 Modelo: portabilidad ONNX verificada.
+- ✅ 2026-11-05 Navegador: paridad WASM real.
+- Exportación propia de 12,87 MB con contrato, hashes, aviso experimental y referencias sintéticas/de validación; no entrenamiento nuevo ni inferencia de test. Chromium WASM, un hilo: 11/11 entradas, máscaras idénticas, error máximo 0,000003964; inicialización 1,11 s e inferencia 129–203 ms por tensor256². Sin promesa de precisión mejorada ni rendimiento móvil; falta integrar/validar decodificación de fotos y UI.
+- QA: 23 pruebas Python +14 Node, sintaxis y build aprobado (avisos previos de chunks/atlas). Runner local valida archivos alterados, formas, tolerancias, rutas y no sobrescribe evidencia; navegador/servidor cerrados. Skills: `python-fact-grounded-coding`, `testing-validation`, `agent-browser`. Runtime Python nativo incompatible retirado; paridad comprobada en el destino real sin cambios globales al sistema.
+- Datos/pesos/tensores quedan fuera de Git; reserva35/60 min intacta. No activación clínica del modelo ni cambios en el visor/marcaciones. Gemini y USD5/usuario/mes solo propuesta pendiente de alcance/compatibilidad y medición; sin Billing ni fotos enviadas. El disclaimer no elimina restricciones contractuales ni acredita diagnóstico.
 - ✅ 2026-11-05 MEMI: transferencia facial local.
 - ✅ 2026-11-05 Entrenamiento: anotaciones débiles trazables.
 - ✅ 2026-11-05 Evaluación: píxeles y componentes separados.

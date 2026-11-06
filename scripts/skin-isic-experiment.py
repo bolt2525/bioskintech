@@ -490,7 +490,7 @@ def load_manifest(root):
 
 def make_model():
     from torchvision.models.segmentation import lraspp_mobilenet_v3_large
-    # Sin pesos externos ni descargas implicitas; se aprende solo de los pares CC0.
+    # Sin pesos externos ni descargas implicitas.
     return lraspp_mobilenet_v3_large(weights=None, weights_backbone=None, num_classes=2)
 
 
@@ -856,6 +856,97 @@ def predict(args):
     })
 
 
+def export_web(args):
+    import numpy as np
+    import onnx
+    import torch
+    from PIL import Image
+
+    checkpoint_path, output = Path(args.model), Path(args.output)
+    if checkpoint_path.stat().st_size > 100_000_000:
+        raise ValueError("Modelo excede los 100 MB autorizados.")
+    checkpoint = torch.load(checkpoint_path, map_location="cpu", weights_only=True)
+    validate_checkpoint(checkpoint)
+    torch.set_num_threads(args.threads)
+    model = make_model().eval()
+    model.load_state_dict(checkpoint["state_dict"], strict=True)
+    size, threshold = checkpoint["size"], checkpoint["threshold"]
+
+    class Foreground(torch.nn.Module):
+        def __init__(self, base):
+            super().__init__()
+            self.base = base
+
+        def forward(self, image):
+            return self.base(image)["out"].softmax(1)[:, 1:2]
+
+    wrapped = Foreground(model).eval()
+    generator = torch.Generator().manual_seed(20261105)
+    samples = [("synthetic-zero", torch.zeros(1, 3, size, size)),
+               ("synthetic-noise", torch.rand(1, 3, size, size, generator=generator) * 2 - 1)]
+    data_hash = None
+    if args.data:
+        root = Path(args.data)
+        manifest = load_manifest(root)
+        if checkpoint.get("source") != manifest["source"] or checkpoint.get("category") != manifest.get("category"):
+            raise ValueError("Modelo y conjunto no comparten origen/taxonomia.")
+        data_hash = digest((root / "manifest.json").read_bytes())
+        for item in manifest["images"]:
+            if item["split"] != "validation":
+                continue
+            with Image.open(root / (item["id"] + ".jpg")) as photo:
+                image, _, _ = letterbox(photo, None, size)
+            samples.append(("validation-" + str(len(samples) - 1), image.unsqueeze(0)))
+    output.mkdir(parents=True, exist_ok=False)
+    temporary = output / "model.partial.onnx"
+    with torch.inference_mode():
+        torch.onnx.export(wrapped, samples[0][1], str(temporary), opset_version=17,
+                          input_names=["image"], output_names=["probability"], dynamo=False)
+    if temporary.stat().st_size > 100_000_000:
+        raise ValueError("Exportacion excede 100 MB; no se publica el manifiesto.")
+    graph = onnx.load(temporary)
+    if ([item.name for item in graph.graph.input] != ["image"] or
+            [item.name for item in graph.graph.output] != ["probability"] or
+            [dimension.dim_value for dimension in graph.graph.input[0].type.tensor_type.shape.dim] != [1, 3, size, size] or
+            [dimension.dim_value for dimension in graph.graph.output[0].type.tensor_type.shape.dim] != [1, 1, size, size]):
+        raise ValueError("El contrato no coincide con las entradas/salidas del grafo ONNX.")
+    del graph
+    cases = []
+    with torch.inference_mode():
+        for name, image in samples:
+            tensor = image.numpy()
+            expected = wrapped(image).numpy()
+            if not np.isfinite(expected).all():
+                raise ValueError("Referencia PyTorch no finita; no se publica el manifiesto.")
+            files = {}
+            for kind, array in (("input", tensor), ("expected", expected)):
+                filename = name + "-" + kind + ".f32"
+                content = array.astype("<f4").tobytes()
+                (output / filename).write_bytes(content)
+                files[kind] = {"file": filename, "sha256": digest(content), "bytes": len(content)}
+            cases.append({"name": name, **files})
+    model_path = output / "model.onnx"
+    temporary.rename(model_path)
+    write_json(output / "model.json", {
+        "version": 1, "architecture": ARCHITECTURE, "format": "onnx", "opset": 17,
+        "model": {"file": model_path.name, "sha256": digest(model_path.read_bytes()),
+                  "bytes": model_path.stat().st_size},
+        "sourceCheckpointSha256": digest(checkpoint_path.read_bytes()),
+        "validationManifestSha256": data_hash, "category": checkpoint.get("category"),
+        "size": size, "threshold": threshold, "inputName": "image", "outputName": "probability",
+        "inputShape": [1, 3, size, size], "outputShape": [1, 1, size, size],
+        "normalization": "rgb-div127.5-minus1", "encoding": "little-endian-float32",
+        "geometry": "Letterbox centrado, RGB bilineal PIL, padding negro; recortar padding antes de invertir coordenadas.",
+        "tolerances": {"maxAbsoluteError": .0001, "minimumMaskAgreement": .999},
+        "cases": cases, "browserQualificationRequired": True, "eligibleForClinicalUse": False,
+        "disclaimer": "Asistente experimental de analisis visual. No es un diagnostico medico, no identifica ni descarta enfermedades ni sustituye la evaluacion profesional.",
+        "scope": "Paridad de inferencia, no mejora de precision ni validacion clinica. Entradas de validacion preprocesadas, no prueba de equivalencia de un decodificador de fotos en navegador. No despliegue automatico.",
+    })
+    print(json.dumps({"modelBytes": model_path.stat().st_size, "referenceCases": len(cases),
+                      "browserQualificationRequired": True,
+                      "eligibleForClinicalUse": False}), flush=True)
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest="command", required=True)
@@ -897,6 +988,11 @@ def main(argv=None):
     p.add_argument("--image", required=True)
     p.add_argument("--output", required=True)
     p.add_argument("--threads", type=int, default=2)
+    p = commands.add_parser("export-web", help="Exporta ONNX y referencias PyTorch para verificar en navegador; no entrena ni infiere test.")
+    p.add_argument("--model", required=True)
+    p.add_argument("--output", required=True)
+    p.add_argument("--data", help="Agrega solo entradas de validacion auditadas; tensores locales reconstruibles, no subirlos.")
+    p.add_argument("--threads", type=int, default=2)
     args = parser.parse_args(argv)
     if args.command == "prepare" and (not 1 <= args.max_mb <= 100 or any(not 2 <= getattr(args, key) <= 500 for key in PARTITIONS)):
         parser.error("Datos: 1-100 MB y 2-500 imagenes por particion.")
@@ -914,7 +1010,8 @@ def main(argv=None):
     try:
         if args.command == "train" and args.budget_ledger:
             reserve_training_budget(Path(args.budget_ledger), args.minutes)
-        {"prepare": prepare, "prepare-memi": prepare_memi, "train": train, "predict": predict, "evaluate": evaluate}[args.command](args)
+        {"prepare": prepare, "prepare-memi": prepare_memi, "train": train, "predict": predict,
+         "evaluate": evaluate, "export-web": export_web}[args.command](args)
     except (OSError, ValueError, KeyError, zipfile.BadZipFile, RuntimeError) as error:
         print(f"No se completo {args.command}: {error}", file=sys.stderr)
         return 1

@@ -431,6 +431,14 @@ class SkinExperimentTests(unittest.TestCase):
             self.assertIsNone(report["allForegroundBaselineTest"])
             self.assertEqual(len(report["trainingCrops"]), 4)
             self.assertEqual(report["cachedImageEncoding"], "uint8-lossless; normalized per batch")
+            with contextlib.redirect_stdout(io.StringIO()), patch.object(Image, "open", wraps=Image.open) as opened:
+                self.assertEqual(skin.main(["export-web", "--model", str(run / "model.pt"),
+                                           "--data", str(data), "--output", str(root / "web")]), 0)
+            self.assertEqual({Path(call.args[0]).stem for call in opened.call_args_list},
+                             {item["id"] for item in pairs if item["split"] == "validation"})
+            web = json.loads((root / "web" / "model.json").read_text())
+            self.assertEqual(len(web["cases"]), 4)
+            self.assertTrue(web["browserQualificationRequired"])
             checkpoint_hash = skin.digest((run / "model.pt").read_bytes())
             with contextlib.redirect_stdout(io.StringIO()):
                 code = skin.main(["evaluate", "--data", str(data), "--model", str(run / "model.pt"),
@@ -480,6 +488,41 @@ class SkinExperimentTests(unittest.TestCase):
                 with contextlib.redirect_stderr(io.StringIO()):
                     self.assertEqual(skin.main(["predict", "--model", str(checkpoint),
                                                "--image", str(photo), "--output", str(output)]), 1)
+
+    def test_web_export_preserves_probabilities_masks_and_checkpoint(self):
+        torch.set_num_threads(2)
+        torch.manual_seed(7)
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            checkpoint = root / "model.pt"
+            model = skin.make_model().eval()
+            torch.save({"architecture": skin.ARCHITECTURE, "state_dict": model.state_dict(),
+                        "size": 64, "threshold": .5, "normalization": "rgb-div127.5-minus1",
+                        "source": "MEMI-DS", "category": "melasma"}, checkpoint)
+            original_hash = skin.digest(checkpoint.read_bytes())
+            output = root / "web"
+            with contextlib.redirect_stdout(io.StringIO()), patch("urllib.request.urlopen", side_effect=AssertionError("No network")):
+                self.assertEqual(skin.main(["export-web", "--model", str(checkpoint),
+                                            "--output", str(output)]), 0)
+            contract = json.loads((output / "model.json").read_text())
+            self.assertFalse(contract["eligibleForClinicalUse"])
+            self.assertEqual(contract["sourceCheckpointSha256"], original_hash)
+            self.assertEqual(skin.digest(checkpoint.read_bytes()), original_hash)
+            self.assertEqual(contract["inputShape"], [1, 3, 64, 64])
+            self.assertEqual(contract["outputShape"], [1, 1, 64, 64])
+            self.assertEqual(contract["model"]["sha256"], skin.digest((output / "model.onnx").read_bytes()))
+            self.assertEqual(len(contract["cases"]), 2)
+            for case in contract["cases"]:
+                for key in ("input", "expected"):
+                    self.assertEqual(case[key]["sha256"], skin.digest((output / case[key]["file"]).read_bytes()))
+                image = np.frombuffer((output / case["input"]["file"]).read_bytes(), dtype="<f4").copy()
+                expected = np.frombuffer((output / case["expected"]["file"]).read_bytes(), dtype="<f4")
+                with torch.inference_mode():
+                    actual = model(torch.from_numpy(image.reshape(contract["inputShape"])))["out"].softmax(1)[:, 1:2]
+                np.testing.assert_allclose(actual.numpy().ravel(), expected, atol=1e-7, rtol=0)
+            with contextlib.redirect_stderr(io.StringIO()):
+                self.assertEqual(skin.main(["export-web", "--model", str(checkpoint),
+                                            "--output", str(output)]), 1)
 
 
 if __name__ == "__main__":
