@@ -2376,6 +2376,7 @@ export default function FaceSimLab({ integration }: { integration?: FaceSimInteg
       referenceView={integration?.referenceView} viewMode={integration?.viewMode} active={integration?.active}
       referenceVisible={integration?.referenceVisible} onReferencePoints={integration?.onReferencePoints}
       selectedReferenceId={integration?.selectedReferenceId}
+      hoveredMarkId={integration?.hoveredMarkId} onHoverMark={integration?.onHoverMark} visibility={integration?.visibility}
       aiAllowed={integration ? integration.aiAllowed === true : true}
       onRequestPhoto={clinical ? () => setClinicalCaptureOpen(true) : undefined}
       migration={migration && migrationReport ? { ids: evaluationMarks.filter(mark => mark.id.startsWith(`legacy-exam:${migration.examId}:`)).map(mark => mark.id), skipped: migrationReport.skipped.length } : undefined}

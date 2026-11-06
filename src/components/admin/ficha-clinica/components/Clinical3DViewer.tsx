@@ -363,6 +363,7 @@ interface AnnotationInteractionProps {
   cancellationToken?: number;
   onAnnotationSnap?: (target: { x: number; y: number; z: number } | null) => void;
   annotationLabels?: readonly AnnotationLabel[];
+  markerInteraction?: { onHover: (id: string | null) => void; onSelect: (id: string) => void };
 }
 
 const EMPTY_ANNOTATION_LABELS: readonly AnnotationLabel[] = [];
@@ -865,7 +866,7 @@ const ThreeEngine: React.FC<AnnotationInteractionProps & {
   sceneSettings?: Partial<ClinicalSceneSettings>;
   onModelMetrics?: (metrics: ClinicalModelMetrics) => void;
 }> = ({
-  modelSource, markers, zones, onMeshClick, onMarkerRadiusChange, onLoaded, onError, readOnly,
+  modelSource, markers, zones, onMeshClick, onMarkerRadiusChange, onLoaded, onError, readOnly, markerInteraction,
   referenceLines = [], lineDrawingMode, onLinePointAnchored,
   editablePoints = [], showEditablePoints = true, pointMode = 'none',
   onEditablePointMoved, onEditablePointDeleted, onEditablePointClicked,
@@ -1240,7 +1241,7 @@ const ThreeEngine: React.FC<AnnotationInteractionProps & {
   }, [annotationLabels, occludeAnnotations, modelVersion]);
 
   const callbacks = useRef({
-    onMeshClick, onMarkerRadiusChange, onLoaded, onError, zones, readOnly, lineDrawingMode, onLinePointAnchored,
+    onMeshClick, onMarkerRadiusChange, onLoaded, onError, zones, readOnly, markerInteraction, lineDrawingMode, onLinePointAnchored,
     pointMode, onEditablePointMoved, onEditablePointDeleted, onEditablePointClicked, onProjectedPositions,
     activeTool, selectedElementId, pendingBrushColor, pendingBrushThickness,
     onFreehandLineComplete, onShapeComplete, onElementSelected, onFreehandLineUpdated, onSurfaceShapeUpdated, onGridStepChange, onSnapPointChange,
@@ -1249,7 +1250,7 @@ const ThreeEngine: React.FC<AnnotationInteractionProps & {
   });
   useEffect(() => {
     callbacks.current = {
-      onMeshClick, onMarkerRadiusChange, onLoaded, onError, zones, readOnly, lineDrawingMode, onLinePointAnchored,
+      onMeshClick, onMarkerRadiusChange, onLoaded, onError, zones, readOnly, markerInteraction, lineDrawingMode, onLinePointAnchored,
       pointMode, onEditablePointMoved, onEditablePointDeleted, onEditablePointClicked, onProjectedPositions,
       activeTool, selectedElementId, pendingBrushColor, pendingBrushThickness,
       onFreehandLineComplete, onShapeComplete, onElementSelected, onFreehandLineUpdated, onSurfaceShapeUpdated, onGridStepChange, onSnapPointChange,
@@ -1755,9 +1756,10 @@ const ThreeEngine: React.FC<AnnotationInteractionProps & {
 
     const onPointerDown = (e: MouseEvent) => {
       syncDrawingTool();
-      if (callbacks.current.readOnly || e.button !== 0) return;
+      if (e.button !== 0) return;
       isDragging = false;
       startPos = { x: e.clientX, y: e.clientY };
+      if (callbacks.current.readOnly) return;
       if (rejectSurfaceEvent(e)) return;
       const tool = callbacks.current.activeTool;
       if (gridStep > 0 && tool !== 'ha-grid') resetGridDrawing();
@@ -1773,7 +1775,8 @@ const ThreeEngine: React.FC<AnnotationInteractionProps & {
       }
 
       // Lab: puntas editables antes de hitboxes de resize o trazos. Fichas mantienen el orden histórico.
-      if (tool === 'none' && callbacks.current.pointMode !== 'add' && cameraRef.current) {
+      if (tool === 'none' && cameraRef.current && (callbacks.current.pointMode !== 'add' ||
+          (callbacks.current.labInteraction && callbacks.current.onEditablePointMoved))) {
         const rect = renderer.domElement.getBoundingClientRect();
         mouse.set(((e.clientX - rect.left) / rect.width) * 2 - 1, -((e.clientY - rect.top) / rect.height) * 2 + 1);
         raycaster.setFromCamera(mouse, cameraRef.current);
@@ -1805,6 +1808,19 @@ const ThreeEngine: React.FC<AnnotationInteractionProps & {
           callbacks.current.onEditablePointClicked?.(labelId);
           isDragging = true;
           return;
+        }
+      }
+      if (tool === 'none' && callbacks.current.markerInteraction && cameraRef.current) {
+        const rect = renderer.domElement.getBoundingClientRect();
+        mouse.set(((e.clientX - rect.left) / rect.width) * 2 - 1, -((e.clientY - rect.top) / rect.height) * 2 + 1);
+        raycaster.setFromCamera(mouse, cameraRef.current);
+        const hit = visibleSurfaceHits(raycaster, markersGroupRef.current?.children ?? [], faceMeshRef.current,
+          callbacks.current.occludeAnnotations)[0];
+        let object: THREE.Object3D | null = hit?.object ?? null;
+        while (object && !object.userData.markerId) object = object.parent;
+        if (typeof object?.userData.markerId === 'string') {
+          callbacks.current.markerInteraction.onSelect(object.userData.markerId);
+          isDragging = true; return;
         }
       }
       handlesGroupRef.current?.children.forEach(handle => { handle.userData.cancelPosition = handle.position.clone(); });
@@ -1903,7 +1919,7 @@ const ThreeEngine: React.FC<AnnotationInteractionProps & {
         raycaster.setFromCamera(mouse, cameraRef.current);
         const zonalMeshes: THREE.Object3D[] = [];
         markersGroupRef.current.children.forEach(markerGroup => {
-          if (markerGroup.userData.isZonalMarker) {
+          if (markerGroup.userData.isZonalMarker && callbacks.current.onMarkerRadiusChange) {
             markerGroup.traverse(child => { if ((child as THREE.Mesh).isMesh) zonalMeshes.push(child); });
           }
         });
@@ -2469,6 +2485,14 @@ const ThreeEngine: React.FC<AnnotationInteractionProps & {
         const hits = raycaster.intersectObjects(meshObjs, false);
         if (hits.length > 0) {
           const hit = hits[0];
+          const normal = hit.face?.normal.clone().transformDirection(hit.object.matrixWorld).normalize();
+          if (callbacks.current.labInteraction && callbacks.current.surfaceConstraint &&
+            (hit.object.name === 'MASK_NEUTRAL_BACKING' || hit.object.name.startsWith('ESTIMATED_HEAD_SURFACE') ||
+              hit.object.name.startsWith('PHOTO_HAIR_SURFACE') || !normal || normal.dot(raycaster.ray.direction) >= -1e-5 ||
+              !callbacks.current.surfaceConstraint.accepts(hit.point))) {
+            callbacks.current.surfaceConstraint.onRejected();
+            return;
+          }
           draggedEditableSurface = hit.point.clone();
           if (hit.face) {
             const nf = hit.face.normal.clone().transformDirection(hit.object.matrixWorld).normalize();
@@ -2914,6 +2938,15 @@ const ThreeEngine: React.FC<AnnotationInteractionProps & {
       mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
       mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
       raycaster.setFromCamera(mouse, cameraRef.current);
+      if (callbacks.current.markerInteraction && callbacks.current.activeTool === 'none') {
+        const hits = visibleSurfaceHits(raycaster, [
+          ...(markersGroupRef.current?.children ?? []), ...(editablePointsGroupRef.current?.children ?? []),
+        ], faceMeshRef.current, callbacks.current.occludeAnnotations);
+        let object: THREE.Object3D | null = hits[0]?.object ?? null;
+        while (object && !object.userData.markerId && !object.userData.editableId) object = object.parent;
+        const id = object?.userData.markerId ?? object?.userData.editableId;
+        if (typeof id === 'string') { callbacks.current.markerInteraction.onSelect(id); return; }
+      }
       const nearest = faceMeshRef.current.getObjectByName('ESTIMATED_HEAD_SURFACE') ? raycaster.intersectObject(faceMeshRef.current, true)[0] : undefined;
       if (faceMeshRef.current.getObjectByName('ESTIMATED_HEAD_SURFACE')
         && (nearest?.object.name.startsWith('ESTIMATED_HEAD_SURFACE') || nearest?.object.name.startsWith('PHOTO_HAIR_SURFACE'))) {
@@ -3167,6 +3200,7 @@ const ThreeEngine: React.FC<AnnotationInteractionProps & {
           }
         });
         callbacks.current.onEditablePointHovered?.(null);
+        callbacks.current.markerInteraction?.onHover(null);
         prevHoveredEpId = null;
       }
       clearSnap();
@@ -3206,7 +3240,7 @@ const ThreeEngine: React.FC<AnnotationInteractionProps & {
       if (gridStep > 0 && callbacks.current.activeTool !== 'ha-grid') resetGridDrawing();
       if (rendererRef.current && sceneRef.current && cameraRef.current) {
         const pulse = (Math.sin(performance.now() * 0.0035) + 1) / 2;
-        markersGroupRef.current?.children.forEach(markerGroup => {
+        [...(markersGroupRef.current?.children ?? []), ...(editablePointsGroupRef.current?.children ?? [])].forEach(markerGroup => {
           const materials = markerGroup.userData.pulseMaterials as THREE.MeshBasicMaterial[] | undefined;
           materials?.forEach((material, index) => {
             material.opacity = index === 0
@@ -3262,7 +3296,8 @@ const ThreeEngine: React.FC<AnnotationInteractionProps & {
           }
 
           // ── Hover sobre puntos editables (solo cuando no hay herramienta activa) ──
-          const canHoverEp = callbacks.current.pointMode === 'none' && callbacks.current.activeTool === 'none';
+          const canHoverEp = callbacks.current.showEditablePoints && callbacks.current.activeTool === 'none' &&
+            (callbacks.current.pointMode === 'none' || callbacks.current.labInteraction);
           if (canHoverEp) {
             const epMeshes: THREE.Object3D[] = [];
             const meshToEpGrp = new Map<THREE.Object3D, THREE.Object3D>();
@@ -3270,13 +3305,18 @@ const ThreeEngine: React.FC<AnnotationInteractionProps & {
               epGrp.traverse(c => {
                 if ((c as THREE.Mesh).isMesh) { epMeshes.push(c); meshToEpGrp.set(c, epGrp); }
               });
+              if (callbacks.current.markerInteraction) markersGroupRef.current?.children.forEach(epGrp => {
+                epGrp.traverse(c => {
+                  if ((c as THREE.Mesh).isMesh) { epMeshes.push(c); meshToEpGrp.set(c, epGrp); }
+                });
+              });
             });
             let newHoveredEpId: string | null = null;
             if (epMeshes.length > 0) {
               const epHits = visibleSurfaceHits(hoverRc, epMeshes, faceMeshRef.current, callbacks.current.occludeAnnotations);
               if (epHits.length > 0) {
                 const epGrp = meshToEpGrp.get(epHits[0].object);
-                newHoveredEpId = epGrp?.userData.editableId ?? null;
+                newHoveredEpId = epGrp?.userData.editableId ?? epGrp?.userData.markerId ?? null;
               }
             }
             if (newHoveredEpId !== prevHoveredEpId) {
@@ -3295,6 +3335,7 @@ const ThreeEngine: React.FC<AnnotationInteractionProps & {
                 });
               }
               prevHoveredEpId = newHoveredEpId;
+              callbacks.current.markerInteraction?.onHover(newHoveredEpId);
               callbacks.current.onEditablePointHovered?.(newHoveredEpId);
               if (!newHoveredId) {
                 if (renderer.domElement)
@@ -3899,7 +3940,7 @@ const ThreeEngine: React.FC<AnnotationInteractionProps & {
       ptGroup.userData.epType = pt.type;
       ptGroup.userData.pointName = pt.name ?? 'Punto libre';
       // El sprite es el ancla gráfica; no duplicar con esfera ni etiqueta clínica.
-      if (annotationLabels.some(label => label.id === pt.id)) {
+      if (!pt.color && annotationLabels.some(label => label.id === pt.id)) {
         group.add(ptGroup);
         return;
       }
@@ -3915,13 +3956,14 @@ const ThreeEngine: React.FC<AnnotationInteractionProps & {
             new THREE.Vector3(pt.area.normal.x, pt.area.normal.y, pt.area.normal.z).normalize());
           halo.position.copy(new THREE.Vector3(pt.area.normal.x, pt.area.normal.y, pt.area.normal.z).multiplyScalar(.008));
           ptGroup.add(halo);
+          if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) ptGroup.userData.pulseMaterials = [halo.material];
         }
         const size = Math.max(.5, Math.min(1.5, pt.size ?? 1));
         const ring = new THREE.Mesh(new THREE.SphereGeometry(0.036 * size, 16, 16),
-          new THREE.MeshBasicMaterial({ color: 0x0f172a, transparent: true, opacity: 0.6, depthTest: false }));
+          new THREE.MeshBasicMaterial({ color: tint, transparent: true, opacity: 0.75, depthTest: false }));
         ring.renderOrder = 1000;
         const core = new THREE.Mesh(new THREE.SphereGeometry(0.026 * size, 16, 16),
-          new THREE.MeshStandardMaterial({ color: tint, emissive: tint, emissiveIntensity: 0.55, transparent: true, depthTest: false }));
+          new THREE.MeshStandardMaterial({ color: '#ffffff', emissive: tint, emissiveIntensity: 0.4, transparent: true, depthTest: false }));
         core.renderOrder = 1002;
         core.userData.baseEmissive = tint.clone();
         ptGroup.add(ring, core);
@@ -3994,6 +4036,12 @@ const ThreeEngine: React.FC<AnnotationInteractionProps & {
       });
     });
   }, [selectedPointId, highlightedPointIds, editablePoints]);
+
+  useEffect(() => {
+    markersGroupRef.current?.children.forEach(group => {
+      group.scale.setScalar(highlightedPointIds.includes(group.userData.markerId) ? 1.4 : 1);
+    });
+  }, [markers, highlightedPointIds]);
 
   // 4e. Renderizar líneas freehand (dibujo libre HA) — continuas, sobre superficie
   useEffect(() => {
@@ -4454,6 +4502,7 @@ export default function Clinical3DViewer({
   selectedPathology = 'botox',
   onMarkerPlaced,
   onMarkerRadiusChange,
+  markerInteraction,
   height = '400px',
   interactionHint,
   modelUrl = '/models/clinical/male_head.glb',
@@ -4572,6 +4621,7 @@ export default function Clinical3DViewer({
             occludeAnnotations={occludeAnnotations}
             onMeshClick={handleMeshClick}
             onMarkerRadiusChange={onMarkerRadiusChange}
+            markerInteraction={markerInteraction}
             onLoaded={() => { setModelLoaded(true); setModelError(false); }}
             onError={() => setModelError(true)}
             referenceLines={referenceLines}

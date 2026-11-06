@@ -1,4 +1,14 @@
-# Project Guidelines — BIOSKIN Admin Panel v2.0
+# Project Guidelines — bioskintech
+
+bioskintech es una plataforma de gestión clínica, actualmente orientada a estética.
+
+## Enfoque visual compartido
+
+- Priorizar una mesa de trabajo centrada en el visor, no formularios que crecen indefinidamente hacia abajo.
+- Agrupar acciones junto al objeto que modifican; mantener selección, confirmación y guardado evidentes.
+- Usar edición contextual y despliegue progresivo: fotos, parámetros e historial accesibles sin saturar la vista.
+- Conservar una jerarquía compacta, gráfica e interactiva, con estados seleccionados y hover sincronizado.
+- Aplicar estos criterios también a futuros cambios en Inyectables, adaptándolos a su flujo; validar desktop y móvil con datos sintéticos.
 
 ## Ponytail — Lazy Senior Dev Mode (Activo)
 

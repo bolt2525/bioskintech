@@ -3027,7 +3027,23 @@ export default async function handler(req, res) {
         } catch (error) {
           if (error instanceof PhysicalExamError)
             return res.status(error.status).json({ error: error.message });
-          return res.status(['42P01', '42703'].includes(error?.code) ? 503 : 500)
+          const schemaUnavailable = ['42P01', '42703'].includes(error?.code);
+          const permissionsUnavailable = error?.code === '42501';
+          // Only known SQLSTATEs are logged; never SQL, SDK errors or clinical state.
+          console.error('[Facial simulation] Processing failed.', {
+            action, code: schemaUnavailable || permissionsUnavailable ? error.code : 'UNEXPECTED',
+          });
+          if (schemaUnavailable)
+            return res.status(503).json({
+              code: 'SIMULATION_SCHEMA_UNAVAILABLE',
+              error: 'La persistencia de simulaciones no está disponible. Solicita al administrador verificar la migración del esquema de simulaciones.',
+            });
+          if (permissionsUnavailable)
+            return res.status(503).json({
+              code: 'SIMULATION_DATABASE_PERMISSIONS',
+              error: 'La persistencia de simulaciones no tiene los permisos necesarios. Solicita al administrador revisar los permisos de base de datos.',
+            });
+          return res.status(500)
             .json({ error: 'No se pudo procesar la simulación. Verifica disponibilidad y configuración.' });
         }
       }

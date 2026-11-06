@@ -70,7 +70,11 @@ try {
   assert.equal(await page.getByRole('button', { name: 'Buscar asistido', exact: true }).count(), 0);
   assert.equal(await page.evaluate(()=>window.originalDecodes),0,'Sin recorte no se decodifica el original completo');
   await page.getByRole('button', { name: 'Añadir marca en el centro', exact: true }).click();
-  await page.getByRole('button', { name: 'Validar región', exact: true }).click();
+  await page.getByText('Selecciona o escribe una lesión antes de marcar.', {exact:true}).waitFor();
+  assert.equal(await page.getByRole('dialog',{name:'Revisar marca',exact:true}).count(),0);
+  await page.getByLabel('Lesión a marcar', {exact:true}).fill('Lesión');
+  await page.getByRole('button', { name: 'Añadir marca en el centro', exact: true }).click();
+  await page.getByRole('button', { name: 'Confirmar', exact: true }).click();
   const identity = await page.evaluate(() => window.marks[0].id);
   await page.getByRole('button', { name: 'Seleccionar Lesión, validada', exact: true }).click();
   await page.getByRole('button', { name: 'Cerrar', exact: true }).click();
@@ -78,7 +82,7 @@ try {
   await page.getByText(/no tiene correspondencia fiable/).waitFor();
   await page.getByRole('button', { name: 'Vincular observación a la región seleccionada', exact: true }).click();
   await page.getByRole('button', { name: 'Vincular observación central', exact: true }).click();
-  await page.getByRole('button', { name: 'Validar región', exact: true }).click();
+  await page.getByRole('button', { name: 'Confirmar', exact: true }).click();
   assert.deepEqual(await page.evaluate(() => ({ id: window.marks[0].id, length: window.marks.length, observations: window.marks[0].observations.length })),
     { id: identity, length: 1, observations: 1 });
   await page.setViewportSize({ width: 390, height: 844 });
@@ -121,7 +125,7 @@ try {
   await page.getByRole('button', { name: 'Descartar pendientes del grupo', exact: true }).click();
   await page.getByRole('button', { name: /Uno.*Confirmada/ }).click();
   await page.getByLabel('Lesión o descripción', { exact: true }).fill('Descripción libre revisada');
-  await page.getByRole('button', { name: 'Validar región', exact: true }).click();
+  await page.getByRole('button', { name: 'Confirmar', exact: true }).click();
   const persisted = await page.evaluate(() => window.roundtrip());
   assert.equal(persisted.annotations.length, 1);
   assert.equal(persisted.annotations[0].source.provider, 'edited');
@@ -137,13 +141,14 @@ try {
   assert.equal(await page.evaluate(()=>window.marks.length),1);
   await page.getByRole('button',{name:/Frontal.*sin confirmar/}).click();
   await photoTarget.click({position:{x:70,y:70}});
-  await page.getByRole('button',{name:/Descripción libre revisada.*Por revisar/}).click();
-  await page.getByRole('button',{name:'Validar región',exact:true}).click();
+  await page.getByRole('button',{name:/Descripción libre revisada.*Confirmada/}).click();
+  await page.getByRole('button',{name:'Confirmar',exact:true}).click();
   const moved=await page.evaluate(()=>window.roundtrip());
   assert.deepEqual(moved.annotations[0].crop,originalCrop,'Reubicar conserva evidencia del recorte original');
   await page.getByRole('button',{name:'Buscar asistido',exact:true}).click();
   await page.evaluate(()=>window.setAssistanceAllowed(false));
   await page.waitForFunction(()=>![...document.querySelectorAll('button')].some(button=>button.textContent==='Buscar asistido'));
+  await page.getByLabel('Lesión a marcar',{exact:true}).fill('Lesión');
   await page.getByRole('button',{name:'Añadir marca en el centro',exact:true}).click();
   assert.equal(await page.evaluate(()=>window.marks.length),2,'Revocar asistencia devuelve la interacción al marcado manual');
   assert.equal(sent.length,1,'Revocar no permite más análisis');

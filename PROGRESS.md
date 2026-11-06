@@ -1,5 +1,10 @@
 # Progreso de BioSkinTech App
 
+- ✅ 2026-11-06 Máscara: arrastre y guardado.
+- Arrastre persistente en máscara y borrador de migración; lesión obligatoria antes de marcar, Confirmar sin validación adicional de ubicación, observaciones visibles, neón/nombres/hover enlazados y listado por identidad. Guardar examen incluye fotos/máscara y conserva legacy; errores bloquean guardados parciales y reintentos reutilizan UUID/fotos/sesión.
+- Migración existente de máscaras autorizada y aplicada en Neon producción: dos tablas, RLS forzado y grants mínimos. Diez comprobaciones con conexión bioskin_app directa y fixture rollback, cero filas persistidas; sin IA/Billing, pacientes ni nuevas bases de datos. Variable sensitive de conexión actualizada sin rotación; un marcador exportado de Vercel no acredita invalidez del secreto.
+- Recomendación visual para bioskintech documentada en AGENTS.md: mesa centrada en visor, acciones contextuales, despliegue progresivo y jerarquía compacta; aplicable a futuros cambios en Inyectables, sin modificar ese tab.
+- QA: 32 pruebas Node, tres recorridos sintéticos desktop/móvil y build final aprobados; arrastre/hover WebGL reales, borrador cancelable, guardado con fallos/reintentos/doble clic, catálogo libre y asistencia revocada. Lint focal sin errores (dos advertencias previas); TypeScript mantiene 12 errores ajenos. Gates de seguridad/QA backend aprobados; sin proveedor IA ni fotos clínicas.
 - ✅ 2026-11-06 Marcación visual optimizada.
 - Selector también en máscara, puntos/zonas editables, tamaño, reubicación y eliminación reversible. Proyección anatómica al cambiar de vista sin duplicar registros legacy; canvas ocultos desmontados y cobertura reutilizada en memoria.
 - QA: 15 pruebas Node y cuatro recorridos sintéticos desktop/móvil; WebGL real, una sola escena en modo individual, revisión/reubicación, tamaño y deshacer verificados. Original completo cargado solo para recorte; sin IA real, Neon ni R2. Skills UI/composición/UX/QA aplicadas; build aprobado y TypeScript conserva 12 errores previos.

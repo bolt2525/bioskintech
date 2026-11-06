@@ -83,6 +83,9 @@ export interface FaceSimIntegration {
   referenceVisible?: boolean;
   onReferencePoints?: (points: EditablePoint[]) => void;
   selectedReferenceId?: string;
+  hoveredMarkId?: string | null;
+  onHoverMark?: (id: string | null) => void;
+  visibility?: { marks: boolean; names: boolean };
 }
 
 export function storeSurface(surface: PersonalSurface | EstimatedHeadSurface): StoredSurface {

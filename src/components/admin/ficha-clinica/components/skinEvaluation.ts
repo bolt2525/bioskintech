@@ -70,7 +70,7 @@ export function skinDisplayPoints(marks: readonly EvaluationMark[], sources: rea
     const normal = { x: a[1] * b[2] - a[2] * b[1], y: a[2] * b[0] - a[0] * b[2], z: a[0] * b[1] - a[1] * b[0] };
     const length = Math.hypot(normal.x, normal.y, normal.z);
     return [{ id: mark.id, type: 'free' as const, lineIds: [], ...position, size: isZonalSkinMark(mark.box) ? 1 : mark.box.width / .04,
-      color: mark.status === 'validated' ? '#15803d' : '#b45309', name: mark.label,
+      color: mark.status === 'validated' ? '#22d3ee' : '#fbbf24', name: mark.label,
       ...(area.length === 4 && length > 0 ? { area: { radius: Math.max(...area.map(q =>
         Math.hypot(q.x - position.x, q.y - position.y, q.z - position.z))),
       normal: { x: normal.x / length, y: normal.y / length, z: normal.z / length } } } : {}) }];
@@ -226,18 +226,19 @@ export function fromLegacySkinReview(data: Parameters<typeof parseSkinReview>[0]
 }
 
 /** Presentación descriptiva, sin exponer claves ni URL de las fotografías. */
-export function skinReviewSummaries(data: unknown): { id: string; description: string }[] {
+export function skinReviewSummaries(data: unknown): { id: string; description: string; box?: NormalizedBox }[] {
   let review = data;
   if (typeof review === 'string') { try { review = JSON.parse(review); } catch { return []; } }
   if (!review || typeof review !== 'object' || !('version' in review)) return [];
   if (review.version === 1) return parseSkinReview(review as Parameters<typeof parseSkinReview>[0])
-    .map(mark => ({ id: mark.id, description: `${mark.label}${mark.note ? ` — ${mark.note}` : ''} · Foto clínica #${mark.photo.id}` }));
+    .map(mark => ({ id: mark.id, box: mark.normalizedBox, description: `${mark.label}${mark.note ? ` — ${mark.note}` : ''} · Foto clínica #${mark.photo.id}` }));
   if (review.version !== 2 || !('annotations' in review) || !Array.isArray(review.annotations)) return [];
   return review.annotations.flatMap((mark: unknown) => {
     if (!mark || typeof mark !== 'object' || !('reviewStatus' in mark) || mark.reviewStatus !== 'validated' ||
       !('id' in mark) || typeof mark.id !== 'string' || !('label' in mark) || typeof mark.label !== 'string' ||
       !('note' in mark) || typeof mark.note !== 'string' || !('photo' in mark) || !mark.photo ||
       typeof mark.photo !== 'object' || !('id' in mark.photo) || typeof mark.photo.id !== 'number') return [];
-    return [{ id: mark.id, description: `${mark.label}${mark.note ? ` — ${mark.note}` : ''} · Foto clínica #${mark.photo.id}` }];
+    return [{ id: mark.id, ...('normalizedBox' in mark && validBox(mark.normalizedBox) ? { box: mark.normalizedBox } : {}),
+      description: `${mark.label}${mark.note ? ` — ${mark.note}` : ''} · Foto clínica #${mark.photo.id}` }];
   });
 }

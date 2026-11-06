@@ -4,7 +4,7 @@ import { SimulationPhotoLibrary } from './SimulationPhotoLibrary';
 import { ensureSimulationPhotos, loadSimulationPhotos } from './simulationPhotos';
 import type { SimulationPhotoCache } from './simulationPhotos';
 import { fromLegacySkinReview, fromPersistedSkinReview, skinReviewSummaries, toPersistedSkinReview } from './skinEvaluation';
-import type { PersistedSkinReview } from './skinEvaluation';
+import type { EvaluationMark, PersistedSkinReview } from './skinEvaluation';
 import { parseSkinReview } from './skinVisualAI';
 import type { PhotoReference, SkinContext, SkinVisualReviewData } from './skinVisualAI';
 import { SIMULATION_PHOTO_SLOTS } from '../../../../lab/faceSim/facialSimulationSession';
@@ -50,7 +50,9 @@ async function json(response: Response) {
   return value;
 }
 
-export default function SkinExamWorkspace({ recordId, context, review, onPrepared, onDirty, legacyMigration, onCaptureReady, referenceView, viewMode, aiAllowed, active, referenceVisible, onReferencePoints, selectedReferenceId }: {
+export type SkinExamSave = () => Promise<PersistedSkinReview>;
+export default function SkinExamWorkspace({ recordId, context, review, onPrepared, onDirty, legacyMigration, onCaptureReady, referenceView, viewMode, aiAllowed, active, referenceVisible, onReferencePoints, selectedReferenceId,
+  hoveredMarkId, onHoverMark, visibility, onEvaluationChange, saveController }: {
   recordId: number; context: SkinContext; review: Review;
   onPrepared: (review: PersistedSkinReview) => void; onDirty: () => void;
   legacyMigration?: FaceSimIntegration['legacyMigration'];
@@ -58,6 +60,10 @@ export default function SkinExamWorkspace({ recordId, context, review, onPrepare
   referenceView?: ReactNode; viewMode?: 'mask' | 'split'; aiAllowed?: boolean;
   active?: boolean; referenceVisible?: boolean; onReferencePoints?: FaceSimIntegration['onReferencePoints'];
   selectedReferenceId?: string;
+  hoveredMarkId?: string | null; onHoverMark?: (id: string | null) => void;
+  visibility?: { marks: boolean; names: boolean };
+  onEvaluationChange?: (marks: EvaluationMark[]) => void;
+  saveController?: { current: SkinExamSave | null };
 }) {
   const prior = useMemo(() => {
     try { return { refs: priorReferences(review), error: reviewIntegrity(review) }; }
@@ -80,11 +86,13 @@ export default function SkinExamWorkspace({ recordId, context, review, onPrepare
   const operation = useRef<AbortController | null>(null);
   const revision = useRef(0);
   const request = useRef<{ payload: string; id: string } | null>(null);
+  const savingRequest = useRef(false);
   const onController = useCallback((next: FaceSimController | null) => {
     controller.current = next;
     if (!next) return;
     setControllerReady(true);
     setHasPhotos(next.getPhotos().length > 0);
+    onEvaluationChange?.(next.getMarks());
     for (const capture of next.getPhotos()) {
       const entry = [...pending.current].find(([, item]) => item.canvas === capture.canvas || (!!item.file && item.file === capture.original));
       if (entry) {
@@ -93,7 +101,7 @@ export default function SkinExamWorkspace({ recordId, context, review, onPrepare
         pending.current.delete(key);
       }
     }
-  }, [recordId]);
+  }, [recordId, onEvaluationChange]);
   const changed = useCallback(() => {
     revision.current++; request.current = null; onDirty();
   }, [onDirty]);
@@ -124,13 +132,14 @@ export default function SkinExamWorkspace({ recordId, context, review, onPrepare
   }, [recordId, review, controllerReady]);
   useEffect(() => () => operation.current?.abort(), []);
 
-  async function prepare() {
-    if (busy || !ready || prior.error) return;
+  async function prepare(): Promise<PersistedSkinReview> {
+    if (savingRequest.current || busy || !ready || prior.error) throw new Error(prior.error || 'Espera a que termine la preparación de la máscara.');
     const current = controller.current;
-    if (!current) { setError('El editor aún no está listo.'); return; }
+    if (!current) throw new Error('El editor aún no está listo.');
     if (current.getMarks().some(mark => mark.status === 'pending')) {
-      setError('Valida o descarta todas las regiones pendientes antes de preparar el guardado.'); return;
+      throw new Error('Confirma o descarta las marcas pendientes antes de guardar.');
     }
+    savingRequest.current = true;
     const task = new AbortController();
     operation.current = task;
     setBusy(true); setError(''); setNotice('');
@@ -163,12 +172,23 @@ export default function SkinExamWorkspace({ recordId, context, review, onPrepare
       }));
       if (!Number.isInteger(result?.id) || result.id <= 0) throw new Error('No se confirmó la sesión. Reintenta con la misma solicitud.');
       if (revision.current !== start) throw new Error('La evaluación cambió durante el guardado. Prepara la versión actual.');
-      onPrepared({ ...reviewed, simulationId: result.id });
-      setNotice('Evaluación preparada. Pulsa Guardar examen para vincularla al examen físico.');
+      const prepared = { ...reviewed, simulationId: result.id };
+      onPrepared(prepared);
+      setNotice('Fotos y máscara listas para vincular al examen.');
+      return prepared;
     } catch (e) {
       if (!task.signal.aborted) setError(e instanceof Error ? e.message : 'No se pudo preparar la evaluación.');
-    } finally { if (operation.current === task) { operation.current = null; setBusy(false); } }
+      throw e;
+    } finally {
+      savingRequest.current = false;
+      if (operation.current === task) { operation.current = null; setBusy(false); }
+    }
   }
+  useEffect(() => {
+    if (!saveController) return;
+    saveController.current = prepare;
+    return () => { saveController.current = null; };
+  });
 
   async function importLibraryPhotos(items: { photo: PhotoReference; file: File }[]) {
     const editor = controller.current;
@@ -199,13 +219,15 @@ export default function SkinExamWorkspace({ recordId, context, review, onPrepare
     <Suspense fallback={<p role="status">Abriendo el editor…</p>}>
       <FaceSimLab integration={{ mode: 'skin-exam', recordId, context, initialMarks, onController, onDirty: changed, onMarksChange: changed,
         referenceView, viewMode, aiAllowed, active, referenceVisible, onReferencePoints, selectedReferenceId,
+        hoveredMarkId, onHoverMark, visibility,
         legacyMigration, onCaptureReady, photoLibrary: <SimulationPhotoLibrary recordId={recordId} selection="multiple"
           onSelect={(photo, file) => importLibraryPhotos([{ photo, file }])} onSelectMany={importLibraryPhotos} /> }} />
     </Suspense>
     </fieldset>
     {hasPhotos && <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-gray-200 bg-gray-50 p-3">
-      <p className="text-xs text-gray-500">Preparar sube fotos y máscara. Guardar examen confirma los cambios.</p>
-      <button type="button" className={button} disabled={busy || !ready || !!prior.error} onClick={prepare}>{busy ? 'Preparando…' : 'Preparar para guardar'}</button>
+      <p className="text-xs text-gray-500">{saveController ? 'Guardar examen incluye fotografías, máscara y marcas confirmadas.' : 'Prepara las fotos y la máscara para vincularlas al examen.'}</p>
+      {!saveController && <button type="button" className={button} disabled={busy || !ready || !!prior.error}
+        onClick={() => { void prepare().catch(e => setError(e instanceof Error ? e.message : 'No se pudo preparar la evaluación.')); }}>{busy ? 'Preparando…' : 'Preparar para guardar'}</button>}
     </div>}
   </section>;
 }

@@ -13,6 +13,27 @@ try {
   await page.route('**/*', async route => {
     const request = route.request(), url = new URL(request.url());
     if (url.origin !== origin) { external.push(request.url()); return route.abort(); }
+    if (url.pathname.endsWith('/Clinical3DViewer.tsx') && url.searchParams.has('qa-original')) {
+      const code=await (await route.fetch()).text();
+      assert.ok(code.includes('const onClick = (event) => {'));
+      return route.fulfill({contentType:'application/javascript',body:code.replace('const onClick = (event) => {',`
+        if(modelSource.type==='buffer')window.projectMaskPoint=point=>{
+          const p=new THREE.Vector3(point.x,point.y,point.z).project(cameraRef.current);
+          const rect=renderer.domElement.getBoundingClientRect();
+          return {x:(p.x*.5+.5)*rect.width,y:(-p.y*.5+.5)*rect.height};
+        };
+        const onClick = (event) => {
+      `)});
+    }
+    if (url.pathname.endsWith('/Clinical3DViewer.tsx') && !url.searchParams.has('qa-original')) return route.fulfill({
+      contentType:'application/javascript',body:`
+        import React from '/node_modules/.vite/deps/react.js';
+        import Actual from '/src/components/admin/ficha-clinica/components/Clinical3DViewer.tsx?qa-original';
+        export default function Viewer(props){return React.createElement(Actual,{...props,
+          onEditablePointMoved:props.onEditablePointMoved?(id,position)=>{window.lastMove={id,position};props.onEditablePointMoved(id,position)}:undefined,
+          onEditablePointHovered:id=>{if(props.modelData)window.hoveredMaskId=id;props.onEditablePointHovered?.(id)},
+          onProjectedPositions:positions=>{if(props.modelData)window.projectedMask=positions;props.onProjectedPositions?.(positions)}})}
+      `});
     if (url.pathname.startsWith('/api/')) {
       if (request.method() !== 'GET') writes.push(request.url());
       if (url.searchParams.get('action') === 'skinVisualStatus') return route.fulfill({ json: {
@@ -31,7 +52,7 @@ try {
       import atlas from '/src/lab/faceSim/genericFaceAtlas.json';
       import {personalSurfaceToGlb} from '/src/lab/faceSim/personalSurfaceGlb.ts';
       import {bufferToBase64,storeSurface} from '/src/lab/faceSim/facialSimulationSession.ts';
-      import {modelPoint} from '/src/lab/faceSim/faceTransfer.ts';
+      import {modelPoint,surfacePoint} from '/src/lab/faceSim/faceTransfer.ts';
       import {migrateLegacySkinMarks} from '/src/components/admin/ficha-clinica/components/skinLegacyMigration.ts';
       import {anchorForPhoto,photoForAnchor} from '/src/components/admin/ficha-clinica/components/skinEvaluation.ts';
       import '/src/index.css';
@@ -53,6 +74,7 @@ try {
         for(let triangle=0;triangle<atlas.triangles.length/3;triangle++){
           const position3D=modelPoint({triangle,weights:[.2,.3,.5]});
           if(!position3D)continue;
+          if(Math.abs(position3D.x)<.45 || position3D.y<0 || position3D.y>.65)continue;
           const candidate={id:'historical',is3D:true,position3D,x:0,y:0,category:'Marca histórica sintética'};
           if(migrateLegacySkinMarks([candidate],42,[source],surface,[]).added){legacy=candidate;break;}
         }
@@ -77,7 +99,7 @@ try {
             const box={x:x-.02,y:y-.02,width:.04,height:.04};
             const anchor=anchorForPhoto(box,source,surface);
             if(anchor&&photoForAnchor(anchor,source,surface)&&window.controller.getMarks().every(mark=>
-              Math.hypot(mark.box.x+mark.box.width/2-x,mark.box.y+mark.box.height/2-y)>.06))return {x,y};
+              Math.hypot(mark.box.x+mark.box.width/2-x,mark.box.y+mark.box.height/2-y)>.06))return {x,y,point:surfacePoint(anchor,surface)};
           }
           throw Error('Sin punto fotográfico observado libre');
         };
@@ -116,6 +138,41 @@ try {
   await page.getByRole('button',{name:'Revisar traslado',exact:true}).click();
   await migration.getByRole('button',{name:'Confirmar ubicaciones',exact:true}).click();
   assert.equal(await page.evaluate(()=>window.controller.getMarks().find(mark=>mark.id.startsWith('legacy-exam:')).status),'validated');
+  async function dragMark(container, id, dx=8, dy=-6) {
+    const canvas=container.locator('canvas').first();
+    await canvas.scrollIntoViewIfNeeded();
+    await page.waitForFunction(id=>window.projectedMask?.some(point=>point.id===id&&point.visible),id);
+    const point=await page.evaluate(id=>window.projectedMask.find(point=>point.id===id),id);
+    const bounds=await canvas.boundingBox();
+    await page.mouse.move(bounds.x+point.x,bounds.y+point.y);
+    await page.mouse.down();
+    await page.mouse.move(bounds.x+point.x+dx,bounds.y+point.y+dy,{steps:8});
+    await page.mouse.up();
+  }
+  const movedId='legacy-exam:42:historical';
+  const confirmedAnchor=await page.evaluate(id=>window.controller.getMarks().find(mark=>mark.id===id).anchor,movedId);
+  await dragMark(page.getByRole('region',{name:'Editor de evaluación de piel'}),movedId);
+  assert.equal(await page.evaluate(()=>window.lastMove?.id),movedId,JSON.stringify(await page.evaluate(()=>({
+    move:window.lastMove,alerts:[...document.querySelectorAll('[role=alert]')].map(item=>item.textContent),points:window.projectedMask
+  }))));
+  await page.waitForFunction(({id,anchor})=>JSON.stringify(window.controller.getMarks().find(mark=>mark.id===id).anchor)!==JSON.stringify(anchor),
+    {id:movedId,anchor:confirmedAnchor});
+  const draggedAnchor=await page.evaluate(id=>window.controller.getMarks().find(mark=>mark.id===id).anchor,movedId);
+  await page.waitForTimeout(250);
+  assert.deepEqual(await page.evaluate(id=>window.controller.getMarks().find(mark=>mark.id===id).anchor,movedId),draggedAnchor,'Arrastrar conserva la posición después de soltar');
+  await page.getByRole('button',{name:'Revisar traslado',exact:true}).click();
+  const draftPosition=await page.evaluate(id=>window.projectedMask.find(point=>point.id===id),movedId);
+  await dragMark(migration,movedId,-10,12);
+  await page.waitForFunction(({id,before})=>window.projectedMask?.some(point=>point.id===id&&Math.hypot(point.x-before.x,point.y-before.y)>1),
+    {id:movedId,before:draftPosition});
+  assert.deepEqual(await page.evaluate(id=>window.controller.getMarks().find(mark=>mark.id===id).anchor,movedId),draggedAnchor,'Arrastrar en la revisión afecta solo al borrador');
+  await migration.getByRole('button',{name:'Cancelar revisión',exact:true}).click();
+  assert.deepEqual(await page.evaluate(id=>window.controller.getMarks().find(mark=>mark.id===id).anchor,movedId),draggedAnchor);
+  await page.getByRole('button',{name:'Revisar traslado',exact:true}).click();
+  await dragMark(migration,movedId,-8,-6);
+  await migration.getByRole('button',{name:'Confirmar ubicaciones',exact:true}).click();
+  assert.notDeepEqual(await page.evaluate(id=>window.controller.getMarks().find(mark=>mark.id===id).anchor,movedId),draggedAnchor,
+    'Confirmar también conserva las correcciones hechas mediante arrastre');
   await page.getByRole('button',{name:'Revisar traslado',exact:true}).click();
   await migration.getByRole('button',{name:'Marca histórica sintética',exact:true}).click();
   await migration.getByRole('button',{name:'Reubicar marca',exact:true}).click();
@@ -154,12 +211,13 @@ try {
   await photoViewport.getByRole('button', { name: 'Restablecer foto', exact: true }).click();
   await photoViewport.getByRole('button', { name: 'Acercar foto', exact: true }).click();
   const spot = await page.evaluate(() => window.findPhotoSpot());
+  await mask.getByLabel('Lesión a marcar',{exact:true}).fill('Lesión');
   const target = photoViewport.getByRole('button', { name: /^Añadir marca en la foto/ });
   await target.evaluate((button, point) => {
     const scroll=button.parentElement.parentElement;
     scroll.scrollLeft=point.x*button.offsetWidth-scroll.clientWidth/2;
     scroll.scrollTop=point.y*button.offsetHeight-scroll.clientHeight/2;
-    scroll.scrollIntoView({block:'center'});
+    scroll.scrollIntoView({block:'center',behavior:'instant'});
   }, spot);
   const rect = await target.boundingBox();
   await page.mouse.click(rect.x+rect.width*spot.x,rect.y+rect.height*spot.y);
@@ -183,12 +241,20 @@ try {
   await mask.getByRole('button', {name:'Máscara 3D',exact:true}).click();
   const maskCanvas = mask.locator('canvas').first();
   await maskCanvas.scrollIntoViewIfNeeded();
-  const maskBounds = await maskCanvas.boundingBox();
-  await maskCanvas.click({position:{x:maskBounds.width*.55,y:maskBounds.height*.55}});
+  const projectedTarget=await page.evaluate(()=>window.projectMaskPoint(window.findPhotoSpot().point));
+  await maskCanvas.click({position:projectedTarget});
   await page.waitForFunction(() => window.controller.getMarks().length===4, null, {timeout:10000});
   await page.getByRole('dialog',{name:'Revisar marca',exact:true}).getByRole('button',{name:'Cerrar',exact:true}).click();
   const maskMark = await page.evaluate(() => window.controller.getMarks().at(-1));
   assert.ok(maskMark.anchor, 'El raycast real de la máscara conserva el anclaje anatómico');
+  await page.waitForFunction(id=>window.projectedMask.some(point=>point.id===id&&point.visible),maskMark.id);
+  const hoverPoint=await page.evaluate(id=>window.projectedMask.find(point=>point.id===id),maskMark.id);
+  await maskCanvas.scrollIntoViewIfNeeded();
+  const hoverBounds=await maskCanvas.boundingBox();
+  await page.mouse.move(hoverBounds.x+hoverPoint.x,hoverBounds.y+hoverPoint.y);
+  await page.waitForFunction(id=>window.hoveredMaskId===id,maskMark.id);
+  assert.match(await mask.getByRole('button',{name:/Lesión.*Puntual.*Por revisar/}).last().getAttribute('style'),/box-shadow/,
+    'Pasar sobre la marca 3D resalta su etiqueta de edición');
   await mask.getByRole('button', {name:/^Fotografías \(/}).click();
   assert.equal(await photoViewport.getByRole('button', {name:'Seleccionar Lesión, pendiente',exact:true}).count(),2,
     'Ambas marcas, de foto y de máscara, se muestran en la fotografía sin duplicar identidades');

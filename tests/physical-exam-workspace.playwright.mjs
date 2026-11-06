@@ -7,6 +7,7 @@ assert.match(origin, /^http:\/\/(?:127\.0\.0\.1|localhost):\d+$/);
 const browser = await chromium.launch({ channel: 'chrome', headless: true,
   args:['--enable-webgl','--use-angle=swiftshader','--enable-unsafe-swiftshader'] });
 const errors = [], writes = [], external = [], aiRequests=[];
+let failMask = true, failExam = true;
 try {
   const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
   page.on('pageerror', e => errors.push(e.message));
@@ -21,7 +22,9 @@ try {
       ${process.env.QA_REAL_VIEWERS ? "import ActualViewer from '/src/components/admin/ficha-clinica/components/Clinical3DViewer.tsx?qa-original';" : ''}
       export default function Viewer(props){const {markers=[],modelData}=props;return React.createElement(React.Fragment,null,
         React.createElement('output',{'data-testid':modelData?'mask-preview':'generic-mark-count','data-readonly':!!props.readOnly},String(markers.length)),
-        React.createElement('output',{'data-testid':modelData?'mask-point-count':'reference-point-count'},String(props.editablePoints?.length??0)),
+        React.createElement('output',{'data-testid':modelData?'mask-point-count':'reference-point-count',
+          'data-highlighted':props.highlightedPointIds?.join(',')??'','data-showmarks':props.showEditablePoints!==false,
+          'data-labels':props.annotationLabels?.length??0},String(props.editablePoints?.length??0)),
         ${process.env.QA_REAL_VIEWERS ? 'React.createElement(ActualViewer,props)' : 'null'})}
     ` });
     if (url.pathname.endsWith('/FaceSimLab.tsx')) return route.fulfill({ contentType: 'application/javascript',
@@ -29,6 +32,16 @@ try {
     if (url.pathname.startsWith('/api/')) {
       if(['skinVisualStatus','analyzeSkinVisual'].includes(url.searchParams.get('action')))aiRequests.push(request.url());
       if (request.method() !== 'GET') writes.push(request.postDataJSON());
+      const action=request.method()==='POST'?request.postDataJSON().action??url.searchParams.get('action'):url.searchParams.get('action');
+      if(action==='uploadPhotoProxy')return route.fulfill({json:{id:81,r2_key:'clinics/synthetic/records/12/photos/81.png'}});
+      if(action==='saveFacialSimulation'){
+        if(failMask){failMask=false;return route.fulfill({status:503,json:{error:'Almacenamiento temporalmente no disponible (fixture).'}});}
+        return route.fulfill({json:{id:93}});
+      }
+      if(action==='savePhysicalExam'){
+        if(failExam){failExam=false;return route.fulfill({status:503,json:{error:'Examen no confirmado (fixture).'}});}
+        return route.fulfill({json:{id:42}});
+      }
       if (url.searchParams.get('action') === 'listPhotos') return route.fulfill({ json: { photos: [], total: 0, hasMore: false } });
       if (url.searchParams.get('action') === 'skinVisualStatus') return route.fulfill({ json: {
         enabled: false, reason: 'Deshabilitada', model: 'gemini-3.5-flash-lite', usedUsd: 0, remainingUsd: 5, limitUsd: 5,
@@ -69,7 +82,8 @@ try {
           photos:[{slot:'frontal',photo:{id:81,r2Key:'clinics/synthetic/records/12/photos/81.png'},alignment:{
             frame:{top:.05,bottom:.95,left:.1,right:.9,axisTop:{x:.5,y:.05},axisBottom:{x:.5,y:.95},source:'manual'},landmarks,captureConfirmed:true}}],
           mask:{view:'frontal',surface:storeSurface(surface),renderSurface:storeSurface(surface),glbBase64:bufferToBase64(glb),
-            depth:1,depthDetails:'Sintético',diagnostics:[],closedHead:false},marks},{frontal:canvas});
+            depth:1,depthDetails:'Sintético',diagnostics:[],closedHead:false},marks},{frontal:canvas},
+          {frontal:await new Promise(resolve=>canvas.toBlob(resolve,'image/png'))});
       };
     </script>`;
     return route.fulfill({ contentType: 'text/html', body: html
@@ -164,13 +178,65 @@ try {
   assert.equal(await page.getByTestId('generic-mark-count').count(),0,'En móvil no se monta la referencia oculta');
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1), false);
   if (process.env.QA_SCREENSHOT_DIR) await page.screenshot({ path: `${process.env.QA_SCREENSHOT_DIR}\\examen-mobile.png`, fullPage: true });
+  await page.setViewportSize({width:1440,height:1000});
+  await page.getByRole('button',{name:'Máscara del paciente',exact:true}).click();
+  assert.equal(await page.getByRole('button',{name:'Preparar para guardar',exact:true}).count(),0,'Un solo guardado evidente');
+  const editor=page.getByRole('region',{name:'Editor de evaluación de piel'});
+  await editor.getByLabel('Lesión a marcar',{exact:true}).fill('Lesión nueva sintética');
+  await editor.getByRole('button',{name:/^Fotografías \(/}).click();
+  await editor.getByRole('button',{name:'Añadir marca en el centro',exact:true}).click();
+  const markDialog=page.getByRole('dialog',{name:'Revisar marca',exact:true});
+  await markDialog.getByRole('button',{name:'Cerrar',exact:true}).click();
+  const save=page.getByRole('button',{name:'Guardar examen físico',exact:true});
+  await save.click();
+  await page.getByText('Confirma o descarta las marcas pendientes antes de guardar.',{exact:true}).waitFor();
+  assert.equal(writes.length,0,'No se sube ni crea examen con pendientes');
+  await editor.getByRole('button',{name:/Lesión nueva sintética.*Por revisar/}).click();
+  await markDialog.getByRole('textbox',{name:'Zona y observaciones',exact:true}).waitFor();
+  assert.equal(await markDialog.getByRole('button',{name:/Validar región|Validar ubicación/}).count(),0);
+  await markDialog.getByRole('button',{name:'Confirmar',exact:true}).click();
+  const rows=page.locator('div.max-h-48');
+  await rows.getByRole('button',{name:'Editar Lesión nueva sintética en la máscara',exact:true}).waitFor();
+  await editor.getByRole('button',{name:/Lesión nueva sintética.*Confirmada/}).hover();
+  await page.waitForFunction(()=>document.querySelector('[data-testid=mask-point-count]')?.dataset.highlighted);
+  await page.getByRole('button',{name:'Ocultar nombres',exact:true}).click();
+  assert.equal(await page.getByTestId('mask-point-count').getAttribute('data-labels'),'0');
+  await page.getByRole('button',{name:'Mostrar nombres',exact:true}).click();
+  await page.getByRole('button',{name:'Ocultar marcas',exact:true}).click();
+  assert.equal(await page.getByTestId('mask-point-count').getAttribute('data-showmarks'),'false');
+  await page.getByRole('button',{name:'Mostrar marcas',exact:true}).click();
+  await save.click();
+  await page.getByText('Almacenamiento temporalmente no disponible (fixture).',{exact:true}).first().waitFor();
+  assert.equal(writes.filter(write=>write.record_id&&write.face_map_data).length,0,'No guardar examen si falla la máscara');
+  await save.evaluate(button=>{button.click();button.click();});
+  await page.getByText('Examen no confirmado (fixture).',{exact:true}).waitFor();
+  assert.equal(writes.filter(write=>write.face_map_data).length,1,'Doble clic no duplica el examen');
+  const savesBeforeRetry=writes.filter(write=>write.action==='saveFacialSimulation').length;
+  await save.click();
+  await page.getByText('Examen físico guardado correctamente',{exact:true}).waitFor();
+  assert.equal(writes.filter(write=>write.action==='saveFacialSimulation').length,savesBeforeRetry,'Reintentar examen reutiliza máscara preparada');
+  const maskWrites=writes.filter(write=>write.action==='saveFacialSimulation');
+  assert.equal(maskWrites.length,2);
+  assert.equal(maskWrites[0].requestId,maskWrites[1].requestId,'Reintento mantiene UUID idempotente');
+  assert.equal(writes.filter(write=>write.action==='uploadPhotoProxy').length,1,'No vuelve a subir la foto');
+  const payload=writes.filter(write=>write.face_map_data).at(-1);
+  assert.equal(payload.skin_visual_review.simulationId,93);
+  assert.equal(payload.skin_visual_review.annotations.length,2);
+  const savedLegacy=JSON.parse(payload.face_map_data);
+  const originalLegacy=await page.evaluate(()=>window.originalLegacy);
+  assert.equal(savedLegacy.length,1);
+  assert.equal(savedLegacy[0].id,originalLegacy[0].id);
+  assert.deepEqual(savedLegacy[0].position3D,originalLegacy[0].position3D,'La máscara no modifica la ubicación original');
+  assert.equal(maskWrites.at(-1).state.marks.length,2);
+  assert.ok(maskWrites.at(-1).state.mask.surface.positions.length>0);
+  assert.equal(aiRequests.length,0);
   await page.getByRole('button', { name: 'Nuevo examen', exact: true }).click();
   assert.equal(await page.getByRole('button', { name: /^Migrar marcaciones a máscara/ }).count(), 0);
   assert.equal(await page.getByTestId('generic-mark-count').first().innerText(), '0');
   await page.getByRole('button', { name: /^Crear máscara facial/ }).click();
   await page.getByRole('region', { name: 'Evaluación compartida de piel' }).waitFor();
   await page.getByRole('dialog', { name: 'Elegir fotografías', exact: true }).waitFor();
-  assert.deepEqual(writes, []); assert.deepEqual(errors, []);
+  assert.equal(writes.length,5); assert.deepEqual(errors, []);
   assert.ok(external.every(url => /^https:\/\/(?:fonts\.googleapis\.com\/css2|odml\.pa\.googleapis\.com\/v1\/log)/.test(url)));
   assert.equal(await page.evaluate(() => window.originalLegacy[0].id), 'old-face');
   console.log(JSON.stringify({ passed: true, viewports: [1440, 390], legacyPreserved: true, examWithoutModuleOptIn: true }));

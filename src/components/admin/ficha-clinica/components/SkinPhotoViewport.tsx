@@ -10,11 +10,12 @@ import { isZonalSkinMark, visibleSkinTriangles } from './skinEvaluation';
 import { validBox, type NormalizedBox } from './skinVisualAI';
 
 const button = 'admin-focus-ring inline-flex min-h-11 items-center justify-center gap-1 rounded-lg border px-3 py-2 text-sm disabled:opacity-40';
-export default function SkinPhotoViewport({ source, surface, showZones, onToggleZones, marks, selectedMark, disabled, onChoose, onSelect }: {
+export default function SkinPhotoViewport({ source, surface, showZones, onToggleZones, marks, selectedMark, disabled, onChoose, onSelect, hoveredMark, onHover, showNames = true }: {
   source: SkinPhotoSource; surface?: PersonalSurface; showZones: boolean;
   onToggleZones: () => void;
   marks: { mark: EvaluationMark; box: NormalizedBox; projected: boolean }[];
   selectedMark: string | null; disabled: boolean; onChoose: (x: number, y: number) => void; onSelect: (id: string) => void;
+  hoveredMark?: string | null; onHover?: (id: string | null) => void; showNames?: boolean;
 }) {
   const canvas = useRef<HTMLCanvasElement>(null);
   const viewport = useRef<HTMLDivElement>(null);
@@ -84,11 +85,15 @@ export default function SkinPhotoViewport({ source, surface, showZones, onToggle
         {marks.filter(item => validBox(item.box)).map(({ mark, box, projected }) => <button key={mark.id} type="button"
           aria-label={`Seleccionar ${mark.label}, ${mark.status === 'validated' ? 'validada' : 'pendiente'}${projected ? ', correspondencia estimada' : ''}`}
           aria-pressed={selectedMark === mark.id} onClick={() => onSelect(mark.id)}
-          className={`admin-focus-ring absolute z-10 rounded-full border-2 bg-white ${mark.status === 'validated' ? 'border-green-700' : 'border-amber-600'} ${selectedMark === mark.id ? 'ring-4 ring-gold-ink' : ''} ${pan ? 'pointer-events-none' : ''}`}
+          onMouseEnter={() => onHover?.(mark.id)} onMouseLeave={() => onHover?.(null)}
+          onFocus={() => onHover?.(mark.id)} onBlur={() => onHover?.(null)}
+          className={`admin-focus-ring absolute z-10 rounded-full border-2 bg-white shadow-[0_0_10px_#22d3ee] ${mark.status === 'validated' ? 'border-cyan-400' : 'border-amber-400'} ${selectedMark === mark.id || hoveredMark === mark.id ? 'ring-4 ring-cyan-300' : ''} ${pan ? 'pointer-events-none' : ''}`}
           style={{ left: `${(box.x + box.width / 2) * 100}%`, top: `${(box.y + box.height / 2) * 100}%`,
-            width: Math.max(12, Math.min(24, mark.box.width * 450)), height: Math.max(12, Math.min(24, mark.box.width * 450)), transform: 'translate(-50%, -50%)' }} />)}
+            width: Math.max(12, Math.min(24, mark.box.width * 450)), height: Math.max(12, Math.min(24, mark.box.width * 450)), transform: 'translate(-50%, -50%)' }}>
+            {showNames && <span className="pointer-events-none absolute bottom-full left-1/2 mb-2 -translate-x-1/2 whitespace-nowrap rounded bg-slate-950/80 px-2 py-1 text-xs text-white">{mark.label}</span>}
+          </button>)}
         {marks.filter(item => !item.projected && validBox(item.box) && isZonalSkinMark(item.box)).map(({ mark, box }) =>
-          <span key={mark.id} aria-hidden="true" className={`pointer-events-none absolute rounded-[50%] border-2 ${mark.status === 'validated' ? 'border-green-700 bg-green-700/10' : 'border-amber-500 border-dashed bg-amber-500/10'}`}
+          <span key={mark.id} aria-hidden="true" className={`pointer-events-none absolute rounded-[50%] border-2 motion-safe:animate-pulse ${mark.status === 'validated' ? 'border-cyan-400 bg-cyan-400/20' : 'border-amber-400 border-dashed bg-amber-400/20'}`}
             style={{ left: `${box.x * 100}%`, top: `${box.y * 100}%`, width: `${box.width * 100}%`, height: `${box.height * 100}%` }} />)}
       </div>
     </div>

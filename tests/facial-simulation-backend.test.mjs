@@ -316,7 +316,7 @@ test('R2 write/receipt failure stores no metadata; corrupt read fails closed and
   const f = fixture(), options = save(session());
   await assert.rejects(saveFacialSimulation(f.db, options, {
     ...f.storage, putR2Object() { throw new Error('R2 unavailable'); },
-  }));
+  }), e => e.status === 503 && /almacenamiento privado/.test(e.message));
   assert.equal(f.s.sessions.length, 0); assert.equal(f.s.receipts.length, 0);
   f.s.failReceipt = true;
   await assert.rejects(saveFacialSimulation(f.db, options, f.storage));
@@ -327,6 +327,25 @@ test('R2 write/receipt failure stores no metadata; corrupt read fails closed and
   await assert.rejects(getFacialSimulation(f.db, {
     ...common(), query: { record_id: 7, id: 1 },
   }, f.storage), e => e.status === 409);
+});
+
+test('private storage read failure is actionable, rolls back and never returns state or SDK details', async () => {
+  const f = fixture(), saved = await saveFacialSimulation(f.db, save(session()), f.storage);
+  const logs = mock.method(console, 'error', () => {});
+  try {
+    await assert.rejects(getFacialSimulation(f.db, {
+      ...common(), query: { record_id: 7, id: saved.id },
+    }, {
+      ...f.storage, getR2ObjectBuffer() { throw new Error('synthetic-private-sdk-request'); },
+    }), e => e.status === 503 && /almacenamiento privado/.test(e.message) &&
+      !e.message.includes('synthetic-private-sdk-request'));
+    assert.equal(f.s.queries.at(-1).text, 'ROLLBACK');
+    assert.equal(f.s.sessions.length, 1);
+    assert.equal(f.s.receipts.length, 1);
+    assert.doesNotMatch(JSON.stringify(logs.mock.calls.map(c => c.arguments)), /synthetic-private-sdk-request/);
+  } finally {
+    logs.mock.restore();
+  }
 });
 
 test('prepared migration enables and forces RLS, no photos/state in receipts or automatic DDL', () => {
