@@ -152,6 +152,9 @@ export default function ClinicalCaptureFlow({ open, onClose, photos, busy, statu
           {source === 'library' && library}
           {!!photos.length && <>
             <p className="text-sm text-gray-600">{photos.length} foto(s) · revisa los bordes sugeridos y desmarca las que no quieras usar.</p>
+            {photos.length === 1 && <p className="rounded-xl bg-slate-50 px-3 py-2 text-sm text-gray-600">
+              Una frontal es suficiente. Las oblicuas son opcionales; con una sola foto la cobertura lateral y la profundidad son limitadas.
+            </p>}
             <div className={`grid gap-4 ${photos.length === 1 ? 'mx-auto max-w-lg' : 'md:grid-cols-2 xl:grid-cols-3'}`}>
               {photos.map(photo => <div key={`${photo.id}:${!!photo.landmarks}`} className="min-w-0 space-y-2">
                 <CaptureCard capture={photo} disabled={busy || blocked}

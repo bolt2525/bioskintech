@@ -26,8 +26,12 @@ export function assessFaceCapture(image: Pixels, landmarks: DepthView['landmarks
   if (faceFraction < 0.08 || (bottom - top) * height < 140 || (right - left) * width < 90) {
     reasons.push('El rostro es demasiado pequeño. Usa una foto cercana del rostro, no una cédula, documento, collage o captura con un retrato pequeño.');
   }
-  if ([33, 263, 1, 13, 152].some(i => landmarks[i].x <= 0.005 || landmarks[i].x >= 0.995 || landmarks[i].y <= 0.005 || landmarks[i].y >= 0.995)) {
-    reasons.push('Faltan referencias por recorte. Incluye ojos, nariz, boca y mentón completos.');
+  const references = [[33, 'ojo'], [263, 'ojo'], [1, 'nariz'], [13, 'boca'], [152, 'mentón']] as const;
+  const outside = references.filter(([i]) => landmarks[i].x <= 0 || landmarks[i].x >= 1 || landmarks[i].y <= 0 || landmarks[i].y >= 1);
+  if (outside.length) {
+    reasons.push(`Referencia fuera de la foto: ${[...new Set(outside.map(([, label]) => label))].join(', ')}. Usa una toma que incluya ojos, nariz, boca y mentón completos. Una frontal es suficiente.`);
+  } else if (references.some(([i]) => landmarks[i].x <= 0.005 || landmarks[i].x >= 0.995 || landmarks[i].y <= 0.005 || landmarks[i].y >= 0.995)) {
+    warnings.push('Rostro cerca del borde: comprueba que ojos, nariz, boca y mentón estén visibles antes de confirmar. Una frontal permite generar la máscara con cobertura limitada.');
   }
   if (top < 0.025) warnings.push('La frente queda cerca del borde de la imagen: puede faltar piel superior. Revisa la línea del cabello.');
   const luma = (x: number, y: number) => {

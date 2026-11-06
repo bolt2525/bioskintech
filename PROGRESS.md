@@ -1,5 +1,8 @@
 # Progreso de BioSkinTech App
 
+- ✅ 2026-11-06 Frontal única: selección corregida.
+- Referencias dentro del margen fotográfico de 0,5 % producen aviso, no rechazo; las realmente fuera siguen bloqueadas con región identificada. Una frontal basta y las oblicuas son opcionales.
+- QA: 36 pruebas Node, recorrido sintético desktop/móvil con generación GLB real desde una frontal y build aprobados; lint focal sin errores. TypeScript conserva 12 errores previos. Skills UI/React/QA/navegador aplicadas; detector simulado, sin fotos clínicas ni IA real.
 - ✅ 2026-11-06 Máscara: arrastre y guardado.
 - Arrastre persistente en máscara y borrador de migración; lesión obligatoria antes de marcar, Confirmar sin validación adicional de ubicación, observaciones visibles, neón/nombres/hover enlazados y listado por identidad. Guardar examen incluye fotos/máscara y conserva legacy; errores bloquean guardados parciales y reintentos reutilizan UUID/fotos/sesión.
 - Migración existente de máscaras autorizada y aplicada en Neon producción: dos tablas, RLS forzado y grants mínimos. Diez comprobaciones con conexión bioskin_app directa y fixture rollback, cero filas persistidas; sin IA/Billing, pacientes ni nuevas bases de datos. Variable sensitive de conexión actualizada sin rotación; un marcador exportado de Vercel no acredita invalidez del secreto.

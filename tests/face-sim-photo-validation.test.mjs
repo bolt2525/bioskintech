@@ -39,6 +39,24 @@ test('rechaza falta de detalle/exposición y referencias recortadas o inválidas
   assert.equal(assessFaceCapture(image(), bad, 1).accepted, false);
   assert.throws(() => assessFaceCapture({ ...image(), data: new Uint8ClampedArray(3) }, landmarks(), 1), /inválidos/);
 });
+test('referencia dentro del margen de 0,5 % avisa sin impedir una máscara frontal', () => {
+  for (const id of [33, 263, 1, 13, 152]) for (const axis of ['x', 'y']) for (const value of [.002, .998]) {
+    const points = landmarks(); points[id][axis] = value;
+    const result = assessFaceCapture(image(), points, 1);
+    assert.equal(result.accepted, true, `Referencia ${id}, ${axis}=${value} sigue dentro de la foto`);
+    assert.deepEqual(result.reasons, []);
+    assert.match(result.warnings.join(' '), /cerca del borde/);
+  }
+});
+test('referencia realmente fuera de la foto se bloquea e identifica la región sin pedir más vistas', () => {
+  for (const value of [0, 1, -.001, 1.001]) {
+    const points = landmarks(); points[152].y = value;
+    const result = assessFaceCapture(image(), points, 1);
+    assert.equal(result.accepted, false);
+    assert.match(result.reasons.join(' '), /fuera de la foto: mentón/);
+    assert.match(result.reasons.join(' '), /Una frontal es suficiente/);
+  }
+});
 test('comparación conserva escala, giro 3D, traslación y aspecto sin afirmar identidad', () => {
   const a = { landmarks: fixture.landmarks, aspect: fixture.aspect };
   const angle = 0.7, k = 0.8, aspect = 0.75;

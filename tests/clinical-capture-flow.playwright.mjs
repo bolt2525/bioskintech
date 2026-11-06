@@ -38,7 +38,10 @@ try {
         async function detectFrame(img) {
           if (img.getContext('2d').getImageData(0,0,1,1).data[0]===255) return {frame:null,reason:'Sin rostro fiable en el fixture'};
           const landmarks=window.syntheticLandmarks.map(p=>({...p}));
-          return {frame:frameFromLandmarks(landmarks),landmarks,detectedLandmarks:landmarks,reason:'',captureWarnings:[]};
+          if(window.singleBorderFixture)landmarks[152].y=.998;
+          const quality=assessFaceCapture(img.getContext('2d').getImageData(0,0,img.width,img.height),landmarks,1);
+          if(!quality.accepted)return {frame:null,reason:quality.reasons.join(' ')};
+          return {frame:frameFromLandmarks(landmarks),landmarks,detectedLandmarks:landmarks,reason:'',captureWarnings:quality.warnings};
         }
       ` + source.slice(end).replace('onController?.(controller)', '(window.controller = controller, onController?.(controller))') });
     }
@@ -57,6 +60,7 @@ try {
         for(let i=0;i<(invalid?1:3);i++){
           const canvas=document.createElement('canvas');canvas.width=360;canvas.height=480;
           const ctx=canvas.getContext('2d');ctx.fillStyle=invalid?'rgb(255,255,255)':'rgb('+(150+i*12)+',120,100)';ctx.fillRect(0,0,360,480);
+          if(!invalid)for(let y=1;y<480;y+=4)for(let x=1;x<360;x+=4){ctx.fillStyle='rgb(175,145,125)';ctx.fillRect(x,y,2,2);}
           const blob=await new Promise(resolve=>canvas.toBlob(resolve,'image/png'));
           files.push(new File([blob],'sintetica-'+i+'.png',{type:'image/png'}));
         }
@@ -81,6 +85,33 @@ try {
   }))))).map(({base64,...file})=>({...file,buffer:Buffer.from(base64,'base64')}));
   const upload=page.locator('dialog[open] input[type=file]');
   assert.equal(await upload.getAttribute('multiple'),'');
+  await page.evaluate(()=>window.singleBorderFixture=true);
+  await upload.setInputFiles(files[0]);
+  await page.waitForFunction(()=>window.controller.getPhotos().length===1);
+  await page.waitForFunction(()=>!document.querySelector('dialog[open] input[type=file]').disabled);
+  const single=page.getByRole('dialog',{name:'Revisar fotos juntas',exact:true});
+  await single.getByText(/Una frontal es suficiente\. Las oblicuas/).waitFor();
+  await single.getByText(/Rostro cerca del borde:/).waitFor();
+  assert.equal(await single.getByRole('checkbox').isDisabled(),false,'Aviso de borde no bloquea la selección');
+  assert.equal(await single.getByRole('checkbox').isChecked(),true);
+  await single.getByRole('checkbox').uncheck();
+  assert.equal(await single.getByRole('button',{name:'Confirmar fotos y generar máscara',exact:true}).isDisabled(),true);
+  await single.getByRole('checkbox').check();
+  await single.getByRole('button',{name:'Confirmar fotos y generar máscara',exact:true}).click();
+  const singleCandidate=page.getByRole('dialog',{name:'Confirmar máscara',exact:true});
+  await singleCandidate.waitFor({timeout:120000});
+  await singleCandidate.getByText(/Solo base frontal: cobertura y profundidad limitadas/).waitFor();
+  await singleCandidate.getByRole('button',{name:'Usar máscara',exact:true}).click();
+  await page.getByRole('region',{name:'Editor de evaluación de piel'}).waitFor();
+  const singleMask=await page.evaluate(()=>window.controller.snapshot({
+    frontal:{id:81,r2Key:'clinics/synthetic/records/12/photos/81.png'}
+  }));
+  assert.equal(singleMask.photos.length,1);
+  assert.equal(singleMask.photos[0].slot,'frontal');
+  assert.ok(singleMask.mask?.glbBase64.length>0,'Se construyó GLB real con una frontal, sin IA');
+  assert.equal(writes.length,0,'Generar una máscara no requiere escrituras de API');
+  await page.reload();
+  await page.waitForFunction(()=>window.controller&&window.makeFiles);
   await upload.setInputFiles(files[0]);
   await page.waitForFunction(()=>window.controller.getPhotos().length===1);
   await page.waitForFunction(()=>!document.querySelector('dialog[open] input[type=file]').disabled);
@@ -149,5 +180,6 @@ try {
   assert.deepEqual(errors, []);
   assert.ok(external.every(url => /^https:\/\/(?:fonts\.googleapis\.com\/css2|odml\.pa\.googleapis\.com\/v1\/log)/.test(url)));
   console.log(JSON.stringify({ passed: true, groupedPhotos: 3, preselected: true, oneDialog: true, generatedMask: true,
+    singleFrontalMask:true, nearBorderWarningSelectable:true,
     singleAndBatchUpload:true, libraryBatch: 3, libraryWithoutReupload: true, failedDetectionKeeps2D: true, viewports: [1440, 390] }));
 } finally { await browser.close(); }
