@@ -1,0 +1,24 @@
+{
+  "model": "memi-v1-9a835a8f.onnx",
+  "sha256": "9a835a8fe458387305392c40f293f7389eb2375d7df39fd53c5d661431dcfa4b",
+  "bytes": 12869125,
+  "sourceCheckpointSha256": "765a6f981942f167008d77c611aec52e9a1edb4c61c4e6cea98a397910ff76f2",
+  "eligibleForClinicalUse": false,
+  "scope": "Pesos propios de segmentacion experimental; no clasificacion diferencial, diagnostico, exclusión de enfermedades ni prueba de localizacion fiable. No contiene fotografias fuente.",
+  "sources": [
+    {
+      "name": "MEMI-DS v1",
+      "author": "Zhenwei Zhai",
+      "license": "CC BY 4.0",
+      "url": "https://doi.org/10.6084/m9.figshare.29209229.v1",
+      "licenseUrl": "https://creativecommons.org/licenses/by/4.0/",
+      "changes": "Mascaras binarias canonicas, particiones agrupadas y anotaciones debiles separadas solo para entrenamiento; entrenamiento propio y exportacion ONNX."
+    },
+    {
+      "name": "ISIC 2017, pares CC0 verificados",
+      "license": "CC0",
+      "url": "https://challenge.isic-archive.com/data/",
+      "changes": "Entrenamiento inicial propio sobre muestra acotada; transferencia posterior a MEMI."
+    }
+  ]
+}

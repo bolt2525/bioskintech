@@ -1,5 +1,10 @@
 # Progreso de BioSkinTech App
 
+- ✅ 2026-11-05 Piel: inferencia automática integrada.
+- Modelo propio de 12,87 MB distribuido como activo versionado: carga interna al analizar, Worker WASM de un hilo y fotos/resultados locales. Foto grande con máscara 2D única, disclaimer cosmético, siete categorías no evaluables y RGB relegado a exploración técnica; sin Gemini/Billing ni cambios API/DB.
+- Paridad de nueve fotos públicas de validación: máscaras idénticas y error máximo 0,000003934; cinco fixtures de preprocesamiento coinciden exactamente con PIL. QA real desktop/móvil 1440/390, cancelación, modelo alterado y conservación de capas; cero descargas manuales y red externa. Esto verifica ejecución, no mejora la precisión ni cumple todavía las ocho categorías.
+- QA final: 39 pruebas Node, 30 comprobaciones de regresión RGB/3D, lint focal y build aprobados; Worker compilado ejecutado bajo CSP de producción con ONNX/WASM reales. TypeScript conserva 12 errores previos fuera del Lab; sin errores nuevos de integración.
+- Skills: `building-components`, `vercel-react-best-practices`, `testing-validation`, `agent-browser`. Las entradas históricas siguientes describen etapas previas: ahora solo el ONNX propio y su atribución se publican; fotos, máscaras fuente y tensores siguen excluidos.
 - ✅ 2026-11-05 Modelo: portabilidad ONNX verificada.
 - ✅ 2026-11-05 Navegador: paridad WASM real.
 - Exportación propia de 12,87 MB con contrato, hashes, aviso experimental y referencias sintéticas/de validación; no entrenamiento nuevo ni inferencia de test. Chromium WASM, un hilo: 11/11 entradas, máscaras idénticas, error máximo 0,000003964; inicialización 1,11 s e inferencia 129–203 ms por tensor256². Sin promesa de precisión mejorada ni rendimiento móvil; falta integrar/validar decodificación de fotos y UI.

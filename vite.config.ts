@@ -5,6 +5,7 @@ import react from '@vitejs/plugin-react';
 // El proxy en desarrollo apunta a la URL de producción de Vercel (o a vercel dev local).
 export default defineConfig({
   plugins: [react()],
+  worker: { format: 'es' },
   build: {
     rollupOptions: {
       output: {

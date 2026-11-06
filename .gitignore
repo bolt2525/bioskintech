@@ -29,8 +29,10 @@ Thumbs.db
 # Assets del simulador facial (npm run lab:face-assets)
 /public/mediapipe/
 /public/models/face/
+/public/onnx/
 
-# Ensayos locales: nunca publicar fotos, mascaras ni pesos
+# Ensayos locales: no publicar fotos, mascaras ni checkpoints.
+# Solo la exportacion ONNX aprobada en public/models/skin se distribuye con la app.
 /.skin-experiments/
 /.venv-skin/
 __pycache__/

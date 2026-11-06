@@ -1,7 +1,18 @@
 // Copia WASM y verifica los modelos Face Landmarker/Hair Segmenter del laboratorio.
 // Se sirven desde el mismo origen (la CSP bloquea CDNs). Uso: npm run lab:face-assets
 import { createHash } from 'node:crypto';
-import { cpSync, mkdirSync, statSync, writeFileSync } from 'node:fs';
+import { cpSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+
+const skinModel = readFileSync('public/models/skin/memi-v1-9a835a8f.onnx');
+if (skinModel.length !== 12869125 ||
+  createHash('sha256').update(skinModel).digest('hex') !== '9a835a8fe458387305392c40f293f7389eb2375d7df39fd53c5d661431dcfa4b') {
+  throw new Error('El modelo experimental de piel no coincide con la versión verificada.');
+}
+mkdirSync('public/onnx/1.22.0', { recursive: true });
+for (const name of ['ort-wasm-simd-threaded.mjs', 'ort-wasm-simd-threaded.wasm']) {
+  cpSync(`node_modules/onnxruntime-web/dist/${name}`, `public/onnx/1.22.0/${name}`);
+  if (!statSync(`public/onnx/1.22.0/${name}`).size) throw new Error(`Runtime ONNX vacío: ${name}`);
+}
 
 mkdirSync('public/mediapipe', { recursive: true });
 cpSync('node_modules/@mediapipe/tasks-vision/wasm', 'public/mediapipe/wasm', { recursive: true });

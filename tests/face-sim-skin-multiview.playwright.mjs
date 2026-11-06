@@ -67,6 +67,7 @@ try {
   await page.waitForFunction(() => window.__skinBasePositions);
   await page.getByRole('button', { name: 'Morfología, piel y capas', exact: true }).click();
   await page.locator('[data-face-editor]').getByRole('button', { name: 'Piel', exact: true }).click();
+  await page.getByText('Explorador técnico RGB · no clasifica lesiones', { exact: true }).click();
   const dialog = page.getByRole('region', { name: 'Revisión de piel · fotos y máscara' });
   await dialog.waitFor();
   const flow = page.locator('[data-face-editor]').getByRole('group', { name: 'Flujo de piel' });
