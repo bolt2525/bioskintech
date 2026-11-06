@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import atlas from '../src/lab/faceSim/genericFaceAtlas.json' with { type: 'json' };
-import { modelPoint } from '../src/lab/faceSim/faceTransfer.ts';
+import { modelPoint, locateModelPoint } from '../src/lab/faceSim/faceTransfer.ts';
+import { skinAnatomicalOverlay, skinZoneAt } from '../src/components/admin/ficha-clinica/components/skinAnatomy.ts';
 import { migrateLegacySkinMarks } from '../src/components/admin/ficha-clinica/components/skinLegacyMigration.ts';
 import { toPersistedSkinReview, validateEvaluationGroup } from '../src/components/admin/ficha-clinica/components/skinEvaluation.ts';
 import { validateSkinVisualReview } from '../lib/modules/fichas-clinicas/physical-exam.js';
@@ -50,4 +51,30 @@ test('2D, nuca, falta de detección y foto oculta permanecen legacy con aviso ex
     const result = migrateLegacySkinMarks(marks, 42, photos, surface, []);
     assert.equal(result.added, 0); assert.equal(result.skipped.length, 1); assert.ok(result.skipped[0].reason);
   }
+});
+
+test('impacto normal del visor migra sin restar un offset que nunca se aplicó', () => {
+  const normal = { x: 0, y: 0, z: 1 };
+  const original = { ...legacy, normal3D: normal };
+  const result = migrateLegacySkinMarks([original], 42, [source], surface, []);
+  assert.equal(result.added, 1, JSON.stringify(result.skipped));
+  assert.equal(locateModelPoint({ ...original.position3D, z: original.position3D.z - .03 }, undefined, { normal }), null,
+    'La resta incondicional anterior descarta este impacto real del GLB');
+  assert.deepEqual(original.position3D, legacy.position3D);
+  const offset = { ...original, position3D: { ...original.position3D, z: original.position3D.z + .03 } };
+  assert.equal(migrateLegacySkinMarks([offset], 42, [source], surface, []).added, 1);
+});
+
+test('modelo y máscara comparten zonas anatómicas sin modificar su geometría', () => {
+  const anchor = migrateLegacySkinMarks([legacy], 42, [source], surface, []).marks[0].anchor;
+  assert.match(skinZoneAt(anchor), /Derecha|Izquierda|Central/);
+  const before = Array.from(surface.positions);
+  for (const overlay of [skinAnatomicalOverlay(), skinAnatomicalOverlay(surface)]) {
+    assert.ok(overlay.positions.length > 0);
+    assert.equal(overlay.positions.length, overlay.colors.length);
+    assert.equal(overlay.positions.length / 9, overlay.labels.length);
+    assert.ok(overlay.positions.every(Number.isFinite));
+    assert.ok(overlay.colors.every(value => Number.isFinite(value) && value >= 0 && value <= 1));
+  }
+  assert.deepEqual(Array.from(surface.positions), before);
 });

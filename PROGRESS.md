@@ -1,5 +1,8 @@
 # Progreso de BioSkinTech App
 
+- ✅ 2026-11-06 Visor anatómico: selección visible, máscara prioritaria, fotos desplegables con zoom y zonas compartidas. Migración corregida sin eliminar marcas originales.
+- QA: 35 pruebas Node y cuatro recorridos sintéticos desktop/móvil aprobados, incluido raycast WebGL foto↔máscara y coordenadas bajo zoom. Build aprobado; lint sin errores (dos advertencias previas), TypeScript conserva 12 errores previos. Sin IA real, fotos clínicas ni cambios de infraestructura.
+- Skills: `building-components`, `vercel-react-best-practices`, `vercel-composition-patterns`, `web-design-guidelines`, `testing-validation`, `agent-browser`.
 - ✅ 2026-11-06 Examen físico: elección genérico/migración, modal único de fotos agrupadas con bordes sugeridos y selección inicial, biblioteca múltiple y herramientas clínicas esenciales.
 - QA: 38 pruebas Node, cinco recorridos de navegador sintéticos en desktop/móvil y build aprobados; lint sin errores nuevos. TypeScript mantiene 12 errores previos. Sin fotos clínicas, IA real ni cambios de infraestructura.
 - ✅ 2026-11-05 Examen físico: traslado guiado de marcaciones compatibles tras generar máscara, preservación legacy y modos genérico/máscara/dividido; antecedentes históricos requieren confirmación explícita.

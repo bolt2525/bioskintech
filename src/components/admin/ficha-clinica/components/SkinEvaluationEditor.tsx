@@ -1,4 +1,5 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { ChevronDown, ChevronUp, Grid3X3, Images } from 'lucide-react';
 import { Dialog } from '../../../ui/Dialog';
 import Clinical3DViewer from './Clinical3DViewer';
 import Skin3DBoundary from './Skin3DBoundary';
@@ -14,6 +15,8 @@ import {
   anchorForPhoto, bestPhotoForAnchor, cropToOriginal, photoForAnchor, skinRequestContext, validateEvaluationGroup,
 } from './skinEvaluation';
 import type { EvaluationMark } from './skinEvaluation';
+import { skinAnatomicalOverlay, skinZoneAt } from './skinAnatomy';
+import SkinPhotoViewport from './SkinPhotoViewport';
 
 export type { EvaluationMark } from './skinEvaluation';
 
@@ -28,9 +31,10 @@ export interface SkinEvaluationEditorProps {
   photoReferences?: Record<string, PhotoReference>;
   disabled?: boolean;
   onRequestPhoto?: () => void;
+  presentation?: 'comparison' | 'mask-first';
 }
 
-const button = 'admin-focus-ring rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 hover:bg-gray-100 disabled:opacity-50';
+const button = 'admin-focus-ring min-h-11 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 hover:bg-gray-100 disabled:opacity-50 aria-pressed:border-gold-ink aria-pressed:bg-gold-light aria-pressed:text-gold-ink aria-pressed:ring-1 aria-pressed:ring-gold-ink';
 const field = 'admin-focus-ring w-full rounded-lg border border-gray-300 bg-white p-2 text-sm text-gray-900';
 const full: NormalizedBox = { x: 0, y: 0, width: 1, height: 1 };
 
@@ -64,7 +68,7 @@ function pointBox(x: number, y: number): NormalizedBox {
 }
 
 export default function SkinEvaluationEditor({
-  sources, surface, modelData, recordId, value, onChange, context, photoReferences, disabled = false, onRequestPhoto,
+  sources, surface, modelData, recordId, value, onChange, context, photoReferences, disabled = false, onRequestPhoto, presentation = 'comparison',
 }: SkinEvaluationEditorProps) {
   const [selectedId, setSelectedId] = useState('');
   const source = sources.find(s => s.id === selectedId) ?? sources[0];
@@ -86,6 +90,9 @@ export default function SkinEvaluationEditor({
   const [notice, setNotice] = useState('');
   const [group, setGroup] = useState<string[]>([]);
   const [included, setIncluded] = useState<string[]>([]);
+  const [photosOpen, setPhotosOpen] = useState(true);
+  const [showZones, setShowZones] = useState(false);
+  const overlay = useMemo(() => showZones && surface ? skinAnatomicalOverlay(surface) : undefined, [showZones, surface]);
   const request = useRef(new SkinRequestScope());
   const statusRequest = useRef(new SkinRequestScope());
   const latest = useRef(value);
@@ -146,8 +153,8 @@ export default function SkinEvaluationEditor({
   function addManual(box: NormalizedBox, selected = source, anchor = selected && anchorForPhoto(box, selected, surface)) {
     if (!selected || disabled) return;
     const mark: EvaluationMark = { id: crypto.randomUUID(), sourceId: selected.id, category: 'other',
-      label: 'Lesión', note: '', box, status: 'pending', source: { provider: 'manual' }, ...(anchor ? { anchor } : {}) };
-    onChange([...latest.current, mark]);
+      label: 'Lesión', note: anchor ? skinZoneAt(anchor) ?? '' : '', box, status: 'pending', source: { provider: 'manual' }, ...(anchor ? { anchor } : {}) };
+    onChange([...latest.current, mark]); setSelectedMark(mark.id);
   }
   function on3D(marker: Marker3D) {
     if (!surface || !marker.isAddPointMode) return;
@@ -229,23 +236,46 @@ export default function SkinEvaluationEditor({
     const p = mark.anchor && surfacePoint(mark.anchor, surface);
     return p ? [{ id: mark.id, type: 'free' as const, lineIds: [], ...p, color: mark.status === 'validated' ? '#15803d' : '#b45309', name: mark.label }] : [];
   }) : [];
+  const maskPane = <div className="min-w-0 overflow-hidden rounded-xl border border-slate-700 bg-slate-900">
+    <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 text-white">
+      <div><h4 className="text-sm font-semibold">Máscara del paciente</h4>
+        <p className="text-xs text-slate-300">Marca sobre la superficie · gira para explorar</p></div>
+      <button type="button" className={`admin-focus-ring inline-flex min-h-11 items-center gap-2 rounded-lg border px-3 py-2 text-xs ${showZones ? 'border-gold bg-gold-light text-gray-900' : 'border-slate-500 text-white hover:bg-slate-800'}`}
+        aria-pressed={showZones} onClick={() => setShowZones(current => !current)}><Grid3X3 size={16} aria-hidden="true" />{showZones ? 'Ocultar zonas' : 'Mostrar zonas'}</button>
+    </div>
+    {surface && modelData ? <Skin3DBoundary onPhoto={() => { setView('photo'); setPhotosOpen(true); }}><Clinical3DViewer modelData={modelData} markers={[]} editablePoints={points}
+      pointMode={disabled ? 'none' : 'add'} anatomicalOverlay={overlay}
+      onMarkerPlaced={on3D} onEditablePointClicked={id => {
+        setSelectedMark(id);
+        const mark = latest.current.find(item => item.id === id);
+        if (mark && sources.some(item => item.id === mark.sourceId)) selectPhoto(mark.sourceId);
+      }} selectedPointId={selectedMark ?? undefined} skipConfirmation cameraPreset="face-surface"
+      height={presentation === 'mask-first' ? 'min(62dvh,560px)' : '420px'} occludeAnnotations /></Skin3DBoundary> :
+      <p className="bg-white p-4 text-sm text-gray-700">Máscara 3D no disponible; puedes continuar en la fotografía 2D.</p>}
+  </div>;
+  const photoPane = source && <div className="min-w-0 space-y-3">
+    <div className="flex flex-wrap gap-2" aria-label="Fotografías disponibles">
+      {sources.map(item => <button key={item.id} type="button" className={`${button} !p-2`}
+        aria-pressed={source.id === item.id} onClick={() => selectPhoto(item.id)}>
+        <span className="mb-1 block w-24 overflow-hidden rounded-lg sm:w-28"><CanvasImage image={item.canvas} label={`Miniatura de ${item.label}`} /></span>
+        {item.label}{!item.confirmed ? ' · sin confirmar' : ''}</button>)}
+      {onRequestPhoto && <button type="button" className={button} disabled={disabled} onClick={onRequestPhoto}>Solicitar foto</button>}
+    </div>
+    <SkinPhotoViewport source={source} surface={surface} showZones={showZones} marks={visible} selectedMark={selectedMark}
+      onToggleZones={() => setShowZones(current => !current)} disabled={disabled} onChoose={(x, y) => chooseRegion(pointBox(x, y))} onSelect={setSelectedMark} />
+    <button type="button" className={button} disabled={disabled} onClick={() => chooseRegion(pointBox(.5, .5))}>
+      {interaction === 'manual' ? 'Añadir marca en el centro' : interaction === 'observation' ? 'Vincular observación central' : 'Seleccionar zona central'}</button>
+    {value.some(mark => mark.id === selectedMark) && !visible.some(item => item.mark.id === selectedMark) &&
+      <p role="status" className="text-sm">La región seleccionada no tiene correspondencia fiable en esta vista. No se proyectó; puedes vincular una observación manual.</p>}
+  </div>;
 
-  return <section aria-label="Editor de evaluación de piel" className="space-y-4 rounded-xl border border-gray-200 bg-gray-50 p-4 text-gray-900">
-    <h3 className="font-bold">Evaluación de piel</h3>
-    <p className="text-xs text-gray-500">Fotos originales · guardado manual · propuestas orientativas, no diagnósticos</p>
+  return <section aria-label="Editor de evaluación de piel" className="min-w-0 space-y-4 text-gray-900">
     {!source ? <div className="space-y-2"><p>No hay fotografías disponibles.</p>{onRequestPhoto && <button type="button" className={button} disabled={disabled} onClick={onRequestPhoto}>Solicitar foto</button>}</div> :
       <>
-        <div className="flex flex-wrap gap-2" aria-label="Fotografías disponibles">
-          {sources.map(item => <button key={item.id} type="button" className={`${button} ${source.id === item.id ? 'ring-2 ring-blue-700' : ''}`}
-            aria-pressed={source.id === item.id} onClick={() => selectPhoto(item.id)}>
-            <span className="mb-1 block w-20"><CanvasImage image={item.canvas} label={`Miniatura de ${item.label}`} /></span>
-            {item.label}{!item.confirmed ? ' · sin confirmar' : ''}</button>)}
-          {onRequestPhoto && <button type="button" className={button} disabled={disabled} onClick={onRequestPhoto}>Solicitar foto</button>}
-        </div>
-        <div className="flex gap-2 lg:hidden">
+        {presentation === 'comparison' && <div className="flex gap-2 lg:hidden">
           <button type="button" className={button} aria-pressed={view === 'photo'} onClick={() => setView('photo')}>Foto</button>
           <button type="button" className={button} aria-pressed={view === '3d'} onClick={() => setView('3d')}>3D</button>
-        </div>
+        </div>}
         <div className="flex flex-wrap gap-2">
           <button type="button" className={button} aria-pressed={interaction === 'manual'} disabled={disabled}
             onClick={() => setInteraction('manual')}>Marcar manual</button>
@@ -255,42 +285,23 @@ export default function SkinEvaluationEditor({
           {status?.enabled && <button type="button" className={button} aria-pressed={interaction === 'assisted'} disabled={disabled}
             onClick={() => setInteraction('assisted')}>Buscar asistido</button>}
         </div>
-        <div className="grid gap-4" style={{ gridTemplateColumns: 'repeat(auto-fit,minmax(min(100%,360px),1fr))' }}>
-          <div className={view === 'photo' ? '' : 'hidden lg:block'}>
-            <p className="mb-1 text-sm">Foto original: pulsa para {interaction === 'manual' ? 'añadir una marca manual' :
-              interaction === 'observation' ? 'vincular una observación a la misma región' : 'elegir una zona para recortar'}. Vista seleccionada: {source.label}.</p>
-            <div className="relative overflow-hidden rounded-lg bg-gray-200">
-              <CanvasImage image={source.canvas} label={`Foto ${source.label}`} />
-              <button type="button" className="admin-focus-ring absolute inset-0 w-full cursor-crosshair" aria-label="Añadir marca en la foto; también puedes usar el botón Añadir marca"
-                disabled={disabled} onClick={e => { const r = e.currentTarget.getBoundingClientRect(); chooseRegion(pointBox((e.clientX - r.left) / r.width, (e.clientY - r.top) / r.height)); }} />
-              {visible.filter(m => validBox(m.box)).map(({ mark, box, projected }) => <button key={mark.id} type="button"
-                aria-label={`Seleccionar ${mark.label}, ${mark.status === 'validated' ? 'validada' : 'pendiente'}${projected ? ', correspondencia estimada' : ''}`}
-                aria-pressed={selectedMark === mark.id} onClick={() => setSelectedMark(mark.id)}
-                className={`admin-focus-ring absolute z-10 rounded-full border-2 bg-white ${mark.status === 'validated' ? 'border-green-700' : 'border-amber-600'} ${selectedMark === mark.id ? 'ring-4 ring-blue-600' : ''}`}
-                style={{ left: `${(box.x + box.width / 2) * 100}%`, top: `${(box.y + box.height / 2) * 100}%`, width: '16px', height: '16px', transform: 'translate(-50%, -50%)' }} />)}
-              {visible.filter(m => !m.projected && validBox(m.box) && (m.box.width > .06 || m.box.height > .06)).map(({ mark, box }) => <span key={`area-${mark.id}`} aria-hidden="true"
-                className={`pointer-events-none absolute border-2 ${mark.status === 'validated' ? 'border-green-700' : 'border-amber-500 border-dashed'}`}
-                style={{ left: `${box.x * 100}%`, top: `${box.y * 100}%`, width: `${box.width * 100}%`, height: `${box.height * 100}%` }} />)}
-            </div>
-            <button type="button" className={`${button} mt-2`} disabled={disabled} onClick={() => chooseRegion(pointBox(.5, .5))}>
-              {interaction === 'manual' ? 'Añadir marca en el centro' : interaction === 'observation' ? 'Vincular observación central' : 'Seleccionar zona central'}</button>
-            {value.some(mark => mark.id === selectedMark) && !visible.some(item => item.mark.id === selectedMark) &&
-              <p role="status" className="text-sm">La región seleccionada no tiene correspondencia fiable en esta vista. No se proyectó; puedes vincular una observación manual.</p>}
+        {presentation === 'mask-first' ? <>
+          {maskPane}
+          <div className="overflow-hidden rounded-xl border border-gray-200 bg-gray-50">
+            <button type="button" className="admin-focus-ring flex min-h-12 w-full items-center justify-between gap-3 p-3 text-left"
+              aria-expanded={photosOpen} aria-controls="clinical-photo-panel" onClick={() => setPhotosOpen(current => !current)}>
+              <span className="flex items-center gap-2 text-sm font-semibold"><Images size={18} aria-hidden="true" />Fotografías de referencia ({sources.length})</span>
+              <span className="flex items-center gap-1 text-xs">{photosOpen ? 'Ocultar fotos' : 'Mostrar fotos'}{photosOpen ? <ChevronUp size={16} /> : <ChevronDown size={16} />}</span>
+            </button>
+            <div id="clinical-photo-panel" hidden={!photosOpen} className="border-t border-gray-200 p-3">{photoPane}</div>
           </div>
-          <div className={view === '3d' ? '' : 'hidden lg:block'}>
-            {surface && modelData ? <><p className="mb-1 text-sm">Selecciona un punto en la máscara original para buscar la mejor vista visible.</p>
-              <Skin3DBoundary onPhoto={() => setView('photo')}><Clinical3DViewer modelData={modelData} markers={[]} editablePoints={points} pointMode={disabled ? 'none' : 'add'}
-                onMarkerPlaced={on3D} onEditablePointClicked={id => {
-                  setSelectedMark(id);
-                  const mark = latest.current.find(item => item.id === id);
-                  if (mark && sources.some(item => item.id === mark.sourceId)) selectPhoto(mark.sourceId);
-                }} selectedPointId={selectedMark ?? undefined} skipConfirmation cameraPreset="face-surface" height="360px" occludeAnnotations /></Skin3DBoundary>
-            </> : <p className="rounded-lg bg-white p-4 text-sm">Máscara 3D no disponible; puedes continuar en la fotografía 2D.</p>}
-          </div>
-        </div>
+        </> : <div className="grid gap-4" style={{ gridTemplateColumns: 'repeat(auto-fit,minmax(min(100%,360px),1fr))' }}>
+          <div className={view === 'photo' ? 'min-w-0' : 'hidden min-w-0 lg:block'}>{photoPane}</div>
+          <div className={view === '3d' ? 'min-w-0' : 'hidden min-w-0 lg:block'}>{maskPane}</div>
+        </div>}
         {bitmapError && <p role="alert" className="text-sm text-red-700">{bitmapError}</p>}
         {statusLoading ? <p role="status" className="text-sm">Consultando permiso de IA…</p> : statusError ?
-          <div role="alert" className="text-sm text-red-700">{statusError} <button type="button" className={button} onClick={() => setStatusVersion(v => v + 1)}>Reintentar</button></div> :
+          <div role="alert" className="rounded-lg bg-amber-50 p-3 text-xs text-amber-900">No se pudo consultar la asistencia IA. El marcado manual sigue disponible. <button type="button" className={button} title={statusError} onClick={() => setStatusVersion(v => v + 1)}>Reintentar</button></div> :
           status?.enabled ? <div className="space-y-2">
             <Dialog open={cropOpen} onClose={() => { if (!busy) { setCropOpen(false); setConsent(false); } }} labelledBy="skin-crop-title">
               <div className="w-[min(56rem,calc(100vw-2rem))] space-y-3 rounded-lg border border-gray-300 bg-white p-4">

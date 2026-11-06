@@ -1,7 +1,7 @@
 import type { Mark } from './FaceMapCanvas';
 import type { EvaluationMark } from './skinEvaluation';
 import { bestPhotoForAnchor, photoForAnchor } from './skinEvaluation.ts';
-import { locateModelPoint } from '../../../../lab/faceSim/faceTransfer.ts';
+import { legacySkinAnchor } from './skinAnatomy.ts';
 import type { PersonalSurface } from '../../../../lab/faceSim/faceTransfer';
 import type { SkinPhotoSource } from '../../../../lab/faceSim/skinMultiView';
 import catalog from '../../../../data/skin-lesion-catalog.json' with { type: 'json' };
@@ -22,16 +22,12 @@ export function migrateLegacySkinMarks(
     if (!mark.is3D || !mark.position3D) {
       skipped.push({ id: mark.id, reason: 'Marca 2D histórica sin anclaje anatómico; ubícala manualmente.' }); continue;
     }
-    const normal = mark.normal3D;
-    const point = normal ? { x: mark.position3D.x - normal.x * .03,
-      y: mark.position3D.y - normal.y * .03, z: mark.position3D.z - normal.z * .03 } : mark.position3D;
-    const address = locateModelPoint(point, undefined, { normal });
+    const address = legacySkinAnchor(mark.position3D, mark.normal3D);
     const anchor = address && { ...address, version: 1 as const };
     const source = anchor && bestPhotoForAnchor(anchor, sources, surface);
     const photo = source && anchor && photoForAnchor(anchor, source, surface);
-    if (!anchor || !source || !photo) {
-      skipped.push({ id: mark.id, reason: 'Sin correspondencia observada fiable; conserva la marca genérica y revisa otra foto.' }); continue;
-    }
+    if (!anchor) { skipped.push({ id: mark.id, reason: 'El punto histórico no coincide con la superficie facial de referencia. Se conserva en el modelo anatómico.' }); continue; }
+    if (!source || !photo) { skipped.push({ id: mark.id, reason: 'Anclaje anatómico encontrado, pero no hay una foto con correspondencia visible fiable. Revisa otra vista; la marca original se conserva.' }); continue; }
     const label = mark.category.trim() || 'Lesión histórica';
     const note = [`Traslado aproximado del examen #${examId}, marca ${mark.id}. Confirmar sobre la foto original.`,
       mark.notes, mark.severity ? `Severidad histórica: ${mark.severity}.` : ''].filter(Boolean).join(' ');

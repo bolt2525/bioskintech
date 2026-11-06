@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useRef, useCallback, lazy, Suspens
 import { createPortal } from 'react-dom';
 import recordsFetch from "../../../../../utils/recordsFetch";
 import { motion, AnimatePresence } from 'framer-motion';
-import { Save, AlertCircle, Plus, Trash2, Copy, Printer, Info, Edit2, Check, Eye, EyeOff, History } from 'lucide-react';
+import { Save, AlertCircle, Plus, Trash2, Copy, Printer, Info, Edit2, Check, Eye, EyeOff, History, Grid3X3, UserRound, ScanFace, Columns2 } from 'lucide-react';
 import CrossConsultHistoryModal, { type ConsultationRef } from '../CrossConsultHistoryModal';
 import { CLINICAL_FIELDS, LESION_CATALOG, PARAMETER_TOOLTIPS } from '../../../../../data/clinical-catalogs';
 import { Mark } from '../FaceMapCanvas';
@@ -20,6 +20,7 @@ import type { PersistedSkinReview } from '../skinEvaluation';
 import type { SkinVisualReviewData } from '../skinVisualAI';
 import { useUnsavedChangesGuard } from '../../../../../hooks/useUnsavedChangesGuard';
 import type { FaceSimIntegration } from '../../../../../lab/faceSim/facialSimulationSession';
+import { legacySkinAnchor, skinAnatomicalOverlay, skinZoneAt } from '../skinAnatomy';
 
 const SkinExamWorkspace = lazy(() => import('../SkinExamWorkspace'));
 
@@ -346,7 +347,8 @@ const MarkEditModal = ({
             />
             <p className="text-xs text-gray-500 flex items-center gap-1">
               <Info size={12} />
-              {(zoneGroups || suggestedZones) ? 'Seleccione una zona o escríbala.' : 'Puede ajustar el nombre de la zona manualmente.'}
+              {mark.notes ? 'Ubicación precargada; puedes corregirla si lo necesitas.' :
+                (zoneGroups || suggestedZones) ? 'Seleccione una zona o escríbala.' : 'Puede ajustar el nombre de la zona manualmente.'}
             </p>
           </div>
         </div>
@@ -392,6 +394,8 @@ export default function PhysicalExamTab({ recordId, physicalExams, consultationI
   const [showSkinWorkspace, setShowSkinWorkspace] = useState(false);
   const [mapView, setMapView] = useState<'generic' | 'mask' | 'split'>('generic');
   const [maskReady, setMaskReady] = useState(false);
+  const [showAnatomicalZones, setShowAnatomicalZones] = useState(false);
+  const genericOverlay = useMemo(() => showAnatomicalZones ? skinAnatomicalOverlay() : undefined, [showAnatomicalZones]);
   const [legacyMigration, setLegacyMigration] = useState<FaceSimIntegration['legacyMigration']>();
   const workspaceReview = useRef<PhysicalExam['skin_visual_review']>();
   useUnsavedChangesGuard(reviewDirty || preparedReview !== null);
@@ -595,6 +599,8 @@ export default function PhysicalExamTab({ recordId, physicalExams, consultationI
       return;
     }
     const region = getFacialRegion(marker3D.position);
+    const anchor = legacySkinAnchor(marker3D.position, marker3D.normal);
+    const detectedZone = anchor ? skinZoneAt(anchor) : null;
     setPendingRegion(region);
     const newMark: Mark = {
       id: Date.now().toString(),
@@ -607,7 +613,7 @@ export default function PhysicalExamTab({ recordId, physicalExams, consultationI
       rotation3D: marker3D.rotation,
       radius3D: 0.16,
       tercio: region.tercio,
-      notes: '',
+      notes: detectedZone ?? '',
     };
     setEditingMark(newMark);
     setIsModalOpen(true);
@@ -921,7 +927,7 @@ export default function PhysicalExamTab({ recordId, physicalExams, consultationI
         <div className={`flex-1 flex flex-col gap-6 overflow-visible ${showSkinWorkspace ? '' : 'md:flex-row md:overflow-hidden'}`}>
           {/* Left Column: Maps */}
           <div className={`flex-1 flex flex-col min-w-0 ${showSkinWorkspace ? '' : 'overflow-y-auto custom-scrollbar pr-2'}`}>
-            <div className="mb-5 space-y-3 rounded-2xl border border-gray-200 bg-white p-4">
+            {(!showSkinWorkspace || !maskReady) && <div className="mb-5 space-y-3 rounded-2xl border border-gray-200 bg-white p-4">
               <div><h3 className="text-sm font-bold text-gray-900">{showSkinWorkspace && maskReady ? 'Vista de evaluación facial' : '¿Dónde quieres marcar?'}</h3>
                 {(!showSkinWorkspace || !maskReady) && <p className="mt-1 text-xs text-gray-500">{currentExam.id && faceMarks.length > 0 ? 'Conserva el modelo actual o traslada sus marcas a una máscara con fotos.' : 'Usa el modelo genérico o crea una máscara con fotos del paciente.'}</p>}</div>
               {(!showSkinWorkspace || !maskReady) && <div className="grid gap-3 sm:grid-cols-2">
@@ -949,13 +955,7 @@ export default function PhysicalExamTab({ recordId, physicalExams, consultationI
                 <span className="mt-1 block text-xs font-normal text-gray-500">Fotos del expediente o nuevas · revisión guiada</span>
               </button>
               </div>}
-              {showSkinWorkspace && maskReady && <div role="group" aria-label="Modo de visor facial" className="flex flex-wrap gap-2 border-t border-gray-100 pt-3">
-                {(['generic', 'mask', 'split'] as const).map(mode => <button key={mode} type="button" aria-pressed={mapView === mode}
-                  className="admin-focus-ring rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm"
-                  onClick={() => { setMapView(mode); setActiveTab('facial'); }}>
-                  {({ generic: 'Solo genérico', mask: 'Solo máscara', split: 'Visor dividido' })[mode]}</button>)}
-              </div>}
-            </div>
+            </div>}
             <div className="admin-tabs mb-6 w-fit shrink-0" role="group" aria-label="Zona de examen físico">
               {(['facial', 'corporal'] as const).map((tab) => (
                 <button
@@ -1000,6 +1000,20 @@ export default function PhysicalExamTab({ recordId, physicalExams, consultationI
               )}
             </div>
 
+            <section aria-label="Visor de evaluación facial" className="min-w-0 overflow-hidden rounded-2xl border border-gray-200 bg-white p-3 sm:p-4">
+            {showSkinWorkspace && maskReady && activeTab === 'facial' && <div className="mb-4 space-y-2 border-b border-gray-100 pb-3">
+              <div role="group" aria-label="Modo de visor facial" className="inline-flex max-w-full flex-wrap gap-1 rounded-xl bg-slate-100 p-1">
+                {([
+                  { mode: 'generic', label: 'Modelo anatómico', description: 'Modelo 3D de referencia con las marcaciones originales.', Icon: UserRound },
+                  { mode: 'mask', label: 'Máscara del paciente', description: 'Superficie creada con las fotos del paciente y sus marcas sincronizadas.', Icon: ScanFace },
+                  { mode: 'split', label: 'Comparar ambos', description: 'Modelo anatómico y máscara, uno al lado del otro en pantallas amplias.', Icon: Columns2 },
+                ] as const).map(({ mode, label, description, Icon }) => <button key={mode} type="button" aria-pressed={mapView === mode}
+                  title={description} className={`admin-focus-ring inline-flex min-h-11 items-center gap-2 rounded-lg border px-3 py-2 text-sm font-medium transition-colors ${mapView === mode ? 'border-gold-ink bg-gold-light text-gold-ink shadow-sm ring-1 ring-gold-ink' : 'border-transparent text-gray-600 hover:bg-white'}`}
+                  onClick={() => setMapView(mode)}><Icon size={17} aria-hidden="true" />{label}{mapView === mode && <Check size={16} aria-hidden="true" />}</button>)}
+              </div>
+              <p role="status" className="text-xs text-gray-500">{mapView === 'generic' ? 'Referencia anatómica: conserva todas las marcas originales.' :
+                mapView === 'mask' ? 'Máscara personalizada: marca aquí y revisa la correspondencia en las fotos desplegables.' : 'Comparación visual. Las marcas originales no se eliminan al migrar.'}</p>
+            </div>}
             <div className={showSkinWorkspace && maskReady && mapView === 'split' && activeTab === 'facial' ? 'grid items-start gap-4 xl:grid-cols-2' : 'space-y-4'}>
             {showSkinWorkspace && <fieldset disabled={saving}
               className={`min-w-0 ${mapView === 'generic' || activeTab !== 'facial' ? 'hidden' : ''} ${saving ? 'pointer-events-none opacity-60' : ''}`}>
@@ -1013,15 +1027,23 @@ export default function PhysicalExamTab({ recordId, physicalExams, consultationI
             <div className={`min-w-0 flex-1 rounded-2xl border border-gray-100 shadow-sm overflow-hidden min-h-[420px] ${showSkinWorkspace && maskReady && mapView === 'mask' && activeTab === 'facial' ? 'hidden' : ''}`}>
               {activeTab === 'facial' ? (
                 <div className="relative">
+                  <div className="flex flex-wrap items-center justify-between gap-2 bg-slate-900 px-3 py-2 text-white">
+                    <h4 className="text-sm font-semibold">Modelo anatómico de referencia</h4>
+                    <button type="button" aria-pressed={showAnatomicalZones} onClick={() => setShowAnatomicalZones(current => !current)}
+                      className={`admin-focus-ring inline-flex min-h-11 items-center gap-2 rounded-lg border px-3 py-2 text-xs ${showAnatomicalZones ? 'border-gold bg-gold-light text-gray-900' : 'border-slate-500 text-white hover:bg-slate-800'}`}>
+                      <Grid3X3 size={16} aria-hidden="true" />{showAnatomicalZones ? 'Ocultar zonas' : 'Mostrar zonas'}
+                    </button>
+                  </div>
                   <button
                     onClick={() => setShowReferenceLines(v => !v)}
-                    className="absolute top-2 right-2 z-10 flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg bg-gray-900/65 text-white hover:bg-gray-900/90 transition-colors border border-white/15 backdrop-blur-sm select-none"
+                    className="absolute top-20 right-2 z-10 flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg bg-gray-900/65 text-white hover:bg-gray-900/90 transition-colors border border-white/15 backdrop-blur-sm select-none"
                     title={showReferenceLines ? 'Ocultar líneas de referencia' : 'Mostrar líneas de referencia'}
                   >
                     {showReferenceLines ? <EyeOff size={12} /> : <Eye size={12} />}
                     {showReferenceLines ? 'Ocultar líneas' : 'Mostrar líneas'}
                   </button>
                   <Clinical3DViewer
+                    anatomicalOverlay={genericOverlay}
                     markers={face3DMarkers}
                     selectedPathology="lesion"
                     tercioBoundaries={showReferenceLines ? TERCIO_BOUNDARIES : null}
@@ -1029,7 +1051,7 @@ export default function PhysicalExamTab({ recordId, physicalExams, consultationI
                     skipConfirmation={true}
                     onMarkerPlaced={handle3DMarkerPlaced}
                     onMarkerRadiusChange={(id, radius) => setFaceMarks(prev => prev.map(mark => mark.id === id ? { ...mark, radius3D: radius } : mark))}
-                    height="420px"
+                    height="min(62dvh,560px)"
                     pointMarkerScale={0.5}
                   />
                 </div>
@@ -1049,6 +1071,7 @@ export default function PhysicalExamTab({ recordId, physicalExams, consultationI
               )}
             </div>
             </div>
+            </section>
             
             <div className="mt-6">
               <h4 className="font-bold text-gray-800 mb-3 flex items-center gap-2 flex-wrap">

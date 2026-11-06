@@ -2377,6 +2377,7 @@ export default function FaceSimLab({ integration }: { integration?: FaceSimInteg
           <button type="button" className="admin-focus-ring mt-2 rounded-lg border px-3 py-2" onClick={migrateLegacy} disabled={!personal || personal.captures !== photos}>Reintentar traslado sin duplicar</button></details></>}
     </section>}
     <SkinEvaluationEditor sources={skinSources} surface={(personal?.reviewBase ?? personal)?.surface}
+      presentation={clinical ? 'mask-first' : 'comparison'}
       modelData={(personal?.reviewBase ?? personal)?.glb} recordId={integration?.recordId} context={integration?.context ?? {}}
       value={evaluationMarks} onChange={changeEvaluationMarks} />
   </Suspense>;

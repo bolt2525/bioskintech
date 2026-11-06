@@ -32,6 +32,7 @@ try {
       import {bufferToBase64,storeSurface} from '/src/lab/faceSim/facialSimulationSession.ts';
       import {modelPoint} from '/src/lab/faceSim/faceTransfer.ts';
       import {migrateLegacySkinMarks} from '/src/components/admin/ficha-clinica/components/skinLegacyMigration.ts';
+      import {anchorForPhoto,photoForAnchor} from '/src/components/admin/ficha-clinica/components/skinEvaluation.ts';
       import '/src/index.css';
       const onController = value => { window.controller = value; };
       const onDirty = () => { window.dirtyCount = (window.dirtyCount ?? 0) + 1; };
@@ -68,6 +69,15 @@ try {
           marks:[{id:'manual-fixture',sourceId:'frontal',category:'spot',label:'Área sintética',note:'',
             box:{x:.3,y:.45,width:.05,height:.05},status:'validated',reviewedAt:'2026-11-05T00:00:00.000Z',source:{provider:'manual'}}]};
         window.fixture={state,canvas,refs:{frontal:photo}};
+        window.findPhotoSpot=()=>{
+          for(let y=.25;y<.8;y+=.025)for(let x=.25;x<.8;x+=.025){
+            const box={x:x-.02,y:y-.02,width:.04,height:.04};
+            const anchor=anchorForPhoto(box,source,surface);
+            if(anchor&&photoForAnchor(anchor,source,surface)&&window.controller.getMarks().every(mark=>
+              Math.hypot(mark.box.x+mark.box.width/2-x,mark.box.y+mark.box.height/2-y)>.06))return {x,y};
+          }
+          throw Error('Sin punto fotográfico observado libre');
+        };
         const restoreStart=performance.now();await window.controller.restore(state,{frontal:canvas});
         window.metrics={glbBytes:glb.byteLength,jsonBytes:new Blob([JSON.stringify(state)]).size,
           exportMs,restoreStateMs:performance.now()-restoreStart};
@@ -100,12 +110,66 @@ try {
   assert.equal(roundtrip.geometryEqual, true); assert.equal(roundtrip.glbEqual, true);
   assert.equal(await page.getByRole('button', { name: 'Buscar asistido', exact: true }).count(), 0);
   assert.equal(await page.getByRole('button', { name: 'Morfología', exact: true }).count(), 0);
+  const mask = page.getByRole('region', { name: 'Editor de evaluación de piel' });
+  const photoViewport = page.getByRole('region', { name: 'Fotografía ampliable' });
+  assert.ok((await mask.getByRole('heading', { name: 'Máscara del paciente', exact: true }).boundingBox()).y <
+    (await photoViewport.boundingBox()).y, 'La máscara precede a las fotografías');
+  await mask.getByRole('button', { name: 'Mostrar zonas', exact: true }).click();
+  assert.ok(await photoViewport.locator('svg polygon').count() > 0, 'Las zonas visibles se proyectan en la foto confirmada');
+  await photoViewport.getByRole('button', { name: 'Ocultar zonas en foto', exact: true }).click();
+  assert.equal(await photoViewport.locator('svg polygon').count(), 0);
+  assert.equal(await photoViewport.getByRole('button', { name: 'Alejar foto', exact: true }).isDisabled(), true);
+  for (let i=0;i<6;i++) await photoViewport.getByRole('button', { name: 'Acercar foto', exact: true }).click();
+  assert.equal(await photoViewport.getByRole('button', { name: 'Acercar foto', exact: true }).isDisabled(), true);
+  assert.match(await photoViewport.getByLabel('Zoom de foto', { exact: true }).innerText(), /400/);
+  await photoViewport.getByRole('button', { name: 'Restablecer foto', exact: true }).click();
+  await photoViewport.getByRole('button', { name: 'Acercar foto', exact: true }).click();
+  const spot = await page.evaluate(() => window.findPhotoSpot());
+  const target = photoViewport.getByRole('button', { name: /^Añadir marca en la foto/ });
+  await target.evaluate((button, point) => {
+    const scroll=button.parentElement.parentElement;
+    scroll.scrollLeft=point.x*button.offsetWidth-scroll.clientWidth/2;
+    scroll.scrollTop=point.y*button.offsetHeight-scroll.clientHeight/2;
+    scroll.scrollIntoView({block:'center'});
+  }, spot);
+  const rect = await target.boundingBox();
+  await page.mouse.click(rect.x+rect.width*spot.x,rect.y+rect.height*spot.y);
+  await page.waitForFunction(() => window.controller.getMarks().length===3);
+  const placed = await page.evaluate(() => window.controller.getMarks().at(-1));
+  assert.ok(placed.anchor, 'La marca fotográfica se refleja como un único anclaje en la máscara');
+  assert.ok(Math.abs(placed.box.x+placed.box.width/2-spot.x)<.001);
+  assert.ok(Math.abs(placed.box.y+placed.box.height/2-spot.y)<.001, 'El zoom conserva la posición original');
+  assert.ok(placed.note, 'Se detecta la zona sin volver a elegirla');
+  await photoViewport.getByRole('button', { name: 'Desplazar foto', exact: true }).click();
+  const viewportBounds = await photoViewport.locator('canvas').evaluate(canvas => {
+    const scroll=canvas.parentElement.parentElement;
+    scroll.scrollLeft=Number.MAX_SAFE_INTEGER;scroll.scrollTop=Number.MAX_SAFE_INTEGER;
+    return {left:scroll.scrollLeft,top:scroll.scrollTop,maxLeft:scroll.scrollWidth-scroll.clientWidth,maxTop:scroll.scrollHeight-scroll.clientHeight};
+  });
+  assert.ok(viewportBounds.left<=viewportBounds.maxLeft&&viewportBounds.top<=viewportBounds.maxTop);
+  assert.equal(await target.isDisabled(), true, 'La mano no añade marcas');
+  await photoViewport.getByRole('button', { name: 'Desplazar foto', exact: true }).click();
+  await photoViewport.getByRole('button', { name: 'Restablecer foto', exact: true }).click();
+  const maskCanvas = mask.locator('canvas').first();
+  await maskCanvas.scrollIntoViewIfNeeded();
+  const maskBounds = await maskCanvas.boundingBox();
+  await maskCanvas.click({position:{x:maskBounds.width*.55,y:maskBounds.height*.55}});
+  await page.waitForFunction(() => window.controller.getMarks().length===4, null, {timeout:10000});
+  const maskMark = await page.evaluate(() => window.controller.getMarks().at(-1));
+  assert.ok(maskMark.anchor, 'El raycast real de la máscara conserva el anclaje anatómico');
+  assert.equal(await photoViewport.getByRole('button', {name:'Seleccionar Lesión, pendiente',exact:true}).count(),2,
+    'Ambas marcas, de foto y de máscara, se muestran en la fotografía sin duplicar identidades');
+  if (process.env.QA_SCREENSHOT_DIR) await page.screenshot({path:process.env.QA_SCREENSHOT_DIR+'\\mascara-desktop.png',fullPage:true});
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.getByRole('button', { name: 'Foto', exact: true }).click();
-  await page.getByRole('button', { name: '3D', exact: true }).click();
-  await page.getByRole('button', { name: 'Foto', exact: true }).click();
+  const photos = page.getByRole('button', { name: /Fotografías de referencia/ });
+  await photos.click();
+  assert.equal(await photos.getAttribute('aria-expanded'), 'false');
+  await photos.click();
+  assert.equal(await photos.getAttribute('aria-expanded'), 'true');
+  assert.equal(await page.evaluate(() => window.controller.getMarks().length), 4);
   assert.equal(await page.evaluate(() => window.controller.getMarks()[0].id), 'manual-fixture');
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1), false);
+  if (process.env.QA_SCREENSHOT_DIR) await page.screenshot({path:process.env.QA_SCREENSHOT_DIR+'\\mascara-mobile.png',fullPage:true});
   assert.ok(external.every(url => /^https:\/\/(?:fonts\.googleapis\.com\/css2|odml\.pa\.googleapis\.com\/v1\/log)/.test(url)),
     `Salida externa inesperada, bloqueada: ${external.join(', ')}`);
   assert.deepEqual(writes, []); assert.deepEqual(errors, []);
