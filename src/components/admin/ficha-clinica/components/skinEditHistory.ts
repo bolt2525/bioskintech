@@ -20,6 +20,8 @@ export class SkinEditHistory<T = EvaluationMark> {
     if (this.entries.length > this.limit) this.entries.shift();
     this.expected = after;
   }
+  /** Continúa un gesto sin clonar un snapshot por cada evento del slider. */
+  replace(after: T[]) { this.expected = after; }
   undo(): T[] | undefined {
     const previous = this.entries.pop();
     if (previous) {

@@ -80,7 +80,7 @@ try {
   assert.equal(await validatedDot.evaluate(node=>getComputedStyle(node).borderColor),'rgb(34, 211, 238)');
   assert.match(await validatedDot.evaluate(node=>getComputedStyle(node).boxShadow),/rgb\(15, 23, 42\)/,'Borde oscuro sobre cualquier tono de foto');
   await page.getByRole('button', { name: 'Seleccionar Lesión, validada', exact: true }).click();
-  await page.getByRole('button', { name: 'Cerrar', exact: true }).click();
+  assert.equal(await page.getByRole('dialog',{name:'Revisar marca',exact:true}).count(),0);
   await page.getByRole('button', { name: /Oblicua.*sin confirmar/ }).click();
   await page.getByText(/no tiene correspondencia fiable/).waitFor();
   await page.getByRole('button', { name: 'Vincular observación a la región seleccionada', exact: true }).click();
@@ -160,10 +160,11 @@ try {
   await page.getByRole('button',{name:'Añadir marca en el centro',exact:true}).click();
   assert.equal(await page.evaluate(()=>window.marks.length),2,'Revocar asistencia devuelve la interacción al marcado manual');
   assert.equal(sent.length,1,'Revocar no permite más análisis');
-  await page.getByRole('dialog',{name:'Revisar marca',exact:true}).getByRole('button',{name:'Cerrar',exact:true}).click();
+  assert.equal(await page.getByRole('dialog',{name:'Revisar marca',exact:true}).count(),0);
   await page.getByRole('combobox',{name:'Lesión a marcar',exact:true}).fill('Zona manual sintética');
   await page.getByRole('group',{name:'Tipo de marcación',exact:true}).getByRole('button',{name:'Zonal',exact:true}).click();
   await page.getByRole('button',{name:'Añadir marca en el centro',exact:true}).click();
+  await page.getByRole('button',{name:'Ver detalle',exact:true}).click();
   const detail=page.getByRole('dialog',{name:'Revisar marca',exact:true});
   assert.equal(await detail.getByRole('combobox',{name:'Lesión o descripción',exact:true}).inputValue(),'Zona manual sintética');
   const oldWidth=await page.evaluate(()=>window.marks.at(-1).box.width);

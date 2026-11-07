@@ -36,6 +36,12 @@ export interface PersistedSkinMark {
   crop?: { originalPhoto: PhotoReference; normalizedBox: NormalizedBox; sourceWidth: number; sourceHeight: number };
 }
 export interface PersistedSkinReview { version: 2; annotations: PersistedSkinMark[]; simulationId?: number }
+export function skinSimulationId(review: unknown): number | undefined {
+  let data = review;
+  if (typeof data === 'string') { try { data = JSON.parse(data); } catch { return undefined; } }
+  if (!data || typeof data !== 'object' || !('version' in data) || data.version !== 2 || !('simulationId' in data)) return;
+  return typeof data.simulationId === 'number' && Number.isInteger(data.simulationId) && data.simulationId > 0 ? data.simulationId : undefined;
+}
 
 export function isZonalSkinMark(box: NormalizedBox): boolean {
   return box.width > .06 || box.height > .06;
@@ -54,10 +60,18 @@ export function resizeSkinBox(box: NormalizedBox, width: number, height = width)
 }
 
 /** Proyección de presentación: nunca crea ni modifica marcaciones legacy. */
+const displayCache = {
+  mask: new WeakMap<PersonalSurface, WeakMap<EvaluationMark, { sources: readonly SkinPhotoSource[]; points: EditablePoint[] }>>(),
+  reference: new WeakMap<PersonalSurface, WeakMap<EvaluationMark, { sources: readonly SkinPhotoSource[]; points: EditablePoint[] }>>(),
+};
 export function skinDisplayPoints(marks: readonly EvaluationMark[], sources: readonly SkinPhotoSource[], surface: PersonalSurface,
   target: 'mask' | 'reference' = 'mask'): EditablePoint[] {
+  let cache = displayCache[target].get(surface);
+  if (!cache) { cache = new WeakMap(); displayCache[target].set(surface, cache); }
   const project = (anchor: EvaluationAnchor) => target === 'reference' ? modelPoint(anchor) : surfacePoint(anchor, surface);
   return marks.flatMap(mark => {
+    const cached = cache.get(mark);
+    if (cached?.sources === sources) return cached.points;
     const position = mark.anchor && project(mark.anchor);
     if (!position) return [];
     const photo = sources.find(item => item.id === mark.sourceId);
@@ -76,12 +90,14 @@ export function skinDisplayPoints(marks: readonly EvaluationMark[], sources: rea
     const a = vertices[1].map((n, i) => n - vertices[0][i]), b = vertices[2].map((n, i) => n - vertices[0][i]);
     const normal = { x: a[1] * b[2] - a[2] * b[1], y: a[2] * b[0] - a[0] * b[2], z: a[0] * b[1] - a[1] * b[0] };
     const length = Math.hypot(normal.x, normal.y, normal.z);
-    return [{ id: mark.id, type: 'free' as const, lineIds: [], ...position, size: isZonalSkinMark(mark.box) ? 1 : mark.box.width / .04,
+    const points: EditablePoint[] = [{ id: mark.id, type: 'free' as const, lineIds: [], ...position, size: isZonalSkinMark(mark.box) ? 1 : mark.box.width / .04,
       color: mark.status === 'validated' ? COLORS.skinValidated : COLORS.skinPending,
       name: mark.label,
       ...(area.length === 4 && length > 0 ? { area: { radius: Math.max(...area.map(q =>
         Math.hypot(q.x - position.x, q.y - position.y, q.z - position.z))),
       normal: { x: normal.x / length, y: normal.y / length, z: normal.z / length } } } : {}) }];
+    cache.set(mark, { sources, points });
+    return points;
   });
 }
 
@@ -234,19 +250,19 @@ export function fromLegacySkinReview(data: Parameters<typeof parseSkinReview>[0]
 }
 
 /** Presentación descriptiva, sin exponer claves ni URL de las fotografías. */
-export function skinReviewSummaries(data: unknown): { id: string; description: string; box?: NormalizedBox }[] {
+export function skinReviewSummaries(data: unknown): { id: string; label: string; note: string; description: string; box?: NormalizedBox }[] {
   let review = data;
   if (typeof review === 'string') { try { review = JSON.parse(review); } catch { return []; } }
   if (!review || typeof review !== 'object' || !('version' in review)) return [];
   if (review.version === 1) return parseSkinReview(review as Parameters<typeof parseSkinReview>[0])
-    .map(mark => ({ id: mark.id, box: mark.normalizedBox, description: `${mark.label}${mark.note ? ` — ${mark.note}` : ''} · Foto clínica #${mark.photo.id}` }));
+    .map(mark => ({ id: mark.id, label: mark.label, note: mark.note, box: mark.normalizedBox, description: `${mark.label}${mark.note ? ` — ${mark.note}` : ''} · Foto clínica #${mark.photo.id}` }));
   if (review.version !== 2 || !('annotations' in review) || !Array.isArray(review.annotations)) return [];
   return review.annotations.flatMap((mark: unknown) => {
     if (!mark || typeof mark !== 'object' || !('reviewStatus' in mark) || mark.reviewStatus !== 'validated' ||
       !('id' in mark) || typeof mark.id !== 'string' || !('label' in mark) || typeof mark.label !== 'string' ||
       !('note' in mark) || typeof mark.note !== 'string' || !('photo' in mark) || !mark.photo ||
       typeof mark.photo !== 'object' || !('id' in mark.photo) || typeof mark.photo.id !== 'number') return [];
-    return [{ id: mark.id, ...('normalizedBox' in mark && validBox(mark.normalizedBox) ? { box: mark.normalizedBox } : {}),
+    return [{ id: mark.id, label: mark.label, note: mark.note, ...('normalizedBox' in mark && validBox(mark.normalizedBox) ? { box: mark.normalizedBox } : {}),
       description: `${mark.label}${mark.note ? ` — ${mark.note}` : ''} · Foto clínica #${mark.photo.id}` }];
   });
 }

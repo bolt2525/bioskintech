@@ -7,6 +7,7 @@ import type { EvaluationMark } from '../../components/admin/ficha-clinica/compon
 import type { Mark } from '../../components/admin/ficha-clinica/components/FaceMapCanvas';
 import type { ReactNode } from 'react';
 import type { EditablePoint } from '../../components/admin/ficha-clinica/components/Clinical3DViewer';
+import type { SkinListFilter } from '../../components/admin/ficha-clinica/components/skinMarkPresentation';
 import atlas from './genericFaceAtlas.json' with { type: 'json' };
 
 export type SimulationPhotoSlot = 'frontal' | 'izquierda' | 'derecha' | 'extra_a' | 'extra_b';
@@ -87,6 +88,10 @@ export interface FaceSimIntegration {
   onHoverMark?: (id: string | null) => void;
   visibility?: { marks: boolean; names: boolean };
   onVisibilityChange?: (value: { marks: boolean; names: boolean }) => void;
+  markList?: ReactNode;
+  markFilter?: SkinListFilter;
+  markAction?: { id: string; sequence: number; action: 'delete' | 'detail' };
+  restoring?: boolean;
 }
 
 export function storeSurface(surface: PersonalSurface | EstimatedHeadSurface): StoredSurface {

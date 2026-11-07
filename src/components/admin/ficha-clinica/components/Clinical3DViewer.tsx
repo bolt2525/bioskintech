@@ -3930,21 +3930,22 @@ const ThreeEngine: React.FC<AnnotationInteractionProps & {
     const group = editablePointsGroupRef.current;
     if (!group) return;
 
-    // Limpiar
-    while (group.children.length > 0) {
-      const child = group.children[0];
+    // Conservar geometría de puntos sin cambios (slider/hover no reconstruyen toda la capa).
+    const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const keys = new Map(editablePoints.map(pt => [pt.id, JSON.stringify({
+      pt, incomplete: incompletePointIds.includes(pt.id),
+      labelOnly: !pt.color && annotationLabels.some(label => label.id === pt.id), modelVersion, reducedMotion,
+    })]));
+    for (const child of [...group.children]) {
+      if (child.userData.renderKey === keys.get(child.userData.editableId)) continue;
       group.remove(child);
-      child.traverse((m: any) => {
-        if (m.geometry) m.geometry.dispose();
-        if (m.material) {
-          if (Array.isArray(m.material)) m.material.forEach((mt: any) => mt.dispose());
-          else m.material.dispose();
-        }
-      });
+      disposeObject3D(child);
     }
 
     editablePoints.forEach((pt) => {
+      if (group.children.some(child => child.userData.editableId === pt.id)) return;
       const ptGroup = new THREE.Group();
+      ptGroup.userData.renderKey = keys.get(pt.id);
       ptGroup.position.set(pt.x, pt.y, pt.z);
       ptGroup.userData.isEditablePoint = true;
       ptGroup.userData.editableId = pt.id;
@@ -3974,12 +3975,12 @@ const ThreeEngine: React.FC<AnnotationInteractionProps & {
             disk.position.copy(normal).multiplyScalar(disk === halo ? .014 : .01);
           }
           ptGroup.add(fill, outline, halo);
-          if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) ptGroup.userData.pulseMaterials = [fill.material, halo.material];
+          if (!reducedMotion) ptGroup.userData.pulseMaterials = [fill.material, halo.material];
         }
-        const size = Math.max(.5, Math.min(1.5, pt.size ?? 1));
+        const size = Math.max(.25, Math.min(1.5, pt.size ?? 1));
         const glyph = new THREE.Group();
         glyph.userData.screenGlyph = true;
-        glyph.userData.size = Math.max(1, size);
+        glyph.userData.size = size;
         const outline = new THREE.Mesh(new THREE.SphereGeometry(0.044, 16, 16),
           new THREE.MeshBasicMaterial({ color: COLORS.skinOutline, toneMapped: false, transparent: true, opacity: .9, depthTest: false, depthWrite: false }));
         outline.renderOrder = 999;

@@ -1,6 +1,20 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+// La historia del range se prueba también con frames WebGL en skin-marks-undo.
 import { SkinEditHistory } from '../src/components/admin/ficha-clinica/components/skinEditHistory.ts';
+
+test('un gesto de tamaño conserva un snapshot y rehace el último input exacto', () => {
+  const history = new SkinEditHistory();
+  const before = [{ id: 'size', box: { width: .04 }, anchor: { triangle: 1, weights: [.2, .3, .5] }, status: 'validated' }];
+  const first = [{ ...before[0], box: { width: .05 }, status: 'pending' }];
+  const final = [{ ...first[0], box: { width: .06 } }];
+  history.push(before, first);
+  history.replace(final);
+  history.sync(final);
+  assert.equal(history.size, 1);
+  assert.deepEqual(history.undo(), before);
+  assert.deepEqual(history.redo(), final);
+});
 import { anchorForPhoto, skinDisplayPoints } from '../src/components/admin/ficha-clinica/components/skinEvaluation.ts';
 import atlas from '../src/lab/faceSim/genericFaceAtlas.json' with { type: 'json' };
 

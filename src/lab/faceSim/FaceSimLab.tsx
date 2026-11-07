@@ -474,7 +474,7 @@ const segDist = (p: P2, a: P2, b: P2, k: number) => {
 
 export default function FaceSimLab({ integration }: { integration?: FaceSimIntegration } = {}) {
   const clinical = integration?.mode === 'skin-exam';
-  const [clinicalCaptureOpen, setClinicalCaptureOpen] = useState(clinical && !integration?.initialMarks?.length);
+  const [clinicalCaptureOpen, setClinicalCaptureOpen] = useState(clinical && !integration?.initialMarks?.length && !integration?.restoring);
   const [clinicalBuildRequested, setClinicalBuildRequested] = useState(false);
   const [clinicalCaptureError, setClinicalCaptureError] = useState('');
   const onController = integration?.onController, onDirty = integration?.onDirty, onMarksChange = integration?.onMarksChange;
@@ -2257,6 +2257,7 @@ export default function FaceSimLab({ integration }: { integration?: FaceSimInteg
   importPhotoAction.current = loadFile;
   const importPhotosAction = useRef(loadCaptures);
   importPhotosAction.current = loadCaptures;
+  const storedGeometry = useRef(new WeakMap<PersonalModel, StoredMaskGeometry>());
   const controller = useMemo<FaceSimController>(() => ({
     getPhotos: () => PHOTO_SLOTS.flatMap(({ id }) => photos[id] ? [{ id, canvas: photos[id]!.canvas, original: photos[id]!.original }] : []),
     getMarks: () => evaluationMarks,
@@ -2290,8 +2291,14 @@ export default function FaceSimLab({ integration }: { integration?: FaceSimInteg
         }),
       };
       if (personal) {
-        const geometry = (model: PersonalModel): StoredMaskGeometry => ({ surface: storeSurface(model.surface),
-          renderSurface: storeSurface(model.renderSurface), glbBase64: bufferToBase64(model.glb) });
+        const geometry = (model: PersonalModel): StoredMaskGeometry => {
+          let cached = storedGeometry.current.get(model);
+          if (!cached) {
+            cached = { surface: storeSurface(model.surface), renderSurface: storeSurface(model.renderSurface), glbBase64: bufferToBase64(model.glb) };
+            storedGeometry.current.set(model, cached);
+          }
+          return cached;
+        };
         state.mask = { ...geometry(personal), view: personal.view, depth: personal.depth, depthDetails: personal.depthDetails,
           diagnostics: personal.diagnostics, closedHead: personal.closedHead,
           photoPatches: storePhotoPatches(personal.photoPatches, photos),
@@ -2376,6 +2383,7 @@ export default function FaceSimLab({ integration }: { integration?: FaceSimInteg
       selectedReferenceId={integration?.selectedReferenceId}
       hoveredMarkId={integration?.hoveredMarkId} onHoverMark={integration?.onHoverMark} visibility={integration?.visibility}
       onVisibilityChange={integration?.onVisibilityChange}
+      markList={integration?.markList} markFilter={integration?.markFilter} markAction={integration?.markAction}
       aiAllowed={integration ? integration.aiAllowed === true : true}
       onRequestPhoto={clinical ? () => setClinicalCaptureOpen(true) : undefined}
       migration={migration && migrationReport ? { examId: migration.examId,

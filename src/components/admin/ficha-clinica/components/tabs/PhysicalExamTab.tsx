@@ -15,7 +15,11 @@ import trazadoData from '../../data/trazado-referencia-superior.json';
 import FieldHelp from '../FieldHelp';
 import { HELP } from '../../data/fieldHelpTexts';
 import { Dialog } from '../../../../ui/Dialog';
-import { isZonalSkinMark, skinReviewSummaries } from '../skinEvaluation';
+import { isZonalSkinMark, skinReviewSummaries, skinSimulationId } from '../skinEvaluation';
+import SkinMarkList from '../SkinMarkList';
+import { emptySkinFilter, evaluationRow, matchesSkinFilter, facialThird } from '../skinMarkPresentation';
+import type { SkinListRow } from '../skinMarkPresentation';
+import SKIN_LESION_CATALOG from '../../../../../data/skin-lesion-catalog.json';
 import type { EvaluationMark, PersistedSkinReview } from '../skinEvaluation';
 import type { SkinExamSave } from '../SkinExamWorkspace';
 import type { EditablePoint } from '../Clinical3DViewer';
@@ -33,14 +37,10 @@ const NO_VIEWER_MARKERS: Marker3D[] = [];
 const PHOTOTYPE_COLORS: Record<string, string> = { I: '#f5dece', II: '#e8c0a3', III: '#d3a27e', IV: '#b67f59', V: '#8b573b', VI: '#593b2b' };
 
 // -- Constantes para el visor 3D facial ----------------------------------------
-const TERCIO_BOUNDARIES = (trazadoData as { hairline: {
-  topY: number; bottomY: number;
-  tercioMedioBottomY: number; tercioInferiorBottomY: number;
-} }).hairline;
+const TERCIO_BOUNDARIES = trazadoData.hairline;
 // Límite lateral: líneas verticales desplazadas hacia afuera (zona sien/temporal)
 const COLA_CEJA_X_LEFT  = -1.0;
 const COLA_CEJA_X_RIGHT =  1.0;
-const COLA_CEJA_X       =  1.0; // umbral de detección lateral
 // Líneas verticales imaginarias en cola de ceja: de frente-hairline hasta mentón
 const FACE_Y_MAX = 2.2;
 const FACE_Y_MIN = -2.5;
@@ -145,20 +145,10 @@ const BODY_ZONE_GROUPS = [
 interface FacialRegion { tercio: string; suggestions: string[] }
 
 function getFacialRegion(pos: { x: number; y: number; z: number }): FacialRegion {
-  const { x, y } = pos;
-  if (Math.abs(x) > COLA_CEJA_X) {
-    return { tercio: 'Zona Lateral', suggestions: ZONES_LATERAL };
-  }
-  if (y > TERCIO_BOUNDARIES.bottomY) {
-    return { tercio: 'Tercio Superior', suggestions: ZONES_SUPERIOR };
-  }
-  if (y > TERCIO_BOUNDARIES.tercioMedioBottomY) {
-    return { tercio: 'Tercio Medio', suggestions: ZONES_MEDIO };
-  }
-  if (y > TERCIO_BOUNDARIES.tercioInferiorBottomY) {
-    return { tercio: 'Tercio Inferior', suggestions: ZONES_INFERIOR };
-  }
-  return { tercio: 'Zona Inferior / Cuello', suggestions: ZONES_CUELLO };
+  const tercio = facialThird(pos);
+  const zones: Record<string, string[]> = { 'Zona Lateral': ZONES_LATERAL, 'Tercio Superior': ZONES_SUPERIOR,
+    'Tercio Medio': ZONES_MEDIO, 'Tercio Inferior': ZONES_INFERIOR };
+  return { tercio, suggestions: zones[tercio] ?? ZONES_CUELLO };
 }
 
 interface PhysicalExam {
@@ -401,8 +391,8 @@ export default function PhysicalExamTab({ recordId, physicalExams, consultationI
   const [saving, setSaving] = useState(false);
   const [highlightedId, setHighlightedId] = useState<number | null>(null);
   const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
-  const currentExams = physicalExams.filter(e => Number(e.consultation_id) === Number(consultationId));
-  const otherExamCount = physicalExams.filter(e => Number(e.consultation_id) !== Number(consultationId)).length;
+  const currentExams = physicalExams.filter(e => Number(e.record_id) === Number(recordId) && Number(e.consultation_id) === Number(consultationId));
+  const otherExamCount = physicalExams.filter(e => Number(e.record_id) === Number(recordId) && Number(e.consultation_id) !== Number(consultationId)).length;
   
   // Canvas State
   const [faceMarks, setFaceMarks] = useState<Mark[]>([]);
@@ -415,8 +405,13 @@ export default function PhysicalExamTab({ recordId, physicalExams, consultationI
   const [evaluationMarks, setEvaluationMarks] = useState<EvaluationMark[]>([]);
   const [hoveredMarkId, setHoveredMarkId] = useState<string | null>(null);
   const [markVisibility, setMarkVisibility] = useState({ marks: true, names: true });
+  const [markFilter, setMarkFilter] = useState(emptySkinFilter);
+  const [markAction, setMarkAction] = useState<FaceSimIntegration['markAction']>();
   const saveController = useRef<SkinExamSave | null>(null);
   const saveInFlight = useRef(false);
+  const examContext = useRef(0);
+  const examSaveOperation = useRef<AbortController | null>(null);
+  useEffect(() => () => examSaveOperation.current?.abort(), []);
   const highlightedPoints = useMemo(() => hoveredMarkId ? [hoveredMarkId,
     ...(hoveredMarkId.startsWith(`legacy-exam:${currentExam.id}:`) ? [hoveredMarkId.slice(`legacy-exam:${currentExam.id}:`.length)] : [])] : [],
   [hoveredMarkId, currentExam.id]);
@@ -486,7 +481,7 @@ export default function PhysicalExamTab({ recordId, physicalExams, consultationI
   // Reset form when active consultation changes
 
   useEffect(() => {
-    const examForConsult = physicalExams.find(e => Number(e.consultation_id) === Number(consultationId));
+    const examForConsult = physicalExams.find(e => Number(e.record_id) === Number(recordId) && Number(e.consultation_id) === Number(consultationId));
     if (examForConsult) loadExam(examForConsult);
     else resetExam();
   }, [consultationId, recordId]);
@@ -495,7 +490,7 @@ export default function PhysicalExamTab({ recordId, physicalExams, consultationI
 
   useEffect(() => {
     if (currentExam.id) return;
-    const examForConsult = physicalExams.find(e => Number(e.consultation_id) === Number(consultationId));
+    const examForConsult = physicalExams.find(e => Number(e.record_id) === Number(recordId) && Number(e.consultation_id) === Number(consultationId));
     if (examForConsult) loadExam(examForConsult);
     else resetExam();
   }, [physicalExams.length, recordId]);
@@ -509,14 +504,20 @@ export default function PhysicalExamTab({ recordId, physicalExams, consultationI
   }, [message]);
 
   // Reset selectedCategory when switching between facial and corporal
-  useEffect(() => { setSelectedCategory(''); }, [activeTab]);
+  useEffect(() => { setSelectedCategory(''); setMarkFilter(emptySkinFilter); setHoveredMarkId(null); }, [activeTab]);
 
   const loadExam = (exam: PhysicalExam) => {
+    examContext.current++; examSaveOperation.current?.abort(); setSaving(false); saveInFlight.current = false;
+    setSaveWarning(null); setParameterDraft(null); setIsModalOpen(false); setEditingMark(null); setSelectedCategory(''); setMessage(null);
+    setMarkVisibility({ marks: true, names: true });
     setEvaluationMarks([]); setHoveredMarkId(null);
     setRelocatingLegacy(null);
     setReferencePoints([]);
     setSelectedReferenceId(undefined);
-    setLegacyMigration(undefined); setMapView('generic');
+    const storedSession = skinSimulationId(exam.skin_visual_review);
+    workspaceReview.current = exam.skin_visual_review;
+    setMaskReady(false); setMarkFilter(emptySkinFilter); setMarkAction(undefined); setActiveTab('facial');
+    setLegacyMigration(undefined); setMapView(storedSession ? 'mask' : 'generic');
     setCurrentExam(exam);
     setReviewSession(value => value + 1);
     try {
@@ -535,7 +536,7 @@ export default function PhysicalExamTab({ recordId, physicalExams, consultationI
       };
 
       setFaceMarks(parseData(exam.face_map_data));
-      setPreparedReview(null); setReviewDirty(false); setShowSkinWorkspace(false);
+      setPreparedReview(null); setReviewDirty(false); setShowSkinWorkspace(!!storedSession);
       setBodyMarks(parseData(exam.body_map_data));
     } catch (e) {
       console.error("Error parsing map data", e);
@@ -546,11 +547,15 @@ export default function PhysicalExamTab({ recordId, physicalExams, consultationI
   };
 
   const resetExam = () => {
+    examContext.current++; examSaveOperation.current?.abort(); setSaving(false); saveInFlight.current = false;
+    setSaveWarning(null); setParameterDraft(null); setIsModalOpen(false); setEditingMark(null); setSelectedCategory('');
+    setMarkVisibility({ marks: true, names: true }); setActiveTab('facial');
     setEvaluationMarks([]); setHoveredMarkId(null);
     setRelocatingLegacy(null);
     setReferencePoints([]);
     setSelectedReferenceId(undefined);
     setLegacyMigration(undefined); setMapView('generic');
+    setMaskReady(false); setMarkFilter(emptySkinFilter); setMarkAction(undefined); workspaceReview.current = undefined;
     setReviewSession(value => value + 1);
     setCurrentExam({ ...EMPTY_EXAM, record_id: recordId });
     setFaceMarks([]);
@@ -598,6 +603,8 @@ export default function PhysicalExamTab({ recordId, physicalExams, consultationI
   };
 
   const doSave = async (payload: PhysicalExam) => {
+    const context = examContext.current, task = new AbortController();
+    examSaveOperation.current = task;
     saveInFlight.current = true;
     setSaving(true);
     setMessage(null);
@@ -606,10 +613,13 @@ export default function PhysicalExamTab({ recordId, physicalExams, consultationI
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
+        signal: task.signal,
       });
+      if (context !== examContext.current || task.signal.aborted) return;
       if (response.ok) {
         const resData = await response.json().catch(() => null);
         const savedId = currentExam.id ?? resData?.id ?? null;
+        if (!Number.isInteger(savedId) || savedId <= 0) throw new Error('No se confirmó el identificador del examen. No se anunció un guardado correcto.');
         setMessage({ type: 'success', text: 'Examen físico guardado correctamente' });
         setCurrentExam(prev => ({ ...prev, ...(savedId != null ? { id: savedId } : {}),
           ...(payload.skin_visual_review ? { skin_visual_review: payload.skin_visual_review } : {}) }));
@@ -624,16 +634,17 @@ export default function PhysicalExamTab({ recordId, physicalExams, consultationI
         throw new Error(errData.error || 'Error al guardar');
       }
     } catch (error) {
-      setMessage({ type: 'error', text: error instanceof Error ? error.message : 'Error al guardar el examen físico' });
+      if (context === examContext.current && !task.signal.aborted) setMessage({ type: 'error', text: error instanceof Error ? error.message : 'Error al guardar el examen físico' });
     } finally {
-      saveInFlight.current = false;
-      setSaving(false);
+      if (context === examContext.current) { saveInFlight.current = false; setSaving(false); }
+      if (examSaveOperation.current === task) examSaveOperation.current = null;
     }
   };
 
   const handleSubmit = async () => {
     if (saveInFlight.current) return;
     saveInFlight.current = true; setSaving(true); setMessage(null);
+    const context = examContext.current;
     try {
     let review = preparedReview;
     if (reviewDirty) {
@@ -662,8 +673,8 @@ export default function PhysicalExamTab({ recordId, physicalExams, consultationI
 
     await doSave(payload);
     } catch (error) {
-      setMessage({ type: 'error', text: error instanceof Error ? error.message : 'No se pudo guardar la evaluación.' });
-    } finally { saveInFlight.current = false; setSaving(false); }
+      if (context === examContext.current) setMessage({ type: 'error', text: error instanceof Error ? error.message : 'No se pudo guardar la evaluación.' });
+    } finally { if (context === examContext.current) { saveInFlight.current = false; setSaving(false); } }
   };
 
   const handlePrint = () => {
@@ -745,8 +756,17 @@ export default function PhysicalExamTab({ recordId, physicalExams, consultationI
   // Convert face marks to Marker3D[] for the 3D viewer (only 3D marks)
   // Memoized: solo recalcula cuando cambian las marcas, no en cada tecla de selectedCategory
   // (una nueva referencia de array forzaba al visor 3D a reconstruir toda la escena Three.js)
+  function originalRow(mark: Mark): Omit<SkinListRow, 'detail' | 'remove'> {
+    const anchor = mark.is3D && mark.position3D ? legacySkinAnchor(mark.position3D, mark.normal3D) : null;
+    return { id: mark.id, label: mark.category, zone: mark.notes || (anchor ? skinZoneAt(anchor) ?? '' : ''),
+      third: mark.tercio, distribution: mark.distribution === 'zonal' ? 'Zonal' : 'Puntual',
+      status: 'Original', origin: mark.is3D ? 'Modelo anatómico 3D' : 'Original 2D' };
+  }
   const face3DMarkers: Marker3D[] = useMemo(() => faceMarks
-    .filter(m => m.is3D && m.position3D)
+    .filter(m => {
+      const migrated = evaluationMarks.find(item => item.id === `legacy-exam:${currentExam.id}:${m.id}`);
+      return m.is3D && m.position3D && matchesSkinFilter(migrated ? evaluationRow(migrated) : originalRow(m), markFilter);
+    })
     .map(m => ({
       id: m.id,
       pathologyId: 'lesion',
@@ -759,11 +779,11 @@ export default function PhysicalExamTab({ recordId, physicalExams, consultationI
       zone: m.notes || m.tercio || '',
       radius: m.radius3D ?? 0.16,
       size: (m.radius3D ?? .16) / .16,
-    })), [faceMarks]);
+    })), [faceMarks, markFilter, evaluationMarks, currentExam.id]);
 
   // Body 3D markers (no zone detection)
   const body3DMarkers: Marker3D[] = useMemo(() => bodyMarks
-    .filter(m => m.is3D && m.position3D)
+    .filter(m => m.is3D && m.position3D && matchesSkinFilter(originalRow(m), markFilter))
     .map(m => ({
       id: m.id,
       pathologyId: 'lesion',
@@ -776,7 +796,7 @@ export default function PhysicalExamTab({ recordId, physicalExams, consultationI
       zone: m.notes || '',
       radius: m.radius3D ?? 0.16,
       size: (m.radius3D ?? .16) / .16,
-    })), [bodyMarks]);
+    })), [bodyMarks, markFilter]);
 
   const handleBody3DMarkerPlaced = (marker3D: Marker3D) => {
     if (relocatingLegacy?.tab === 'corporal') {
@@ -807,14 +827,20 @@ export default function PhysicalExamTab({ recordId, physicalExams, consultationI
     setIsModalOpen(true);
   };
 
-  const legacyFaceMarks = faceMarks.filter(m => !m.is3D);
   const storedSkinRows = !showSkinWorkspace ? skinReviewSummaries(preparedReview ?? currentExam.skin_visual_review) : [];
   const migratedIds = new Set([...evaluationMarks, ...storedSkinRows].filter(mark => mark.id.startsWith(`legacy-exam:${currentExam.id}:`))
     .map(mark => mark.id.slice(`legacy-exam:${currentExam.id}:`.length)));
   const listedFaceMarks = faceMarks.filter(mark => !migratedIds.has(mark.id));
-  const totalCount = listedFaceMarks.length + bodyMarks.length + evaluationMarks.length + storedSkinRows.length;
-  const zonalCount = [...listedFaceMarks, ...bodyMarks].filter(mark => mark.distribution === 'zonal').length +
-    evaluationMarks.filter(mark => isZonalSkinMark(mark.box)).length + storedSkinRows.filter(mark => mark.box && isZonalSkinMark(mark.box)).length;
+  const markRows: SkinListRow[] = activeTab === 'facial' ? [
+    ...evaluationMarks.map(mark => ({ ...evaluationRow(mark), detail: () => editEvaluation(mark.id),
+      remove: () => setMarkAction({ id: mark.id, action: 'delete', sequence: Date.now() }) })),
+    ...storedSkinRows.map(mark => ({ id: mark.id, label: mark.label, zone: mark.note, distribution: mark.box && isZonalSkinMark(mark.box) ? 'Zonal' as const : 'Puntual' as const,
+      status: 'Confirmada', origin: 'Evaluación guardada', detail: () => editEvaluation(mark.id) })),
+    ...listedFaceMarks.map(mark => ({ ...originalRow(mark), detail: () => initiateEditMark(mark), remove: () => removeFaceMark(mark.id) })),
+  ] : bodyMarks.map(mark => ({ ...originalRow(mark), detail: () => initiateEditMark(mark), remove: () => removeBodyMark(mark.id) }));
+  const markList = <SkinMarkList rows={markRows} filter={markFilter} onFilter={next => { setMarkFilter(next); setHoveredMarkId(null); }}
+    zoneCatalog={activeTab === 'corporal' ? BODY_ZONE_GROUPS.flatMap(group => group.zones) : undefined}
+    catalog={[...LESION_CATALOG, ...Object.values(SKIN_LESION_CATALOG)]} hovered={hoveredMarkId} onHover={handleHoverMark} disabled={saving} />;
   const referenceLabels = useMemo(() => visibleReferencePoints.map(point => ({
     id: point.id, position: { x: point.x, y: point.y + .07, z: point.z },
     anchor: { x: point.x, y: point.y, z: point.z }, text: point.name ?? '', color: '#ffffff',
@@ -825,6 +851,7 @@ export default function PhysicalExamTab({ recordId, physicalExams, consultationI
       setLegacyMigration(undefined); setMaskReady(false); setReviewSession(value => value + 1); setShowSkinWorkspace(true);
     }
     setSelectedReferenceId(id); setMapView('mask'); setActiveTab('facial');
+    setMarkAction({ id, action: 'detail', sequence: Date.now() });
   }
   const lesionSelector = <div className="flex flex-wrap items-center gap-2 border-b border-slate-200 bg-slate-50 p-3 text-gray-900">
     <label htmlFor="physical-lesion-select" className="text-sm font-semibold">Lesión a marcar</label>
@@ -1095,7 +1122,7 @@ export default function PhysicalExamTab({ recordId, physicalExams, consultationI
         <div className="flex min-w-0 flex-col gap-4">
           {/* Left Column: Maps */}
           <div className="flex min-w-0 flex-1 flex-col">
-            {(!showSkinWorkspace || !maskReady) && <div className="mb-5 space-y-3 rounded-2xl border border-gray-200 bg-white p-4">
+            {(!showSkinWorkspace || (!maskReady && !skinSimulationId(workspaceReview.current))) && <div className="mb-5 space-y-3 rounded-2xl border border-gray-200 bg-white p-4">
               <div><h3 className="text-sm font-bold text-gray-900">{showSkinWorkspace && maskReady ? 'Vista de evaluación facial' : '¿Dónde quieres marcar?'}</h3>
                 {(!showSkinWorkspace || !maskReady) && <p className="mt-1 text-xs text-gray-500">{currentExam.id && faceMarks.length > 0 ? 'Conserva el modelo actual o traslada sus marcas a una máscara con fotos.' : 'Usa el modelo genérico o crea una máscara con fotos del paciente.'}</p>}</div>
               {(!showSkinWorkspace || !maskReady) && <div className="grid gap-3 sm:grid-cols-2">
@@ -1117,7 +1144,7 @@ export default function PhysicalExamTab({ recordId, physicalExams, consultationI
                   if (showSkinWorkspace) { setMapView('mask'); setActiveTab('facial'); return; }
                   if (reviewDirty && !window.confirm('Se reiniciará el editor de piel sin preparar. ¿Continuar con la migración?')) return;
                   workspaceReview.current = preparedReview ?? currentExam.skin_visual_review;
-                  setLegacyMigration(currentExam.id && faceMarks.length > 0 ? { examId: currentExam.id, marks: structuredClone(faceMarks) } : undefined);
+                  setLegacyMigration(!skinSimulationId(workspaceReview.current) && currentExam.id && faceMarks.length > 0 ? { examId: currentExam.id, marks: structuredClone(faceMarks) } : undefined);
                   setMaskReady(false); setReviewSession(value => value + 1); setReviewDirty(false); setShowSkinWorkspace(true); setMapView('mask'); setActiveTab('facial');
                 }}>{currentExam.skin_visual_review ? 'Abrir máscara y evaluación' : currentExam.id && faceMarks.length > 0 ? 'Migrar marcaciones a máscara' : 'Crear máscara facial'}
                 <span className="mt-1 block text-xs font-normal text-gray-500">Fotos del expediente o nuevas · revisión guiada</span>
@@ -1155,7 +1182,7 @@ export default function PhysicalExamTab({ recordId, physicalExams, consultationI
                 if (key !== 'z' && key !== 'y') return;
                 event.preventDefault(); event.stopPropagation(); restoreOriginalMarks(key === 'y' || event.shiftKey ? 'redo' : 'undo');
               }}>
-            {showSkinWorkspace && maskReady && activeTab === 'facial' && <div className="mb-4 space-y-2 border-b border-gray-100 pb-3">
+            {showSkinWorkspace && (maskReady || skinSimulationId(workspaceReview.current)) && activeTab === 'facial' && <div className="mb-4 space-y-2 border-b border-gray-100 pb-3">
               <div role="group" aria-label="Modo de visor facial" className="inline-flex max-w-full flex-wrap gap-1 rounded-xl bg-slate-100 p-1">
                 {([
                   { mode: 'generic', label: 'Modelo anatómico', description: 'Modelo 3D de referencia con las marcaciones originales.', Icon: UserRound },
@@ -1187,10 +1214,11 @@ export default function PhysicalExamTab({ recordId, physicalExams, consultationI
                   hoveredMarkId={hoveredMarkId} onHoverMark={handleHoverMark} visibility={markVisibility}
                   onVisibilityChange={setMarkVisibility}
                   onEvaluationChange={setEvaluationMarks} saveController={saveController}
+                  markList={markList} markFilter={markFilter} markAction={markAction}
                   onPrepared={handleSkinPrepared} onDirty={handleSkinDirty} onCaptureReady={setMaskReady} />
               </Suspense>
             </fieldset>}
-            {!(showSkinWorkspace && maskReady && mapView !== 'generic' && activeTab === 'facial') && <div className="min-w-0 rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+            {!(showSkinWorkspace && (maskReady || skinSimulationId(workspaceReview.current)) && mapView !== 'generic' && activeTab === 'facial') && <div className="min-w-0 rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
               {activeTab === 'facial' ? (
                 referenceView
               ) : (
@@ -1201,6 +1229,7 @@ export default function PhysicalExamTab({ recordId, physicalExams, consultationI
                     redo={{ disabled: saving || !bodyHistory.current.redoSize, onClick: () => restoreOriginalMarks('redo') }} /></div>
                   <Clinical3DViewer
                     markers={markVisibility.marks ? body3DMarkers : NO_VIEWER_MARKERS}
+                    highlightedPointIds={highlightedPoints}
                     showMarkerLabels={markVisibility.names}
                     selectedPathology="lesion"
                     modelUrl="/models/clinical/male_body.glb"
@@ -1218,102 +1247,7 @@ export default function PhysicalExamTab({ recordId, physicalExams, consultationI
             </div>
             </section>
             
-            <div className="mt-6">
-              <h4 className="font-bold text-gray-800 mb-3 flex items-center gap-2 flex-wrap">
-                <div className="w-1 h-4 bg-[#deb887] rounded-full shrink-0" />
-                <span>Lesiones Marcadas</span>
-                <span className="ml-auto flex items-center gap-2 text-sm font-normal text-gray-500">
-                  <span className="font-bold text-gray-800"><span>{totalCount}</span> total</span>
-                  <span className="text-gray-300">·</span>
-                  <span>Puntual: <span className="font-semibold text-gray-700">{totalCount - zonalCount}</span></span>
-                  <span className="text-gray-300">·</span>
-                  <span>Zonal: <span className="font-semibold text-[#b8944d]">{zonalCount}</span></span>
-                </span>
-              </h4>
-
-              {/* Legacy 2D marks banner */}
-              {activeTab === 'facial' && legacyFaceMarks.length > 0 && (
-                <div className="mb-3 flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2.5 text-xs text-amber-700">
-                  <Info size={13} className="mt-0.5 shrink-0" />
-                  <span>
-                    <strong>{legacyFaceMarks.length}</strong> marcación{legacyFaceMarks.length > 1 ? 'es' : ''} anterior{legacyFaceMarks.length > 1 ? 'es' : ''} (formato 2D) preservada{legacyFaceMarks.length > 1 ? 's' : ''}.
-                    No se visualizan en el modelo 3D pero sus datos están intactos.
-                  </span>
-                </div>
-              )}
-
-              <div aria-label="Lista de lesiones marcadas" className="max-h-72 overflow-y-auto overscroll-contain border border-gray-100 rounded-xl bg-white shadow-sm custom-scrollbar">
-                <AnimatePresence>
-                  {activeTab === 'facial' && (!showSkinWorkspace || mapView === 'generic') && evaluationMarks.map(mark => <div key={mark.id}
-                    onMouseEnter={() => setHoveredMarkId(mark.id)} onMouseLeave={() => setHoveredMarkId(null)}
-                    className={`flex items-center justify-between gap-2 border-b p-3 ${hoveredMarkId === mark.id ? 'bg-cyan-50 ring-1 ring-inset ring-cyan-400' : ''}`}>
-                    <button type="button" className="admin-focus-ring min-h-11 min-w-0 flex-1 rounded-lg text-left"
-                      onFocus={() => setHoveredMarkId(mark.id)} onBlur={() => setHoveredMarkId(null)} onClick={() => editEvaluation(mark.id)}>
-                      <span className="block break-words [overflow-wrap:anywhere] text-sm font-semibold line-clamp-2" title={mark.label}>{mark.label}</span>
-                      <span className="block truncate text-xs text-gray-600" title={mark.note}>{mark.note} · {isZonalSkinMark(mark.box) ? 'Zonal' : 'Puntual'} · {mark.status === 'validated' ? 'Confirmada' : 'Pendiente'}</span>
-                    </button>
-                    <button type="button" className="admin-focus-ring min-h-11 rounded-lg px-3 text-blue-700"
-                      aria-label={`Editar ${mark.label} en la máscara`} onClick={() => editEvaluation(mark.id)}><Edit2 size={16} /></button>
-                  </div>)}
-                  {(activeTab === 'facial' ? listedFaceMarks : bodyMarks).map((mark, i) => (
-                    <motion.div 
-                      initial={{ opacity: 0, x: -20 }}
-                      animate={{ opacity: 1, x: 0 }}
-                      exit={{ opacity: 0, x: 20 }}
-                      key={mark.id} 
-                      onMouseEnter={() => setHoveredMarkId(mark.id)} onMouseLeave={() => setHoveredMarkId(null)}
-                      className={`flex justify-between items-center p-3 border-b border-gray-50 last:border-0 hover:bg-gray-50 transition-colors ${hoveredMarkId === mark.id ? 'bg-cyan-50 ring-1 ring-inset ring-cyan-400' : ''}`}
-                    >
-                      <div className="flex flex-col min-w-0 flex-1">
-                        <div className="flex items-center gap-1.5 flex-wrap">
-                          <button type="button" onClick={() => initiateEditMark(mark)} onFocus={() => setHoveredMarkId(mark.id)} onBlur={() => setHoveredMarkId(null)}
-                            title={mark.category} className="admin-focus-ring min-h-11 min-w-0 max-w-full break-words [overflow-wrap:anywhere] rounded-lg text-left font-medium text-gray-800 text-sm line-clamp-2">{i + 1}. {mark.category}</button>
-                          {activeTab === 'facial' && (
-                            mark.is3D
-                              ? <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-[#deb887]/20 text-[#b8956a] border border-[#deb887]/30">3D</span>
-                              : <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-500 border border-gray-200">2D</span>
-                          )}
-                          {mark.tercio && (
-                            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-500 truncate max-w-[100px]">{mark.tercio}</span>
-                          )}
-                        </div>
-                        <span className="text-xs text-gray-500 mt-0.5 flex items-center gap-2 flex-wrap">
-                          {mark.notes && <span className="max-w-full truncate font-medium text-gray-600" title={mark.notes}>{mark.notes}</span>}
-                          {mark.severity && <span className="px-1.5 py-0.5 bg-gray-100 rounded text-gray-600 border border-gray-200">{mark.severity}</span>}
-                          {mark.distribution && <span className="text-gray-400 italic">{mark.distribution}</span>}
-                        </span>
-                      </div>
-                      <div className="flex gap-1 shrink-0 ml-2">
-                        <Tooltip content="Editar">
-                          <button 
-                            aria-label={`Editar ${mark.category}`}
-                            onClick={() => initiateEditMark(mark)}
-                            className="admin-focus-ring min-h-11 min-w-11 text-blue-700 hover:bg-blue-50 p-1.5 rounded-lg transition-colors"
-                          >
-                            <Edit2 size={14} />
-                          </button>
-                        </Tooltip>
-                        <Tooltip content="Eliminar">
-                          <button 
-                            aria-label={`Eliminar ${mark.category}`}
-                            onClick={() => activeTab === 'facial' ? removeFaceMark(mark.id) : removeBodyMark(mark.id)}
-                            className="admin-focus-ring min-h-11 min-w-11 text-red-700 hover:bg-red-50 p-1.5 rounded-lg transition-colors"
-                          >
-                            <Trash2 size={14} />
-                          </button>
-                        </Tooltip>
-                      </div>
-                    </motion.div>
-                  ))}
-                </AnimatePresence>
-                {(activeTab === 'facial' ? listedFaceMarks.length + evaluationMarks.length + storedSkinRows.length : bodyMarks.length) === 0 && (
-                  <div className="p-8 text-center text-gray-400 text-sm flex flex-col items-center gap-2">
-                    <Info className="w-8 h-8 opacity-20" />
-                    No hay lesiones marcadas
-                  </div>
-                )}
-              </div>
-            </div>
+            {!(showSkinWorkspace && mapView !== 'generic' && activeTab === 'facial') && <div className="mt-4">{markList}</div>}
           </div>
 
           <Dialog open={parameterDraft !== null} onClose={() => setParameterDraft(null)} labelledBy="clinical-parameters-title">

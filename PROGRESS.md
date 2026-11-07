@@ -1,5 +1,8 @@
 # Progreso de BioSkinTech App
 
+- ✅ 2026-11-06 Examen: máscara recuperada automáticamente.
+- Tarjetas únicas con detalle y filtros sincronizados sin excluir marcas del guardado; tamaño contextual con un paso por gesto. Reapertura del examen recupera máscara y marcas confirmadas sin repetir migración, conservando legacy y aislamiento entre exámenes.
+- QA: 138 pruebas Node y cuatro suites browser sintéticas desktop/móvil con WebGL real; build integrado aprobado y 12 errores TypeScript previos sin nuevos. Biblioteca de 3.269.106 bytes: una descarga, cero subidas; snapshot de reintento 2→1 y mediana sintética de slider 1.479,4→328,2 ms, no latencias de producción. Skills UI/React/composición/UX/QA/navegador/limpieza; sin fotos clínicas, IA, Neon ni R2 reales.
 - ✅ 2026-11-06 Visores: corrección contextual reversible.
 - Etiquetas compactas, listados legibles, controles internos y avisos temporales; Deshacer/Rehacer con historial de 30 pasos en memoria. Originales pendientes resaltados y reubicables, sin proyección forzada ni alteración legacy.
 - QA: 73 pruebas Node y tres suites browser sintéticas desktop/móvil, incluida interacción 3D real, restauración exacta, aviso expirable y 45 nombres largos; comparación alineada con diferencia de 0 px. Cleanup: 0 RAF/canvas y 13 contextos liberados. Build integrado aprobado; TypeScript conserva 12 errores previos. Skills UI/React/composición/UX/validación/navegador; sin fotos clínicas, IA, Neon ni R2 reales.

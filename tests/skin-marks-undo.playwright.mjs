@@ -1,6 +1,7 @@
 /** Una instancia Chrome; solo fotos dibujadas/atlas anatómico público del workspace, cero APIs. */
 import assert from 'node:assert/strict';
 import { pathToFileURL } from 'node:url';
+import { probeSkinSlider } from './helpers/skin-slider-probe.mjs';
 const { chromium } = await import(process.env.PLAYWRIGHT_MODULE ? pathToFileURL(process.env.PLAYWRIGHT_MODULE).href : 'playwright');
 const origin = process.env.LAB_URL ?? 'http://127.0.0.1:5187';
 assert.match(origin, /^http:\/\/(?:127\.0\.0\.1|localhost):\d+$/);
@@ -103,6 +104,11 @@ try {
       .replace(/<script[^>]+src="\/src\/main\.tsx(?:\?[^"]*)?"[^>]*><\/script>/, script) });
   });
   await page.goto(`${origin}/__skin_undo_fixture__`);
+  if (process.env.SKIN_SLIDER_PROBE) {
+    await probeSkinSlider(page, process.env.SKIN_QA_ARTIFACT_PREFIX);
+    await browser.close();
+    process.exit(0);
+  }
   await page.getByRole('heading', { name: 'Máscara del paciente', exact: true }).waitFor();
   await page.waitForFunction(() => window.skinEngines?.some(e => e.rendererRef.current && e.annotationLabelsGroupRef.current?.children.length));
   assert.equal(await page.getByRole('button', { name: 'Deshacer', exact: true }).isEnabled(), false);
@@ -131,8 +137,10 @@ try {
   await page.getByRole('button', { name: 'Deshacer', exact: true }).focus();
   await page.keyboard.press('Control+z');
   assert.deepEqual(await page.evaluate(() => window.marks), baseline);
+  await page.getByRole('button', { name: 'Rehacer', exact: true }).focus();
   await page.keyboard.press('Control+Shift+z');
   assert.deepEqual(await page.evaluate(() => window.marks), moved);
+  await page.getByRole('button', { name: 'Deshacer', exact: true }).focus();
   await page.keyboard.press('Meta+z');
   assert.deepEqual(await page.evaluate(() => window.marks), baseline);
   await page.evaluate(() => {const button=document.createElement('button');button.textContent='Fuera del editor';document.body.append(button);button.focus();});
@@ -142,6 +150,8 @@ try {
   await page.getByRole('button', { name: /^Fotografías/ }).click();
   const photo = page.getByRole('region', { name: 'Fotografía ampliable' });
   await photo.getByRole('button', { name: 'Seleccionar Eritema, validada', exact: true }).click();
+  assert.equal(await page.getByRole('dialog', {name:'Revisar marca',exact:true}).count(),0,'Seleccionar no abre modal');
+  await page.getByRole('button',{name:'Ver detalle',exact:true}).click();
   const dialog = page.getByRole('dialog', { name: 'Revisar marca', exact: true });
   await dialog.getByLabel('Lesión o descripción', { exact: true }).fill('Corrección sintética');
   const corrected = await page.evaluate(() => window.marks);
@@ -166,6 +176,7 @@ try {
   assert.equal(await label.evaluate(el => getComputedStyle(el).fontSize), '11px');
   assert.ok(parseFloat(await label.evaluate(el => getComputedStyle(el).borderRadius)) >= 10);
   await photo.getByRole('button', {name:'Seleccionar Eritema, validada',exact:true}).click();
+  await page.getByRole('button',{name:'Ver detalle',exact:true}).click();
   await dialog.getByRole('button', {name:'Eliminar marca',exact:true}).click();
   await photo.getByRole('status').filter({hasText:'eliminada'}).waitFor();
   assert.equal(await page.evaluate(() => window.marks.length),0);
@@ -253,11 +264,11 @@ try {
   });
   const list=page.getByLabel('Marcas de la evaluación',{exact:true});
   await page.waitForFunction(()=>window.marks.length===45);
-  await list.getByRole('button').first().waitFor();
-  assert.equal(await list.getByRole('button').count(),45);
-  assert.ok(await list.evaluate(node=>node.scrollHeight>node.clientHeight&&node.clientHeight<=225),'Lista acotada con scroll');
+  await list.locator('[data-skin-card]').first().waitFor();
+  assert.equal(await list.locator('[data-skin-card]').count(),45);
+  assert.ok(await list.locator('div.overflow-auto').evaluate(node=>node.scrollHeight>node.clientHeight&&node.clientHeight<=289),'Lista acotada con scroll');
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth+1),false,'Texto largo no expande móvil');
-  await list.getByRole('button').first().click();
+  await list.locator('[data-skin-card]').first().getByRole('button').first().click();
   assert.ok((await dialog.getByLabel('Lesión o descripción',{exact:true}).inputValue()).length>200,'Detalle conserva nombre completo');
   await dialog.getByRole('button',{name:'Cerrar',exact:true}).click();
   await page.evaluate(()=>{

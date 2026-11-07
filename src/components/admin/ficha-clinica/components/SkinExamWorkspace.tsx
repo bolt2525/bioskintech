@@ -3,7 +3,7 @@ import recordsFetch from '../../../../utils/recordsFetch';
 import { SimulationPhotoLibrary } from './SimulationPhotoLibrary';
 import { ensureSimulationPhotos, loadSimulationPhotos } from './simulationPhotos';
 import type { SimulationPhotoCache } from './simulationPhotos';
-import { fromLegacySkinReview, fromPersistedSkinReview, skinReviewSummaries, toPersistedSkinReview } from './skinEvaluation';
+import { fromLegacySkinReview, fromPersistedSkinReview, skinReviewSummaries, toPersistedSkinReview, skinSimulationId as simulationId } from './skinEvaluation';
 import type { EvaluationMark, PersistedSkinReview } from './skinEvaluation';
 import { parseSkinReview } from './skinVisualAI';
 import type { PhotoReference, SkinContext, SkinVisualReviewData } from './skinVisualAI';
@@ -27,13 +27,6 @@ function priorReferences(review: Review): Record<string, PhotoReference> {
   return Object.fromEntries(unique.map((photo, index) => [SIMULATION_PHOTO_SLOTS[index], photo]));
 }
 
-function simulationId(review: Review): number | undefined {
-  let data: unknown = review;
-  if (typeof data === 'string') { try { data = JSON.parse(data); } catch { return undefined; } }
-  return data && typeof data === 'object' && 'version' in data && data.version === 2 && 'simulationId' in data &&
-    typeof data.simulationId === 'number' && Number.isInteger(data.simulationId) && data.simulationId > 0 ? data.simulationId : undefined;
-}
-
 function reviewIntegrity(review: Review): string {
   if (!review) return '';
   let value: unknown = review;
@@ -52,7 +45,7 @@ async function json(response: Response) {
 
 export type SkinExamSave = () => Promise<PersistedSkinReview>;
 export default function SkinExamWorkspace({ recordId, context, review, onPrepared, onDirty, legacyMigration, onCaptureReady, referenceView, viewMode, aiAllowed, active, referenceVisible, onReferencePoints, selectedReferenceId,
-  hoveredMarkId, onHoverMark, visibility, onVisibilityChange, onEvaluationChange, saveController }: {
+  hoveredMarkId, onHoverMark, visibility, onVisibilityChange, onEvaluationChange, saveController, markList, markFilter, markAction }: {
   recordId: number; context: SkinContext; review: Review;
   onPrepared: (review: PersistedSkinReview) => void; onDirty: () => void;
   legacyMigration?: FaceSimIntegration['legacyMigration'];
@@ -65,6 +58,7 @@ export default function SkinExamWorkspace({ recordId, context, review, onPrepare
   onVisibilityChange?: FaceSimIntegration['onVisibilityChange'];
   onEvaluationChange?: (marks: EvaluationMark[]) => void;
   saveController?: { current: SkinExamSave | null };
+  markList?: ReactNode; markFilter?: FaceSimIntegration['markFilter']; markAction?: FaceSimIntegration['markAction'];
 }) {
   const prior = useMemo(() => {
     try { return { refs: priorReferences(review), error: reviewIntegrity(review) }; }
@@ -80,13 +74,14 @@ export default function SkinExamWorkspace({ recordId, context, review, onPrepare
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [ready, setReady] = useState(!simulationId(review));
+  const [restoreAttempt, setRestoreAttempt] = useState(0);
   const [controllerReady, setControllerReady] = useState(false);
   const controller = useRef<FaceSimController | null>(null);
   const cache = useRef<SimulationPhotoCache>(new Map());
   const pending = useRef(new Map<string, { canvas?: HTMLCanvasElement; file?: File; reference: PhotoReference }>());
   const operation = useRef<AbortController | null>(null);
   const revision = useRef(0);
-  const request = useRef<{ payload: string; id: string } | null>(null);
+  const request = useRef<{ revision: number; reviewed: PersistedSkinReview; body: string } | null>(null);
   const savingRequest = useRef(false);
   const onController = useCallback((next: FaceSimController | null) => {
     controller.current = next;
@@ -113,6 +108,7 @@ export default function SkinExamWorkspace({ recordId, context, review, onPrepare
     const task = new AbortController();
     operation.current = task;
     setBusy(true); setError('');
+    setNotice('Restaurando máscara, fotografías y marcas guardadas…');
     (async () => {
       const data = await json(await recordsFetch(`/api/records?action=getFacialSimulation&record_id=${recordId}&id=${id}&scope=physical-exam`, { signal: task.signal }));
       const state = data.state as FacialSimulationState;
@@ -126,11 +122,11 @@ export default function SkinExamWorkspace({ recordId, context, review, onPrepare
       if (!controller.current) throw new Error('El editor no está listo. Cierra y vuelve a abrir la evaluación.');
       for (const item of state.photos) pending.current.set(item.slot, { canvas: images.canvases[item.slot], reference: item.photo });
       await controller.current.restore(state, images.canvases, images.originals);
-      task.signal.throwIfAborted(); setReady(true); setNotice('Evaluación y máscara recuperadas sin reconstrucción.');
+      task.signal.throwIfAborted(); setReady(true); setNotice(state.mask ? 'Evaluación y máscara recuperadas sin reconstrucción.' : 'Evaluación 2D recuperada; esta sesión no contiene máscara 3D.');
     })().catch(e => { if (!task.signal.aborted) setError(e instanceof Error ? e.message : 'No se pudo recuperar la evaluación.'); })
       .finally(() => { if (!task.signal.aborted) setBusy(false); });
     return () => { task.abort(); if (operation.current === task) operation.current = null; };
-  }, [recordId, review, controllerReady]);
+  }, [recordId, review, controllerReady, restoreAttempt]);
   useEffect(() => () => operation.current?.abort(), []);
 
   async function prepare(): Promise<PersistedSkinReview> {
@@ -158,16 +154,18 @@ export default function SkinExamWorkspace({ recordId, context, review, onPrepare
           throw new Error(`Vincula la foto clínica #${expected.id} en la vista ${mark.sourceId} antes de preparar la revisión anterior.`);
         }
       }
-      const refs = await ensureSimulationPhotos(recordId, captures, cache.current, task.signal);
-      if (revision.current !== start) throw new Error('La evaluación cambió durante el guardado. Vuelve a intentarlo.');
-      const reviewed = toPersistedSkinReview(current.getMarks(), refs);
-      const state = await current.snapshot(refs);
-      if (revision.current !== start) throw new Error('La evaluación cambió durante el guardado. Vuelve a intentarlo.');
-      const value = { action: 'saveFacialSimulation', record_id: recordId, scope: 'physical-exam', state };
-      const payload = JSON.stringify(value);
-      if (!request.current || request.current.payload !== payload) request.current = { payload, id: crypto.randomUUID() };
-      const body = JSON.stringify({ ...value, requestId: request.current.id });
-      if (new Blob([body]).size > 4_000_000) throw new Error('La evaluación supera 4 MB y no se guardó ni simplificó.');
+      if (!request.current || request.current.revision !== start) {
+        const refs = await ensureSimulationPhotos(recordId, captures, cache.current, task.signal);
+        if (revision.current !== start) throw new Error('La evaluación cambió durante el guardado. Vuelve a intentarlo.');
+        const reviewed = toPersistedSkinReview(current.getMarks(), refs);
+        const state = await current.snapshot(refs);
+        if (revision.current !== start) throw new Error('La evaluación cambió durante el guardado. Vuelve a intentarlo.');
+        const value = { action: 'saveFacialSimulation', record_id: recordId, scope: 'physical-exam', state };
+        const body = JSON.stringify({ ...value, requestId: crypto.randomUUID() });
+        if (new Blob([body]).size > 4_000_000) throw new Error('La evaluación supera 4 MB y no se guardó ni simplificó.');
+        request.current = { revision: start, reviewed, body };
+      }
+      const { body, reviewed } = request.current;
       const result = await json(await recordsFetch('/api/records', {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body, signal: task.signal,
       }));
@@ -216,12 +214,13 @@ export default function SkinExamWorkspace({ recordId, context, review, onPrepare
     {error && <p role="alert" className="text-sm text-red-700">{error}</p>}
     {prior.error && <p role="alert" className="text-sm text-red-700">{prior.error}</p>}
     {notice && <p role="status" className="text-sm">{notice}</p>}
-    <fieldset disabled={busy || !ready} aria-busy={busy || !ready} className={busy || !ready ? 'pointer-events-none opacity-60' : ''}>
+    {!ready && error && <button type="button" className={button} onClick={() => setRestoreAttempt(n => n + 1)}>Reintentar restauración</button>}
+    <fieldset hidden={!ready} disabled={busy || !ready} aria-busy={busy || !ready} className={busy || !ready ? 'pointer-events-none opacity-60' : ''}>
     <Suspense fallback={<p role="status">Abriendo el editor…</p>}>
       <FaceSimLab integration={{ mode: 'skin-exam', recordId, context, initialMarks, onController, onDirty: changed, onMarksChange: changed,
         referenceView, viewMode, aiAllowed, active, referenceVisible, onReferencePoints, selectedReferenceId,
-        hoveredMarkId, onHoverMark, visibility, onVisibilityChange,
-        legacyMigration, onCaptureReady, photoLibrary: <SimulationPhotoLibrary recordId={recordId} selection="multiple"
+        hoveredMarkId, onHoverMark, visibility, onVisibilityChange, markList, markFilter, markAction, restoring: !ready,
+        legacyMigration: simulationId(review) ? undefined : legacyMigration, onCaptureReady, photoLibrary: <SimulationPhotoLibrary recordId={recordId} selection="multiple"
           onSelect={(photo, file) => importLibraryPhotos([{ photo, file }])} onSelectMany={importLibraryPhotos} /> }} />
     </Suspense>
     </fieldset>

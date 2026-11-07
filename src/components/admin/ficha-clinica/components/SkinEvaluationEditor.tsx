@@ -20,6 +20,9 @@ import SkinPhotoViewport from './SkinPhotoViewport';
 import SkinMarkControls, { SkinMarkLegend } from './SkinMarkControls';
 import { SkinEditHistory } from './skinEditHistory';
 import { placeUntransferredSkinMark, type UntransferredSkinMark } from './skinLegacyMigration';
+import SkinMarkList from './SkinMarkList';
+import { emptySkinFilter, evaluationRow, matchesSkinFilter } from './skinMarkPresentation';
+import type { SkinListFilter } from './skinMarkPresentation';
 
 export type { EvaluationMark } from './skinEvaluation';
 
@@ -47,6 +50,9 @@ export interface SkinEvaluationEditorProps {
   onHoverMark?: (id: string | null) => void;
   visibility?: { marks: boolean; names: boolean };
   onVisibilityChange?: (value: { marks: boolean; names: boolean }) => void;
+  markList?: ReactNode;
+  markFilter?: SkinListFilter;
+  markAction?: { id: string; sequence: number; action: 'delete' | 'detail' };
 }
 
 const button = 'admin-focus-ring min-h-11 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 hover:bg-gray-100 disabled:opacity-50 aria-pressed:border-gold-ink aria-pressed:bg-gold-light aria-pressed:text-gold-ink aria-pressed:ring-1 aria-pressed:ring-gold-ink';
@@ -86,7 +92,7 @@ function pointBox(x: number, y: number): NormalizedBox {
 export default function SkinEvaluationEditor({
   sources, surface, modelData, recordId, value, onChange, context, photoReferences, disabled = false, onRequestPhoto, presentation = 'comparison',
   referenceView, viewMode = 'mask', aiAllowed = true, migration, active = true, referenceVisible = false, onReferencePoints, selectedReferenceId,
-  hoveredMarkId, onHoverMark, visibility, onVisibilityChange,
+  hoveredMarkId, onHoverMark, visibility, onVisibilityChange, markList, markFilter, markAction,
 }: SkinEvaluationEditorProps) {
   const [selectedId, setSelectedId] = useState('');
   const source = sources.find(s => s.id === selectedId) ?? sources[0];
@@ -117,6 +123,9 @@ export default function SkinEvaluationEditor({
   const [comparisonSide, setComparisonSide] = useState<'mask' | 'reference'>('mask');
   const [lesion, setLesion] = useState('');
   const [distribution, setDistribution] = useState<'point' | 'zone'>('point');
+  const [localFilter, setLocalFilter] = useState(emptySkinFilter);
+  const filter = markFilter ?? localFilter;
+  const resizeGesture = useRef<string | null>(null);
   const history = useRef(new SkinEditHistory());
   const draftHistory = useRef(new SkinEditHistory());
   const [, refreshHistory] = useState(0);
@@ -165,15 +174,28 @@ export default function SkinEvaluationEditor({
       }
     }
   }, [active, selectedReferenceId]);
-  function updateMarks(marks: EvaluationMark[]) {
+  function updateMarks(marks: EvaluationMark[], gesture = false) {
     const removed = currentMarks.current.filter(mark => !marks.some(next => next.id === mark.id));
     setDeletionNotice(removed.length ? { text: removed.length === 1 ? `Marca «${skinMarkLabel(removed[0].label)}» eliminada.` : `${removed.length} marcas eliminadas.`,
       sequence: ++deletionSequence.current } : null);
-    editingHistory.push(currentMarks.current, marks);
+    if (gesture && resizeGesture.current === selectedMark) editingHistory.replace(marks);
+    else editingHistory.push(currentMarks.current, marks);
+    if (gesture) resizeGesture.current = selectedMark;
+    else resizeGesture.current = null;
+    currentMarks.current = marks;
     if (migrationDraft) setMigrationDraft(marks);
     else onChange(marks);
     refreshHistory(n => n + 1);
   }
+  useEffect(() => {
+    if (!markAction) return;
+    if (markAction.action === 'detail') {
+      const mark = currentMarks.current.find(item => item.id === markAction.id);
+      if (mark) { setSelectedMark(mark.id); setSelectedId(mark.sourceId); setDetailOpen(true); }
+    } else if (!disabled) updateMarks(currentMarks.current.filter(mark => mark.id !== markAction.id));
+    // Comando explícito de la lista compartida; no depende de la visibilidad.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [markAction]);
   function undo() {
     if (disabled) return;
     const previous = editingHistory.undo();
@@ -215,6 +237,7 @@ export default function SkinEvaluationEditor({
     setGroup([]); setIncluded([]); setSelectedId(''); setSelectedMark(null); setError(''); setNotice('');
     history.current.clear(); draftHistory.current.clear(); migrationShown.current = false;
     setDeletionNotice(null);
+    setLocalFilter(emptySkinFilter); resizeGesture.current = null;
     setMigrationDraft(null); setMigrationOpen(false); setUntransferredId(null); setRelocating(false); setDetailOpen(false); setLocalHover(null); hoverCallback.current?.(null);
   }, [recordId]);
   useLayoutEffect(() => {
@@ -314,7 +337,7 @@ export default function SkinEvaluationEditor({
       category: Object.entries(LESION_CATALOG).find(([, name]) => name === label)?.[0] ?? 'other',
       label, note: placedAnchor ? skinZoneAt(placedAnchor) ?? '' : '', box: region,
       status: 'pending', source: { provider: 'manual' }, ...(placedAnchor ? { anchor: placedAnchor } : {}) };
-    updateMarks([...latest.current, mark]); setSelectedMark(mark.id); setDetailOpen(true);
+    updateMarks([...latest.current, mark]); setSelectedMark(mark.id); setDetailOpen(false);
   }
   function on3D(marker: Marker3D) {
     if (!surface || !marker.isAddPointMode) return;
@@ -347,7 +370,7 @@ export default function SkinEvaluationEditor({
     moveMark(mark, pointBox(point.x, point.y), photo, anchor);
     setError('');
   }
-  function edit(id: string, patch: Partial<EvaluationMark>) {
+  function edit(id: string, patch: Partial<EvaluationMark>, resizing = false) {
     updateMarks(currentMarks.current.map(mark => {
       if (mark.id !== id) return mark;
       const original = mark.source.provider === 'edited' ? mark.source.original : mark.source;
@@ -355,8 +378,8 @@ export default function SkinEvaluationEditor({
       return { ...mark, ...patch, status: 'pending', reviewedAt: undefined,
         source: original.provider === 'google-gemini' || mark.status === 'validated' || mark.source.provider === 'edited'
           ? { provider: 'edited', original } : original,
-        ...(patch.box ? { anchor: markPhoto && anchorForPhoto(patch.box, markPhoto, surface) } : {}) };
-    }));
+        ...(patch.box && !resizing ? { anchor: markPhoto && anchorForPhoto(patch.box, markPhoto, surface) } : {}) };
+    }), resizing);
   }
   async function analyze() {
     if (!aiAllowed || !source || !image || !validBox(crop) || !status?.enabled || status.remainingUsd <= 0 || !consent || busy || disabled) return;
@@ -400,22 +423,23 @@ export default function SkinEvaluationEditor({
       if (task.current()) { setError(e instanceof Error ? e.message : 'No se pudo analizar.'); setStatusVersion(v => v + 1); }
     } finally { if (task.current()) setBusy(false); }
   }
-  const visible = useMemo(() => active && source ? activeMarks.flatMap(mark => {
+  const filteredMarks = useMemo(() => activeMarks.filter(mark => matchesSkinFilter(evaluationRow(mark), filter)), [activeMarks, filter]);
+  const visible = useMemo(() => active && source ? filteredMarks.flatMap(mark => {
     if (mark.sourceId === source.id) return [{ mark, box: mark.box, projected: false }];
     const observation = mark.observations?.find(item => item.sourceId === source.id);
     if (observation) return [{ mark, box: observation.box, projected: false }];
     const point = mark.anchor && photoForAnchor(mark.anchor, source, surface);
     return point ? [{ mark, box: pointBox(point.x, point.y), projected: true }] : [];
-  }) : [], [active, source, activeMarks, surface]);
-  const points = useMemo(() => active && surface ? skinDisplayPoints(activeMarks, sources, surface) : [],
-    [active, surface, activeMarks, sources]);
+  }) : [], [active, source, filteredMarks, surface]);
+  const points = useMemo(() => active && surface ? skinDisplayPoints(filteredMarks, sources, surface) : [],
+    [active, surface, filteredMarks, sources]);
   const labels = useMemo(() => displayed.marks && displayed.names ? points.map(point => ({
     id: point.id, position: { x: point.x, y: point.y + .07, z: point.z },
     anchor: { x: point.x, y: point.y, z: point.z },
     text: skinMarkLabel(point.name ?? ''), color: '#ffffff',
   })) : [], [points, displayed.marks, displayed.names]);
-  const referencePoints = useMemo(() => referenceVisible && surface ? skinDisplayPoints(activeMarks, sources, surface, 'reference') : [],
-    [referenceVisible, surface, activeMarks, sources]);
+  const referencePoints = useMemo(() => referenceVisible && surface ? skinDisplayPoints(filteredMarks, sources, surface, 'reference') : [],
+    [referenceVisible, surface, filteredMarks, sources]);
   useEffect(() => { onReferencePoints?.(referencePoints); }, [onReferencePoints, referencePoints]);
   const controls = <SkinMarkControls value={displayed} onChange={changeVisibility}
     undo={{ disabled: disabled || !editingHistory.size, onClick: undo }}
@@ -440,7 +464,7 @@ export default function SkinEvaluationEditor({
       pointMode={disabled || (migrationOpen && !relocating) ? 'none' : 'add'} anatomicalOverlay={overlay}
       onMarkerPlaced={on3D} onEditablePointClicked={id => {
         setSelectedMark(id);
-        if (!migrationOpen) setDetailOpen(true);
+        setDetailOpen(false);
         const mark = currentMarks.current.find(item => item.id === id);
         if (mark && sources.some(item => item.id === mark.sourceId)) selectPhoto(mark.sourceId);
       }} labInteraction selectedPointId={selectedMark ?? undefined} skipConfirmation cameraPreset="face-surface"
@@ -459,7 +483,7 @@ export default function SkinEvaluationEditor({
     <div className="min-w-0 space-y-2"><SkinPhotoViewport source={source} surface={surface} showZones={showZones} marks={displayed.marks ? visible : []} selectedMark={selectedMark}
       hoveredMark={hovered} onHover={hoverMark} showNames={displayed.names}
       controls={controls} legend={legend}
-      onToggleZones={() => setShowZones(current => !current)} disabled={disabled} onChoose={(x, y) => chooseRegion(pointBox(x, y))} onSelect={id => { setSelectedMark(id); if (!migrationOpen) setDetailOpen(true); }} />
+      onToggleZones={() => setShowZones(current => !current)} disabled={disabled} onChoose={(x, y) => chooseRegion(pointBox(x, y))} onSelect={id => { setSelectedMark(id); setDetailOpen(false); }} />
     <button type="button" className={button} disabled={disabled} onClick={() => chooseRegion(pointBox(.5, .5))}>
       {interaction === 'manual' ? 'Añadir marca en el centro' : interaction === 'observation' ? 'Vincular observación central' : 'Seleccionar zona central'}</button>
     {value.some(mark => mark.id === selectedMark) && !visible.some(item => item.mark.id === selectedMark) &&
@@ -572,14 +596,28 @@ export default function SkinEvaluationEditor({
         updateMarks(latest.current.filter(m => !group.includes(m.id) || m.status === 'validated')); setGroup([]); setIncluded([]);
       }}>Descartar pendientes del grupo</button>
     </div>}
-    {!migrationOpen && !!value.length && <div className="grid max-h-56 grid-cols-1 gap-2 overflow-auto overscroll-contain rounded-xl border border-gray-200 p-3 sm:grid-cols-2 lg:grid-cols-3" aria-label="Marcas de la evaluación">
-      {value.map(mark => <button key={mark.id} type="button" className={`${button} min-w-0 text-left`} title={`${mark.label} · ${mark.note}`}
-        onMouseEnter={() => hoverMark(mark.id)} onMouseLeave={() => hoverMark(null)} onFocus={() => hoverMark(mark.id)} onBlur={() => hoverMark(null)}
-        style={hovered === mark.id ? { boxShadow: '0 0 0 2px #22d3ee' } : undefined}
-        aria-pressed={selectedMark === mark.id} onClick={() => { setSelectedMark(mark.id); selectPhoto(mark.sourceId); setDetailOpen(true); }}>
-        <span className={`mr-2 inline-block h-2 w-2 rounded-full ${mark.status === 'validated' ? 'bg-cyan-500' : 'bg-purple-400'}`} />
-        <span className="break-words [overflow-wrap:anywhere] line-clamp-2">{mark.label}</span><span className="mt-1 block text-xs text-gray-600">{isZonalSkinMark(mark.box) ? 'Zonal · ' : 'Puntual · '}{mark.status === 'validated' ? 'Confirmada' : 'Por revisar'} · Ver detalle</span></button>)}
+    {!migrationOpen && filteredMarks.find(mark => mark.id === selectedMark) && !detailOpen && <div aria-label="Control contextual de la marca" className="flex flex-wrap items-center gap-3 rounded-xl border border-cyan-600 bg-cyan-50 p-3">
+      {filteredMarks.filter(mark => mark.id === selectedMark).map(mark => <div key={mark.id} className="w-full space-y-2">
+        <p className="text-sm font-semibold">{mark.label} · {mark.status === 'validated' ? 'Confirmada' : 'Por revisar'}</p>
+        <label className="block text-sm">Tamaño de la marca: {Math.round(Math.max(mark.box.width, mark.box.height) * 100)} %
+          <input aria-label="Tamaño de la marca" type="range" className="admin-focus-ring w-full" min={isZonalSkinMark(mark.box) ? .07 : .01}
+            max={isZonalSkinMark(mark.box) ? .6 : .06} step=".01" disabled={disabled} value={Math.max(mark.box.width, mark.box.height)}
+            onChange={event => edit(mark.id, { box: resizeSkinBox(mark.box, Number(event.target.value)) }, true)}
+            onPointerUp={() => { resizeGesture.current = null; }} onKeyUp={() => { resizeGesture.current = null; }} onBlur={() => { resizeGesture.current = null; }} />
+        </label>
+        <div className="flex flex-wrap gap-2">
+          <button type="button" className={button} onClick={() => setDetailOpen(true)}>Ver detalle</button>
+          <button type="button" className={button} disabled={disabled} onClick={() => { setRelocating(true); }}>Reubicar marca</button>
+          <button type="button" className={button} disabled={disabled || !mark.label.trim() || !validBox(mark.box)}
+            onClick={() => updateMarks(validateEvaluationGroup(currentMarks.current, [mark.id]))}>Confirmar</button>
+          <button type="button" className={`${button} !text-red-700`} disabled={disabled} onClick={() => updateMarks(currentMarks.current.filter(item => item.id !== mark.id))}>Eliminar marca</button>
+        </div>
+      </div>)}
     </div>}
+    {!migrationOpen && (markList ?? <SkinMarkList rows={value.map(mark => ({ ...evaluationRow(mark),
+      detail: () => { setSelectedMark(mark.id); selectPhoto(mark.sourceId); setDetailOpen(true); },
+      remove: () => updateMarks(currentMarks.current.filter(item => item.id !== mark.id)) }))}
+      filter={filter} onFilter={setLocalFilter} catalog={Object.values(LESION_CATALOG)} hovered={hovered} onHover={hoverMark} disabled={disabled} />)}
     {detailOpen && !migrationOpen && <Dialog open={!!activeMarks.find(mark => mark.id === selectedMark)} onClose={() => setDetailOpen(false)} labelledBy="skin-mark-title">
     <div className="max-h-[85dvh] w-[min(30rem,calc(100vw-2rem))] overflow-auto rounded-2xl bg-white p-5 text-gray-900">
     <h3 id="skin-mark-title" className="mb-4 text-lg font-semibold">Revisar marca</h3>
@@ -604,7 +642,8 @@ export default function SkinEvaluationEditor({
         <input aria-label="Tamaño de la marca" type="range" className="w-full" min={isZonalSkinMark(mark.box) ? .07 : .01}
           max={isZonalSkinMark(mark.box) ? .6 : .06} step=".01" disabled={disabled}
           value={Math.max(mark.box.width, mark.box.height)}
-          onChange={event => edit(mark.id, { box: resizeSkinBox(mark.box, Number(event.target.value)) })} /></label>
+          onChange={event => edit(mark.id, { box: resizeSkinBox(mark.box, Number(event.target.value)) }, true)}
+          onPointerUp={() => { resizeGesture.current = null; }} onKeyUp={() => { resizeGesture.current = null; }} onBlur={() => { resizeGesture.current = null; }} /></label>
       {isZonalSkinMark(mark.box) && <p className="text-xs text-gray-500">Área aproximada de referencia, no un contorno clínico exacto. Solo se proyecta donde hay correspondencia fiable.</p>}
       <details><summary className="admin-focus-ring cursor-pointer text-sm text-gray-600">Ajustar área de la marca</summary>
       <fieldset disabled={disabled} className="mt-2 grid grid-cols-2 gap-2"><legend className="text-sm">Región en foto original (%)</legend>
