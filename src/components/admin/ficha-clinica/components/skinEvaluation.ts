@@ -41,6 +41,12 @@ export function isZonalSkinMark(box: NormalizedBox): boolean {
   return box.width > .06 || box.height > .06;
 }
 
+/** Resumen visual; el texto íntegro permanece en la lista y el nombre accesible. */
+export function skinMarkLabel(label: string): string {
+  const text = label.trim();
+  return text.length > 28 ? `${text.slice(0, 27)}…` : text;
+}
+
 export function resizeSkinBox(box: NormalizedBox, width: number, height = width): NormalizedBox {
   const w = Math.max(.01, Math.min(1, width)), h = Math.max(.01, Math.min(1, height));
   return { x: Math.max(0, Math.min(1 - w, box.x + box.width / 2 - w / 2)),
@@ -72,7 +78,7 @@ export function skinDisplayPoints(marks: readonly EvaluationMark[], sources: rea
     const length = Math.hypot(normal.x, normal.y, normal.z);
     return [{ id: mark.id, type: 'free' as const, lineIds: [], ...position, size: isZonalSkinMark(mark.box) ? 1 : mark.box.width / .04,
       color: mark.status === 'validated' ? COLORS.skinValidated : COLORS.skinPending,
-      name: `${mark.label}${mark.status === 'pending' ? ' · Pendiente' : ''}`,
+      name: mark.label,
       ...(area.length === 4 && length > 0 ? { area: { radius: Math.max(...area.map(q =>
         Math.hypot(q.x - position.x, q.y - position.y, q.z - position.z))),
       normal: { x: normal.x / length, y: normal.y / length, z: normal.z / length } } } : {}) }];

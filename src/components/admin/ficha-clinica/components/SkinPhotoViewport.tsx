@@ -6,17 +6,21 @@ import type { PersonalSurface } from '../../../../lab/faceSim/faceTransfer';
 import type { SkinPhotoSource } from '../../../../lab/faceSim/skinMultiView';
 import type { EvaluationMark } from './skinEvaluation';
 import { skinRegionCells } from './skinAnatomy';
-import { isZonalSkinMark, visibleSkinTriangles } from './skinEvaluation';
+import { isZonalSkinMark, visibleSkinTriangles, skinMarkLabel } from './skinEvaluation';
 import { validBox, type NormalizedBox } from './skinVisualAI';
 import { COLORS } from '../../../../constants/theme';
+import { SkinMarkLegend } from './SkinMarkControls';
+import type { ReactNode } from 'react';
 
 const button = 'admin-focus-ring inline-flex min-h-11 items-center justify-center gap-1 rounded-lg border px-3 py-2 text-sm disabled:opacity-40';
-export default function SkinPhotoViewport({ source, surface, showZones, onToggleZones, marks, selectedMark, disabled, onChoose, onSelect, hoveredMark, onHover, showNames = true }: {
+export default function SkinPhotoViewport({ source, surface, showZones, onToggleZones, marks, selectedMark, disabled, onChoose, onSelect, hoveredMark, onHover, showNames = true, controls, legend }: {
   source: SkinPhotoSource; surface?: PersonalSurface; showZones: boolean;
   onToggleZones: () => void;
   marks: { mark: EvaluationMark; box: NormalizedBox; projected: boolean }[];
   selectedMark: string | null; disabled: boolean; onChoose: (x: number, y: number) => void; onSelect: (id: string) => void;
   hoveredMark?: string | null; onHover?: (id: string | null) => void; showNames?: boolean;
+  controls?: ReactNode;
+  legend?: ReactNode;
 }) {
   const canvas = useRef<HTMLCanvasElement>(null);
   const viewport = useRef<HTMLDivElement>(null);
@@ -44,6 +48,7 @@ export default function SkinPhotoViewport({ source, surface, showZones, onToggle
   return <section aria-label="Fotografía ampliable" className="min-w-0 overflow-hidden rounded-xl border border-gray-200 bg-white">
     <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-100 p-2">
       <span className="px-2 text-sm font-medium">{source.label}</span>
+      {controls}
       <div className="flex flex-wrap items-center gap-1" role="group" aria-label="Ampliación de fotografía">
         <button type="button" className={`${button} ${showZones ? 'border-gold-ink bg-gold-light text-gold-ink' : 'border-gray-200'}`}
           aria-label={showZones ? 'Ocultar zonas en foto' : 'Mostrar zonas en foto'} aria-pressed={showZones}
@@ -86,6 +91,7 @@ export default function SkinPhotoViewport({ source, surface, showZones, onToggle
         {marks.filter(item => validBox(item.box)).map(({ mark, box, projected }) => <button key={mark.id} type="button"
           aria-label={`Seleccionar ${mark.label}, ${mark.status === 'validated' ? 'validada' : 'pendiente'}${projected ? ', correspondencia estimada' : ''}`}
           aria-pressed={selectedMark === mark.id} onClick={() => onSelect(mark.id)}
+          title={mark.label}
           onMouseEnter={() => onHover?.(mark.id)} onMouseLeave={() => onHover?.(null)}
           onFocus={() => onHover?.(mark.id)} onBlur={() => onHover?.(null)}
           className={`admin-focus-ring absolute z-10 rounded-full border-[3px] bg-white ${selectedMark === mark.id || hoveredMark === mark.id ? 'ring-4 ring-white/70' : ''} ${pan ? 'pointer-events-none' : ''}`}
@@ -93,7 +99,7 @@ export default function SkinPhotoViewport({ source, surface, showZones, onToggle
             borderColor: mark.status === 'validated' ? COLORS.skinValidated : COLORS.skinPending,
             boxShadow: `0 0 0 2px ${COLORS.skinOutline}, 0 0 12px ${mark.status === 'validated' ? COLORS.skinValidated : COLORS.skinPending}`,
             width: Math.max(12, Math.min(24, mark.box.width * 450)), height: Math.max(12, Math.min(24, mark.box.width * 450)), transform: 'translate(-50%, -50%)' }}>
-            {showNames && <span className="pointer-events-none absolute bottom-full left-1/2 mb-2 w-max max-w-52 -translate-x-1/2 break-words rounded border border-white/40 bg-slate-950/95 px-2 py-1 text-xs font-semibold text-white">{mark.label}{mark.status === 'pending' ? ' · Pendiente' : ''}</span>}
+            {showNames && <span className="pointer-events-none absolute bottom-full left-1/2 mb-2 w-max max-w-40 -translate-x-1/2 truncate rounded-xl border border-slate-400/60 bg-slate-800/95 px-2 py-1 text-[11px] font-medium leading-tight text-white shadow-sm">{skinMarkLabel(mark.label)}</span>}
           </button>)}
         {marks.filter(item => !item.projected && validBox(item.box) && isZonalSkinMark(item.box)).map(({ mark, box }) =>
           <span key={mark.id} aria-hidden="true" className={`pointer-events-none absolute rounded-[50%] border-2 motion-safe:animate-pulse ${mark.status === 'pending' ? 'border-dashed' : ''}`}
@@ -104,5 +110,6 @@ export default function SkinPhotoViewport({ source, surface, showZones, onToggle
       </div>
     </div>
     <p className="px-3 py-2 text-xs text-gray-500">{pan ? 'Arrastra para recorrer la foto. Desactiva la mano para marcar.' : 'Pulsa sobre la foto para marcar. El zoom no cambia las coordenadas guardadas.'}</p>
+    {legend ?? <SkinMarkLegend />}
   </section>;
 }

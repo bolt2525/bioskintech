@@ -101,7 +101,8 @@ function load() {
     dialogs: [],
     querySelectorAll() { return this.dialogs; },
     createElement() {
-      return { width: 0, height: 0, getContext: () => ({ measureText: text => ({ width: text.length * 15 }), fillRect() {}, fillText() {} }) };
+      return { width: 0, height: 0, getContext: () => ({ measureText: text => ({ width: text.length * 15 }),
+        beginPath() {}, roundRect() {}, fill() {}, stroke() {}, fillRect() {}, fillText() {} }) };
     },
   };
   const sandbox = {

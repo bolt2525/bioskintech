@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useSearchParams } from 'react-router-dom';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion } from 'framer-motion';
 import recordsFetch from '../../../../utils/recordsFetch';
 import { useAdminNav } from '../../../../hooks/useAdminNav';
 import { 
@@ -62,11 +62,8 @@ const TabButton: React.FC<TabButtonProps> = ({ id, label, icon: Icon, active, on
     }`}
   >
     {active && (
-      <motion.div
-        layoutId="activeTab"
+      <div
         className="absolute inset-0 rounded-t-lg border-b-2 border-emerald-800 bg-emerald-950/5"
-        initial={false}
-        transition={{ type: "spring", stiffness: 500, damping: 30 }}
       />
     )}
     <span className="relative z-10 flex items-center gap-2">
@@ -467,14 +464,7 @@ export default function ClinicalRecordManager() {
               </motion.div>
             )}
             <React.Suspense fallback={<div className="min-h-40 flex items-center justify-center text-sm text-gray-500" role="status">Cargando sección clínica...</div>}>
-            <AnimatePresence mode="wait">
-              <motion.div
-                key={activeTab}
-                initial={{ opacity: 0, x: 10 }}
-                animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: -10 }}
-                transition={{ duration: 0.2 }}
-              >
+              <div key={activeTab}>
                 {activeTab === 'history' && (
                   <HistoryTab
                     recordId={recordData?.recordId}
@@ -562,8 +552,7 @@ export default function ClinicalRecordManager() {
                     patientName={patient ? `${patient.first_name} ${patient.last_name}` : ''}
                   />
                 )}
-              </motion.div>
-            </AnimatePresence>
+              </div>
             </React.Suspense>
           </div>
         </div>

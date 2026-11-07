@@ -115,7 +115,9 @@ try {
   await page.getByText('Revisión del último grupo de propuestas', { exact: true }).waitFor();
   const pendingDot=page.getByRole('button',{name:'Seleccionar Uno, pendiente',exact:true});
   assert.equal(await pendingDot.evaluate(node=>getComputedStyle(node).borderColor),'rgb(192, 132, 252)');
-  assert.match(await pendingDot.innerText(),/Pendiente/,'Estado legible sin depender solo del color');
+  assert.equal(await pendingDot.innerText(),'Uno','Nombre compacto sin repetir el estado');
+  assert.match(await pendingDot.getAttribute('aria-label'),/pendiente/,'Estado íntegro en nombre accesible');
+  assert.ok(await page.getByLabel('Estado de las marcas', {exact:true}).filter({hasText:'Por revisar'}).count(), 'Leyenda textual accesible');
   assert.equal(sent.length, 1); assert.equal(sent[0].temporary, true); assert.equal('recordId' in sent[0], false);
   assert.equal(sent[0].consent, true);
   const pixel = await page.evaluate(async base64 => {

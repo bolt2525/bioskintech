@@ -52,7 +52,7 @@ async function json(response: Response) {
 
 export type SkinExamSave = () => Promise<PersistedSkinReview>;
 export default function SkinExamWorkspace({ recordId, context, review, onPrepared, onDirty, legacyMigration, onCaptureReady, referenceView, viewMode, aiAllowed, active, referenceVisible, onReferencePoints, selectedReferenceId,
-  hoveredMarkId, onHoverMark, visibility, onEvaluationChange, saveController }: {
+  hoveredMarkId, onHoverMark, visibility, onVisibilityChange, onEvaluationChange, saveController }: {
   recordId: number; context: SkinContext; review: Review;
   onPrepared: (review: PersistedSkinReview) => void; onDirty: () => void;
   legacyMigration?: FaceSimIntegration['legacyMigration'];
@@ -62,6 +62,7 @@ export default function SkinExamWorkspace({ recordId, context, review, onPrepare
   selectedReferenceId?: string;
   hoveredMarkId?: string | null; onHoverMark?: (id: string | null) => void;
   visibility?: { marks: boolean; names: boolean };
+  onVisibilityChange?: FaceSimIntegration['onVisibilityChange'];
   onEvaluationChange?: (marks: EvaluationMark[]) => void;
   saveController?: { current: SkinExamSave | null };
 }) {
@@ -219,7 +220,7 @@ export default function SkinExamWorkspace({ recordId, context, review, onPrepare
     <Suspense fallback={<p role="status">Abriendo el editor…</p>}>
       <FaceSimLab integration={{ mode: 'skin-exam', recordId, context, initialMarks, onController, onDirty: changed, onMarksChange: changed,
         referenceView, viewMode, aiAllowed, active, referenceVisible, onReferencePoints, selectedReferenceId,
-        hoveredMarkId, onHoverMark, visibility,
+        hoveredMarkId, onHoverMark, visibility, onVisibilityChange,
         legacyMigration, onCaptureReady, photoLibrary: <SimulationPhotoLibrary recordId={recordId} selection="multiple"
           onSelect={(photo, file) => importLibraryPhotos([{ photo, file }])} onSelectMany={importLibraryPhotos} /> }} />
     </Suspense>

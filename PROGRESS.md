@@ -1,5 +1,10 @@
 # Progreso de BioSkinTech App
 
+- ✅ 2026-11-06 Visores: corrección contextual reversible.
+- Etiquetas compactas, listados legibles, controles internos y avisos temporales; Deshacer/Rehacer con historial de 30 pasos en memoria. Originales pendientes resaltados y reubicables, sin proyección forzada ni alteración legacy.
+- QA: 73 pruebas Node y tres suites browser sintéticas desktop/móvil, incluida interacción 3D real, restauración exacta, aviso expirable y 45 nombres largos; comparación alineada con diferencia de 0 px. Cleanup: 0 RAF/canvas y 13 contextos liberados. Build integrado aprobado; TypeScript conserva 12 errores previos. Skills UI/React/composición/UX/validación/navegador; sin fotos clínicas, IA, Neon ni R2 reales.
+- ✅ 2026-11-06 Navegación clínica sin espera.
+- Cambio de pestaña directo, sin animaciones secuenciales; prueba sintética desktop/móvil mide 422–479 ms antes y menos de 100 ms después, conservando URL, permisos, teclado, selección y desmontaje del bucle de render. No representa el coste de modelos reales; sin API, fotos clínicas ni infraestructura.
 - ✅ 2026-11-06 Frente y marcas recalculadas.
 - Frente reajusta toda la banda superior, con arrastre y contracción revisada; sienes buscan bordes coherentes también hacia dentro. Guía explica frontal, frontal+oblicua y referencias bilaterales sin garantizar precisión.
 - Marcas cian/violeta con centro blanco, aro oscuro, tamaño legible bajo zoom y áreas rellenas pulsantes; nombres completos con oclusión por ancla. QA: 66 pruebas Node y tres recorridos sintéticos desktop/móvil, incluida medición de píxeles WebGL; sin fotos clínicas, proveedor real ni cambios de infraestructura.

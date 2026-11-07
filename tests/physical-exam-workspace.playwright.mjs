@@ -20,7 +20,7 @@ try {
     if (url.pathname.endsWith('/Clinical3DViewer.tsx') && !url.searchParams.has('qa-original')) return route.fulfill({ contentType: 'application/javascript', body: `
       import React from '/node_modules/.vite/deps/react.js';
       ${process.env.QA_REAL_VIEWERS ? "import ActualViewer from '/src/components/admin/ficha-clinica/components/Clinical3DViewer.tsx?qa-original';" : ''}
-      export default function Viewer(props){const {markers=[],modelData}=props;return React.createElement(React.Fragment,null,
+      export default function Viewer(props){const {markers=[],modelData}=props;if(!modelData)window.testGenericMarkers=markers;return React.createElement(React.Fragment,null,
         React.createElement('output',{'data-testid':modelData?'mask-preview':'generic-mark-count','data-readonly':!!props.readOnly},String(markers.length)),
         React.createElement('output',{'data-testid':modelData?'mask-point-count':'reference-point-count',
           'data-highlighted':props.highlightedPointIds?.join(',')??'','data-showmarks':props.showEditablePoints!==false,
@@ -93,6 +93,20 @@ try {
   await page.goto(`${origin}/__physical_workspace_fixture__`);
   await page.getByTestId('generic-mark-count').waitFor();
   assert.equal(await page.getByTestId('generic-mark-count').isVisible(), true, 'El modelo aparece al entrar');
+  const originalMarkers = await page.evaluate(() => window.testGenericMarkers);
+  await page.getByRole('button',{name:'Eliminar Lesión antigua',exact:true}).click();
+  assert.equal(await page.getByTestId('generic-mark-count').innerText(),'0');
+  await page.getByRole('button',{name:'Deshacer eliminación',exact:true}).click();
+  assert.deepEqual(await page.evaluate(() => window.testGenericMarkers),originalMarkers);
+  await page.getByRole('button',{name:'Rehacer',exact:true}).click();
+  assert.equal(await page.getByTestId('generic-mark-count').innerText(),'0');
+  await page.getByRole('button',{name:'Deshacer',exact:true}).focus();
+  await page.keyboard.press('Control+z');
+  assert.deepEqual(await page.evaluate(() => window.testGenericMarkers),originalMarkers);
+  await page.keyboard.press('Control+Shift+z');
+  assert.equal(await page.getByTestId('generic-mark-count').innerText(),'0');
+  await page.keyboard.press('Meta+z');
+  assert.deepEqual(await page.evaluate(() => window.testGenericMarkers),originalMarkers);
   const viewerBounds = await page.getByRole('region', {name:'Visor de evaluación facial'}).boundingBox();
   assert.ok(viewerBounds.height > 100, 'El contenedor no comprime el visor');
   await page.getByRole('button', {name:'Evaluar parámetros',exact:true}).click();
@@ -141,6 +155,10 @@ try {
   await page.getByRole('dialog', { name: 'Elegir fotografías', exact: true }).waitFor();
   await page.evaluate(() => window.restoreSyntheticMask());
   await page.getByRole('group', { name: 'Modo de visor facial' }).waitFor();
+  const transferReview = page.getByRole('dialog', {name:'Compara y confirma las ubicaciones',exact:true});
+  await transferReview.waitFor();
+  assert.ok(await transferReview.getByRole('button',{name:'Seleccionar original old-face',exact:true}).isVisible(),'El original no trasladado mantiene identificación');
+  await transferReview.getByRole('button',{name:'Cancelar revisión',exact:true}).click();
   await page.getByRole('button', { name: 'Máscara del paciente', exact: true }).click();
   assert.equal(await page.getByRole('button', { name: 'Máscara del paciente', exact: true }).getAttribute('aria-pressed'), 'true');
   assert.equal(await page.getByTestId('generic-mark-count').count(), 0);
@@ -168,6 +186,10 @@ try {
     const canvases=page.locator('canvas:visible');
     const a=await canvases.nth(0).boundingBox(),b=await canvases.nth(1).boundingBox();
     assert.ok(Math.abs(a.y-b.y)<2 && Math.abs(a.height-b.height)<2,'Ambos visores reales quedan alineados');
+    const headers=await workspace.locator('[data-skin-viewer-header]').evaluateAll(nodes=>nodes.map(node=>({y:node.getBoundingClientRect().y,height:node.getBoundingClientRect().height})));
+    assert.equal(headers.length,2);
+    assert.ok(Math.abs(headers[0].y-headers[1].y)<=2&&Math.abs(headers[0].height-headers[1].height)<=2,'Cabeceras reales alineadas incluso con zonas activas');
+    console.log(JSON.stringify({realComparison:{canvasHeight:a.height,canvasYDifference:Math.abs(a.y-b.y),headerHeight:headers[0].height,headerYDifference:Math.abs(headers[0].y-headers[1].y)}}));
     const png=await canvases.nth(0).screenshot(process.env.QA_SCREENSHOT_DIR ? {path:`${process.env.QA_SCREENSHOT_DIR}\\marcas-contraste.png`} : {});
     const colorCounts=await page.evaluate(async bytes=>{
       const image=await createImageBitmap(new Blob([new Uint8Array(bytes)],{type:'image/png'}));
@@ -209,16 +231,17 @@ try {
   await markDialog.getByRole('textbox',{name:'Zona y observaciones',exact:true}).waitFor();
   assert.equal(await markDialog.getByRole('button',{name:/Validar región|Validar ubicación/}).count(),0);
   await markDialog.getByRole('button',{name:'Confirmar',exact:true}).click();
-  const rows=page.locator('div.max-h-48');
-  await rows.getByRole('button',{name:'Editar Lesión nueva sintética en la máscara',exact:true}).waitFor();
+  const rows=editor.getByLabel('Marcas de la evaluación',{exact:true});
+  await rows.getByRole('button',{name:/Lesión nueva sintética.*Confirmada/}).waitFor();
+  assert.equal(await page.getByRole('button',{name:'Editar Lesión nueva sintética en la máscara',exact:true}).count(),0,'Lista única; no duplicar chips de la evaluación bajo el visor');
   await editor.getByRole('button',{name:/Lesión nueva sintética.*Confirmada/}).hover();
   await page.waitForFunction(()=>document.querySelector('[data-testid=mask-point-count]')?.dataset.highlighted);
-  await page.getByRole('button',{name:'Ocultar nombres',exact:true}).click();
+  await editor.getByRole('button',{name:'Ocultar nombres',exact:true}).first().click();
   assert.equal(await page.getByTestId('mask-point-count').getAttribute('data-labels'),'0');
-  await page.getByRole('button',{name:'Mostrar nombres',exact:true}).click();
-  await page.getByRole('button',{name:'Ocultar marcas',exact:true}).click();
+  await editor.getByRole('button',{name:'Mostrar nombres',exact:true}).first().click();
+  await editor.getByRole('button',{name:'Ocultar marcas',exact:true}).first().click();
   assert.equal(await page.getByTestId('mask-point-count').getAttribute('data-showmarks'),'false');
-  await page.getByRole('button',{name:'Mostrar marcas',exact:true}).click();
+  await editor.getByRole('button',{name:'Mostrar marcas',exact:true}).first().click();
   await save.click();
   await page.getByText('Almacenamiento temporalmente no disponible (fixture).',{exact:true}).first().waitFor();
   assert.equal(writes.filter(write=>write.record_id&&write.face_map_data).length,0,'No guardar examen si falla la máscara');

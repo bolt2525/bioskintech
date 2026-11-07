@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import atlas from '../src/lab/faceSim/genericFaceAtlas.json' with { type: 'json' };
 import { modelPoint, locateModelPoint } from '../src/lab/faceSim/faceTransfer.ts';
 import { skinAnatomicalOverlay, skinZoneAt } from '../src/components/admin/ficha-clinica/components/skinAnatomy.ts';
-import { migrateLegacySkinMarks } from '../src/components/admin/ficha-clinica/components/skinLegacyMigration.ts';
+import { migrateLegacySkinMarks, placeUntransferredSkinMark } from '../src/components/admin/ficha-clinica/components/skinLegacyMigration.ts';
 import { toPersistedSkinReview, validateEvaluationGroup } from '../src/components/admin/ficha-clinica/components/skinEvaluation.ts';
 import { validateSkinVisualReview } from '../lib/modules/fichas-clinicas/physical-exam.js';
 
@@ -77,4 +77,32 @@ test('modelo y máscara comparten zonas anatómicas sin modificar su geometría'
     assert.ok(overlay.colors.every(value => Number.isFinite(value) && value >= 0 && value <= 1));
   }
   assert.deepEqual(Array.from(surface.positions), before);
+});
+
+test('frente dentro del atlas se traslada; frente alta fuera de mesh468 se conserva sin inventar posición', () => {
+  let covered = 0;
+  for (let triangle = 0; triangle < atlas.triangles.length / 3; triangle++) {
+    const anchor = { triangle, weights: [.2, .3, .5] };
+    if (!skinZoneAt(anchor)?.toLowerCase().includes('frente')) continue;
+    const position3D = modelPoint(anchor);
+    if (!position3D) continue;
+    const result = migrateLegacySkinMarks([{ ...legacy, position3D }], 42, [source], surface, []);
+    assert.equal(result.added, 1, JSON.stringify(result.skipped));
+    covered++;
+  }
+  assert.ok(covered > 20);
+  const vertices = Array.from({ length: atlas.surface.positions.length / 3 }, (_, i) => ({
+    x: atlas.surface.positions[i * 3], y: atlas.surface.positions[i * 3 + 1], z: atlas.surface.positions[i * 3 + 2],
+  }));
+  const position3D = vertices.filter(p => p.y > 1.7 && Math.abs(p.x) < .3).sort((a, b) => b.z - a.z)[0];
+  assert.ok(position3D);
+  const high = { ...legacy, id: 'frente-alta', position3D };
+  const before = structuredClone(high), result = migrateLegacySkinMarks([high], 42, [source], surface, []);
+  assert.equal(result.added, 0); assert.match(result.skipped[0].reason, /fuera.*correspondencia/);
+  assert.equal(result.skipped[0].original.id, high.id); assert.deepEqual(high, before);
+  const valid = migrateLegacySkinMarks([legacy], 42, [source], surface, []).marks[0];
+  const manual = placeUntransferredSkinMark(high, 42, valid.sourceId, valid.box, valid.anchor);
+  const retry = migrateLegacySkinMarks([high], 42, [source], surface, [manual]);
+  assert.equal(retry.marks.length, 1); assert.equal(retry.added, 0); assert.equal(retry.skipped.length, 0);
+  assert.deepEqual(high, before);
 });

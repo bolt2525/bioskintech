@@ -19,6 +19,8 @@ import { isZonalSkinMark, skinReviewSummaries } from '../skinEvaluation';
 import type { EvaluationMark, PersistedSkinReview } from '../skinEvaluation';
 import type { SkinExamSave } from '../SkinExamWorkspace';
 import type { EditablePoint } from '../Clinical3DViewer';
+import SkinMarkControls, { SkinMarkLegend } from '../SkinMarkControls';
+import { SkinEditHistory } from '../skinEditHistory';
 import type { SkinVisualReviewData } from '../skinVisualAI';
 import { COLORS } from '../../../../../constants/theme';
 import { useUnsavedChangesGuard } from '../../../../../hooks/useUnsavedChangesGuard';
@@ -437,6 +439,38 @@ export default function PhysicalExamTab({ recordId, physicalExams, consultationI
   const [bodyMarks, setBodyMarks] = useState<Mark[]>([]);
   const [selectedCategory, setSelectedCategory] = useState<string>('');
   const [activeTab, setActiveTab] = useState<'facial' | 'corporal'>('facial');
+  const faceHistory = useRef(new SkinEditHistory<Mark>());
+  const bodyHistory = useRef(new SkinEditHistory<Mark>());
+  const [, refreshMarkHistory] = useState(0);
+  const [markDeletedNotice, setMarkDeletedNotice] = useState<{ text: string; sequence: number; tab: 'facial' | 'corporal' } | null>(null);
+  const markDeletedSequence = useRef(0);
+  faceHistory.current.sync(faceMarks); bodyHistory.current.sync(bodyMarks);
+  useEffect(() => {
+    faceHistory.current.clear(); bodyHistory.current.clear(); setMarkDeletedNotice(null); refreshMarkHistory(n => n + 1);
+  }, [recordId, consultationId, currentExam.id]);
+  useEffect(() => {
+    if (!markDeletedNotice) return;
+    const timer = window.setTimeout(() => setMarkDeletedNotice(null), 4000);
+    return () => window.clearTimeout(timer);
+  }, [markDeletedNotice]);
+  function changeOriginalMarks(tab: 'facial' | 'corporal', next: Mark[]) {
+    const history = tab === 'facial' ? faceHistory.current : bodyHistory.current;
+    history.push(tab === 'facial' ? faceMarks : bodyMarks, next);
+    if (tab === 'facial') setFaceMarks(next); else setBodyMarks(next);
+    setMarkDeletedNotice(null); refreshMarkHistory(n => n + 1);
+  }
+  function restoreOriginalMarks(direction: 'undo' | 'redo') {
+    if (saving) return;
+    const history = activeTab === 'facial' ? faceHistory.current : bodyHistory.current;
+    const next = history[direction]();
+    if (!next) return;
+    const previous = activeTab === 'facial' ? faceMarks : bodyMarks;
+    const removed = previous.filter(mark => !next.some(item => item.id === mark.id));
+    if (activeTab === 'facial') setFaceMarks(next); else setBodyMarks(next);
+    setMarkDeletedNotice(removed.length ? { text: `Marca «${removed[0].category}» eliminada.`,
+      tab: activeTab, sequence: ++markDeletedSequence.current } : null);
+    setRelocatingLegacy(null); refreshMarkHistory(n => n + 1);
+  }
 
   // Modal State
   const [editingMark, setEditingMark] = useState<Mark | null>(null);
@@ -647,7 +681,7 @@ export default function PhysicalExamTab({ recordId, physicalExams, consultationI
     if (relocatingLegacy?.tab === 'facial') {
       const region = getFacialRegion(marker3D.position);
       const anchor = legacySkinAnchor(marker3D.position, marker3D.normal);
-      setFaceMarks(marks => marks.map(mark => mark.id === relocatingLegacy.id ? { ...mark,
+      changeOriginalMarks('facial', faceMarks.map(mark => mark.id === relocatingLegacy.id ? { ...mark,
         position3D: marker3D.position, normal3D: marker3D.normal, rotation3D: marker3D.rotation,
         tercio: region.tercio, notes: anchor ? skinZoneAt(anchor) ?? mark.notes : mark.notes } : mark));
       setRelocatingLegacy(null); return;
@@ -689,30 +723,23 @@ export default function PhysicalExamTab({ recordId, physicalExams, consultationI
   };
 
   const saveMarkFromModal = (mark: Mark) => {
-    if (activeTab === 'facial') {
-      setFaceMarks(prev => {
-        const exists = prev.find(m => m.id === mark.id);
-        if (exists) return prev.map(m => m.id === mark.id ? mark : m);
-        return [...prev, mark];
-      });
-    } else {
-      setBodyMarks(prev => {
-        const exists = prev.find(m => m.id === mark.id);
-        if (exists) return prev.map(m => m.id === mark.id ? mark : m);
-        return [...prev, mark];
-      });
-    }
+    const previous = activeTab === 'facial' ? faceMarks : bodyMarks;
+    changeOriginalMarks(activeTab, previous.some(m => m.id === mark.id) ? previous.map(m => m.id === mark.id ? mark : m) : [...previous, mark]);
     setIsModalOpen(false);
     setEditingMark(null);
     setPendingRegion(null);
   };
 
   const removeFaceMark = (id: string) => {
-    setFaceMarks(prev => prev.filter(m => m.id !== id));
+    const original = faceMarks.find(m => m.id === id);
+    changeOriginalMarks('facial', faceMarks.filter(m => m.id !== id));
+    setMarkDeletedNotice({ text: `Marca «${original?.category ?? id}» eliminada.`, tab: 'facial', sequence: ++markDeletedSequence.current });
   };
 
   const removeBodyMark = (id: string) => {
-    setBodyMarks(prev => prev.filter(m => m.id !== id));
+    const original = bodyMarks.find(m => m.id === id);
+    changeOriginalMarks('corporal', bodyMarks.filter(m => m.id !== id));
+    setMarkDeletedNotice({ text: `Marca «${original?.category ?? id}» eliminada.`, tab: 'corporal', sequence: ++markDeletedSequence.current });
   };
 
   // Convert face marks to Marker3D[] for the 3D viewer (only 3D marks)
@@ -753,7 +780,7 @@ export default function PhysicalExamTab({ recordId, physicalExams, consultationI
 
   const handleBody3DMarkerPlaced = (marker3D: Marker3D) => {
     if (relocatingLegacy?.tab === 'corporal') {
-      setBodyMarks(marks => marks.map(mark => mark.id === relocatingLegacy.id ? { ...mark,
+      changeOriginalMarks('corporal', bodyMarks.map(mark => mark.id === relocatingLegacy.id ? { ...mark,
         position3D: marker3D.position, normal3D: marker3D.normal, rotation3D: marker3D.rotation } : mark));
       setRelocatingLegacy(null); return;
     }
@@ -807,8 +834,11 @@ export default function PhysicalExamTab({ recordId, physicalExams, consultationI
     <datalist id="lesion-options-main">{LESION_CATALOG.map(lesion => <option key={lesion} value={lesion} />)}</datalist>
   </div>;
   const referenceView = <div className="min-w-0 overflow-hidden rounded-xl border border-slate-700 bg-slate-900">
-    <div className="flex min-h-[76px] flex-wrap items-center justify-between gap-2 px-3 py-2 text-white">
-      <div><h4 className="text-sm font-semibold">Modelo anatómico de referencia</h4>
+    {mapView === 'generic' && <div className="border-b border-slate-700 px-3 py-2"><SkinMarkControls value={markVisibility} onChange={setMarkVisibility} tone="dark"
+        undo={mapView === 'generic' ? { disabled: saving || !faceHistory.current.size, onClick: () => restoreOriginalMarks('undo') } : undefined}
+        redo={mapView === 'generic' ? { disabled: saving || !faceHistory.current.redoSize, onClick: () => restoreOriginalMarks('redo') } : undefined} /></div>}
+    <div data-skin-viewer-header className="grid h-[76px] grid-cols-[minmax(0,1fr)_auto] items-center gap-2 px-3 py-2 text-white">
+      <div className="min-w-0"><h4 className="text-sm font-semibold">Modelo anatómico de referencia</h4>
         <p className="text-xs text-slate-300">Las marcas originales se conservan</p></div>
       <button type="button" aria-pressed={showAnatomicalZones} onClick={() => setShowAnatomicalZones(current => !current)}
         className={`admin-focus-ring inline-flex min-h-11 items-center gap-2 rounded-lg border px-3 py-2 text-xs ${showAnatomicalZones ? 'border-gold bg-gold-light text-gray-900' : 'border-slate-500 text-white hover:bg-slate-800'}`}>
@@ -827,15 +857,20 @@ export default function PhysicalExamTab({ recordId, physicalExams, consultationI
         onEditablePointHovered={handleHoverMark}
         markerInteraction={{ onHover: handleHoverMark, onSelect: id => {
           const evaluation = evaluationMarks.find(mark => mark.id === id || mark.id === `legacy-exam:${currentExam.id}:${id}`);
+          if (showSkinWorkspace && maskReady && mapView !== 'generic' && !evaluation) {
+            setSelectedReferenceId(`legacy-exam:${currentExam.id}:${id}`); handleHoverMark(id); return;
+          }
           if (evaluation) editEvaluation(evaluation.id);
           else { const original = faceMarks.find(mark => mark.id === id); if (original) initiateEditMark(original); }
         } }}
         onEditablePointClicked={id => { setSelectedReferenceId(id); setMapView('mask'); }}
         tercioBoundaries={showReferenceLines ? TERCIO_BOUNDARIES : null} referenceLines={showReferenceLines ? FACE_REFERENCE_LINES : []}
         skipConfirmation onMarkerPlaced={handle3DMarkerPlaced}
-        onMarkerRadiusChange={showSkinWorkspace && maskReady ? undefined : (id, radius) => setFaceMarks(prev => prev.map(mark => mark.id === id ? { ...mark, radius3D: radius } : mark))}
+        onMarkerRadiusChange={showSkinWorkspace && maskReady ? undefined : (id, radius) => changeOriginalMarks('facial', faceMarks.map(mark => mark.id === id ? { ...mark, radius3D: radius } : mark))}
         height="min(62dvh,560px)" pointMarkerScale={0.5} />
     </div>
+    <div className="text-slate-200"><SkinMarkLegend notice={markDeletedNotice?.tab === 'facial' ? markDeletedNotice.text : undefined}
+      onUndo={() => restoreOriginalMarks('undo')} undoDisabled={saving || !faceHistory.current.size} /></div>
   </div>;
 
   return (
@@ -1109,7 +1144,17 @@ export default function PhysicalExamTab({ recordId, physicalExams, consultationI
               ))}
             </div>
 
-            <section aria-label="Visor de evaluación facial" className="min-w-0 shrink-0 rounded-2xl border border-gray-200 bg-white p-3 sm:p-4">
+            <section aria-label="Visor de evaluación facial" className="min-w-0 shrink-0 rounded-2xl border border-gray-200 bg-white p-3 sm:p-4"
+              onKeyDown={event => {
+                const target = event.target;
+                if ((showSkinWorkspace && maskReady && mapView !== 'generic' && activeTab === 'facial') ||
+                  !(target instanceof HTMLElement) || !event.currentTarget.contains(target) ||
+                  target.closest('input, textarea, select, [contenteditable]:not([contenteditable="false"]), dialog, [role="dialog"]') ||
+                  event.nativeEvent.isComposing || event.altKey || !(event.ctrlKey || event.metaKey)) return;
+                const key = event.key.toLowerCase();
+                if (key !== 'z' && key !== 'y') return;
+                event.preventDefault(); event.stopPropagation(); restoreOriginalMarks(key === 'y' || event.shiftKey ? 'redo' : 'undo');
+              }}>
             {showSkinWorkspace && maskReady && activeTab === 'facial' && <div className="mb-4 space-y-2 border-b border-gray-100 pb-3">
               <div role="group" aria-label="Modo de visor facial" className="inline-flex max-w-full flex-wrap gap-1 rounded-xl bg-slate-100 p-1">
                 {([
@@ -1119,12 +1164,6 @@ export default function PhysicalExamTab({ recordId, physicalExams, consultationI
                 ] as const).map(({ mode, label, description, Icon }) => <button key={mode} type="button" aria-pressed={mapView === mode}
                   title={description} className={`admin-focus-ring inline-flex min-h-11 items-center gap-2 rounded-lg border px-3 py-2 text-sm font-medium transition-colors ${mapView === mode ? 'border-gold-ink bg-gold-light text-gold-ink shadow-sm ring-1 ring-gold-ink' : 'border-transparent text-gray-600 hover:bg-white'}`}
                   onClick={() => { setSelectedReferenceId(undefined); setMapView(mode); }}><Icon size={17} aria-hidden="true" />{label}{mapView === mode && <Check size={16} aria-hidden="true" />}</button>)}
-              </div>
-              <div className="flex flex-wrap gap-2" role="group" aria-label="Visibilidad de marcaciones">
-                <button type="button" className="admin-focus-ring min-h-11 rounded-lg border px-3 text-sm" aria-pressed={markVisibility.marks}
-                  onClick={() => setMarkVisibility(v => ({ ...v, marks: !v.marks }))}>{markVisibility.marks ? 'Ocultar marcas' : 'Mostrar marcas'}</button>
-                <button type="button" className="admin-focus-ring min-h-11 rounded-lg border px-3 text-sm" aria-pressed={markVisibility.names}
-                  onClick={() => setMarkVisibility(v => ({ ...v, names: !v.names }))}>{markVisibility.names ? 'Ocultar nombres' : 'Mostrar nombres'}</button>
               </div>
               <p role="status" className="text-xs text-gray-500">{mapView === 'generic' ? 'Referencia anatómica: conserva todas las marcas originales.' :
                 mapView === 'mask' ? 'Máscara personalizada: marca aquí y revisa la correspondencia en las fotos desplegables.' : 'Comparación visual. Las marcas originales no se eliminan al migrar.'}</p>
@@ -1146,6 +1185,7 @@ export default function PhysicalExamTab({ recordId, physicalExams, consultationI
                   onReferencePoints={setReferencePoints}
                   selectedReferenceId={selectedReferenceId}
                   hoveredMarkId={hoveredMarkId} onHoverMark={handleHoverMark} visibility={markVisibility}
+                  onVisibilityChange={setMarkVisibility}
                   onEvaluationChange={setEvaluationMarks} saveController={saveController}
                   onPrepared={handleSkinPrepared} onDirty={handleSkinDirty} onCaptureReady={setMaskReady} />
               </Suspense>
@@ -1156,16 +1196,22 @@ export default function PhysicalExamTab({ recordId, physicalExams, consultationI
               ) : (
                 <div className="flex flex-col bg-white h-full">
                   {lesionSelector}
+                  <div className="p-2"><SkinMarkControls value={markVisibility} onChange={setMarkVisibility}
+                    undo={{ disabled: saving || !bodyHistory.current.size, onClick: () => restoreOriginalMarks('undo') }}
+                    redo={{ disabled: saving || !bodyHistory.current.redoSize, onClick: () => restoreOriginalMarks('redo') }} /></div>
                   <Clinical3DViewer
-                    markers={body3DMarkers}
+                    markers={markVisibility.marks ? body3DMarkers : NO_VIEWER_MARKERS}
+                    showMarkerLabels={markVisibility.names}
                     selectedPathology="lesion"
                     modelUrl="/models/clinical/male_body.glb"
                     skipConfirmation={true}
                     onMarkerPlaced={handleBody3DMarkerPlaced}
-                    onMarkerRadiusChange={(id, radius) => setBodyMarks(prev => prev.map(mark => mark.id === id ? { ...mark, radius3D: radius } : mark))}
+                    onMarkerRadiusChange={(id, radius) => changeOriginalMarks('corporal', bodyMarks.map(mark => mark.id === id ? { ...mark, radius3D: radius } : mark))}
                     height="420px"
                     pointMarkerScale={0.5}
                   />
+                  <SkinMarkLegend notice={markDeletedNotice?.tab === 'corporal' ? markDeletedNotice.text : undefined}
+                    onUndo={() => restoreOriginalMarks('undo')} undoDisabled={saving || !bodyHistory.current.size} />
                 </div>
               )}
             </div>}
@@ -1196,15 +1242,15 @@ export default function PhysicalExamTab({ recordId, physicalExams, consultationI
                 </div>
               )}
 
-              <div className="max-h-48 overflow-y-auto border border-gray-100 rounded-xl bg-white shadow-sm custom-scrollbar">
+              <div aria-label="Lista de lesiones marcadas" className="max-h-72 overflow-y-auto overscroll-contain border border-gray-100 rounded-xl bg-white shadow-sm custom-scrollbar">
                 <AnimatePresence>
-                  {activeTab === 'facial' && evaluationMarks.map(mark => <div key={mark.id}
+                  {activeTab === 'facial' && (!showSkinWorkspace || mapView === 'generic') && evaluationMarks.map(mark => <div key={mark.id}
                     onMouseEnter={() => setHoveredMarkId(mark.id)} onMouseLeave={() => setHoveredMarkId(null)}
                     className={`flex items-center justify-between gap-2 border-b p-3 ${hoveredMarkId === mark.id ? 'bg-cyan-50 ring-1 ring-inset ring-cyan-400' : ''}`}>
                     <button type="button" className="admin-focus-ring min-h-11 min-w-0 flex-1 rounded-lg text-left"
                       onFocus={() => setHoveredMarkId(mark.id)} onBlur={() => setHoveredMarkId(null)} onClick={() => editEvaluation(mark.id)}>
-                      <span className="block text-sm font-semibold">{mark.label}</span>
-                      <span className="text-xs text-gray-600">{mark.note} · {isZonalSkinMark(mark.box) ? 'Zonal' : 'Puntual'} · {mark.status === 'validated' ? 'Confirmada' : 'Pendiente'}</span>
+                      <span className="block break-words [overflow-wrap:anywhere] text-sm font-semibold line-clamp-2" title={mark.label}>{mark.label}</span>
+                      <span className="block truncate text-xs text-gray-600" title={mark.note}>{mark.note} · {isZonalSkinMark(mark.box) ? 'Zonal' : 'Puntual'} · {mark.status === 'validated' ? 'Confirmada' : 'Pendiente'}</span>
                     </button>
                     <button type="button" className="admin-focus-ring min-h-11 rounded-lg px-3 text-blue-700"
                       aria-label={`Editar ${mark.label} en la máscara`} onClick={() => editEvaluation(mark.id)}><Edit2 size={16} /></button>
@@ -1221,7 +1267,7 @@ export default function PhysicalExamTab({ recordId, physicalExams, consultationI
                       <div className="flex flex-col min-w-0 flex-1">
                         <div className="flex items-center gap-1.5 flex-wrap">
                           <button type="button" onClick={() => initiateEditMark(mark)} onFocus={() => setHoveredMarkId(mark.id)} onBlur={() => setHoveredMarkId(null)}
-                            className="admin-focus-ring min-h-11 rounded-lg text-left font-medium text-gray-800 text-sm">{i + 1}. {mark.category}</button>
+                            title={mark.category} className="admin-focus-ring min-h-11 min-w-0 max-w-full break-words [overflow-wrap:anywhere] rounded-lg text-left font-medium text-gray-800 text-sm line-clamp-2">{i + 1}. {mark.category}</button>
                           {activeTab === 'facial' && (
                             mark.is3D
                               ? <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-[#deb887]/20 text-[#b8956a] border border-[#deb887]/30">3D</span>
@@ -1232,7 +1278,7 @@ export default function PhysicalExamTab({ recordId, physicalExams, consultationI
                           )}
                         </div>
                         <span className="text-xs text-gray-500 mt-0.5 flex items-center gap-2 flex-wrap">
-                          {mark.notes && <span className="font-medium text-gray-600">{mark.notes}</span>}
+                          {mark.notes && <span className="max-w-full truncate font-medium text-gray-600" title={mark.notes}>{mark.notes}</span>}
                           {mark.severity && <span className="px-1.5 py-0.5 bg-gray-100 rounded text-gray-600 border border-gray-200">{mark.severity}</span>}
                           {mark.distribution && <span className="text-gray-400 italic">{mark.distribution}</span>}
                         </span>
@@ -1242,7 +1288,7 @@ export default function PhysicalExamTab({ recordId, physicalExams, consultationI
                           <button 
                             aria-label={`Editar ${mark.category}`}
                             onClick={() => initiateEditMark(mark)}
-                            className="text-blue-500 hover:bg-blue-50 p-1.5 rounded-lg transition-colors"
+                            className="admin-focus-ring min-h-11 min-w-11 text-blue-700 hover:bg-blue-50 p-1.5 rounded-lg transition-colors"
                           >
                             <Edit2 size={14} />
                           </button>
@@ -1251,7 +1297,7 @@ export default function PhysicalExamTab({ recordId, physicalExams, consultationI
                           <button 
                             aria-label={`Eliminar ${mark.category}`}
                             onClick={() => activeTab === 'facial' ? removeFaceMark(mark.id) : removeBodyMark(mark.id)}
-                            className="text-red-500 hover:bg-red-50 p-1.5 rounded-lg transition-colors"
+                            className="admin-focus-ring min-h-11 min-w-11 text-red-700 hover:bg-red-50 p-1.5 rounded-lg transition-colors"
                           >
                             <Trash2 size={14} />
                           </button>

@@ -83,7 +83,7 @@ test('proyección de puntos y áreas es derivada, conserva identidades y reutili
   assert.equal(mask[0].id, generic[0].id);
   assert.equal(mask[0].color, COLORS.skinPending);
   assert.equal(mask[0].color, generic[0].color);
-  assert.match(mask[0].name, /Pendiente/);
+  assert.equal(mask[0].name, mark.label, 'El estado se explica por color y leyenda, no se repite en cada etiqueta');
   const validated = skinDisplayPoints([{ ...marks[0], status: 'validated' }], [source], surface);
   assert.equal(validated[0].color, COLORS.skinValidated);
   assert.equal(validated[0].name, mark.label);

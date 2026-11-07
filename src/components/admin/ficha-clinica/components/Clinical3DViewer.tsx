@@ -1252,12 +1252,17 @@ const ThreeEngine: React.FC<AnnotationInteractionProps & {
       const context = canvas.getContext('2d');
       if (!context) continue;
       const text = label.text.slice(0, 300);
-      context.font = '500 28px sans-serif';
+      context.font = '500 24px Poppins, sans-serif';
       canvas.width = Math.min(4096, Math.ceil(context.measureText(text).width) + 32);
       canvas.height = 52;
-      context.fillStyle = 'rgba(15,23,42,0.94)';
-      context.fillRect(0, 0, canvas.width, canvas.height);
-      context.font = '500 28px sans-serif';
+      context.fillStyle = 'rgba(30,41,59,0.94)';
+      context.beginPath();
+      context.roundRect(1, 1, canvas.width - 2, canvas.height - 2, 18);
+      context.fill();
+      context.strokeStyle = 'rgba(148,163,184,0.65)';
+      context.lineWidth = 2;
+      context.stroke();
+      context.font = '500 24px Poppins, sans-serif';
       context.textBaseline = 'middle';
       context.fillStyle = label.color ?? '#ffffff';
       context.fillText(text, 16, 26, canvas.width - 32);
@@ -3261,7 +3266,7 @@ const ThreeEngine: React.FC<AnnotationInteractionProps & {
         const height = rendererRef.current.domElement.getBoundingClientRect().height;
         if (height > 0) annotationLabelsGroupRef.current?.children.forEach(label => {
           const units = worldUnitsPerPixel(cameraRef.current!, label.position, height);
-          label.scale.set(units * 26 * label.userData.aspect, units * 26, 1);
+          label.scale.set(units * 22 * label.userData.aspect, units * 22, 1);
           if (label.userData.surfaceAnchor && hoverFrameCount % 2 === 0) {
             label.visible = !callbacks.current.occludeAnnotations
               || isSurfacePositionVisible(label.userData.surfaceAnchor, cameraRef.current!, faceMeshRef.current);
@@ -3640,6 +3645,7 @@ const ThreeEngine: React.FC<AnnotationInteractionProps & {
           : (positionAttribute?.count ?? 0) / 3;
       });
       if (box.isEmpty()) {
+        disposeObject3D(model);
         callbacks.current.onError("El modelo no contiene geometría visible.");
         return;
       }

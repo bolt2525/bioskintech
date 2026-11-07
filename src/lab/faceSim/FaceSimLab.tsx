@@ -2240,7 +2240,7 @@ export default function FaceSimLab({ integration }: { integration?: FaceSimInteg
   }), [photos, personal]);
   const migration = integration?.legacyMigration;
   const migrationAttempt = useRef(false);
-  const [migrationReport, setMigrationReport] = useState<{ added: number; skipped: { id: string; reason: string }[] } | null>(null);
+  const [migrationReport, setMigrationReport] = useState<Pick<ReturnType<typeof migrateLegacySkinMarks>, 'added' | 'skipped'> | null>(null);
   const migrateLegacy = useCallback(() => {
     if (!migration || !personal || personal.captures !== photos) return;
     const result = migrateLegacySkinMarks(migration.marks, migration.examId, skinSources,
@@ -2369,17 +2369,18 @@ export default function FaceSimLab({ integration }: { integration?: FaceSimInteg
     setEvaluationMarks(marks); onMarksChange?.(marks);
   }, [onMarksChange]);
   const skinEditor = <Suspense fallback={<p role="status">Preparando evaluación de piel…</p>}>
-    {migrationReport && migrationReport.skipped.length > 0 && <p role="status" className="rounded-lg bg-amber-50 p-3 text-sm text-amber-900">
-      {migrationReport.skipped.length} marca(s) sin trasladar. Se conservan en el modelo original.</p>}
     <SkinEvaluationEditor sources={skinSources} surface={(personal?.reviewBase ?? personal)?.surface}
       presentation={clinical ? 'mask-first' : 'comparison'}
       referenceView={integration?.referenceView} viewMode={integration?.viewMode} active={integration?.active}
       referenceVisible={integration?.referenceVisible} onReferencePoints={integration?.onReferencePoints}
       selectedReferenceId={integration?.selectedReferenceId}
       hoveredMarkId={integration?.hoveredMarkId} onHoverMark={integration?.onHoverMark} visibility={integration?.visibility}
+      onVisibilityChange={integration?.onVisibilityChange}
       aiAllowed={integration ? integration.aiAllowed === true : true}
       onRequestPhoto={clinical ? () => setClinicalCaptureOpen(true) : undefined}
-      migration={migration && migrationReport ? { ids: evaluationMarks.filter(mark => mark.id.startsWith(`legacy-exam:${migration.examId}:`)).map(mark => mark.id), skipped: migrationReport.skipped.length } : undefined}
+      migration={migration && migrationReport ? { examId: migration.examId,
+        ids: evaluationMarks.filter(mark => mark.id.startsWith(`legacy-exam:${migration.examId}:`)).map(mark => mark.id),
+        skipped: migrationReport.skipped.length, unresolved: migrationReport.skipped } : undefined}
       modelData={(personal?.reviewBase ?? personal)?.glb} recordId={integration?.recordId} context={integration?.context ?? {}}
       value={evaluationMarks} onChange={changeEvaluationMarks} />
   </Suspense>;

@@ -86,6 +86,7 @@ export interface FaceSimIntegration {
   hoveredMarkId?: string | null;
   onHoverMark?: (id: string | null) => void;
   visibility?: { marks: boolean; names: boolean };
+  onVisibilityChange?: (value: { marks: boolean; names: boolean }) => void;
 }
 
 export function storeSurface(surface: PersonalSurface | EstimatedHeadSurface): StoredSurface {
