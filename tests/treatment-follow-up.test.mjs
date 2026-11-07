@@ -23,6 +23,13 @@ const load = (path, dependencies = {}) => {
 const patterns = load('../src/data/scalpPatterns.ts');
 const boundary = load('../src/data/scalpBoundaryPreset.ts');
 const types = load('../src/components/admin/ficha-clinica/types/treatment.ts');
+const treatmentParameters = load('../src/components/admin/ficha-clinica/components/tabs/TreatmentParametersModal.tsx', {
+  react: require('react'),
+  'react/jsx-runtime': require('react/jsx-runtime'),
+  'lucide-react': require('lucide-react'),
+  '../ClinicalSelect': { __esModule: true, default: 'ClinicalSelect' },
+  '../../../../ui/Dialog': { Dialog: 'Dialog' },
+});
 const FinanceSummary = load('../src/components/admin/ficha-clinica/components/tabs/TreatmentFinanceSummary.tsx', {
   '../../types/treatment': types,
   'react/jsx-runtime': require('react/jsx-runtime'),
@@ -173,7 +180,7 @@ function harness(mode = 'capilar', history = null) {
       if (name.endsWith('/scalpPatterns')) return patterns;
       if (name.endsWith('/fieldHelpTexts')) return { HELP: { treatment: {}, parameters: {} } };
       if (name.endsWith('/TreatmentParametersModal')) return {
-        __esModule: true, default: name, formatParametersAsText: () => '', upsertNotesBlock: text => text, removeNotesBlock: text => text,
+        ...treatmentParameters, __esModule: true, default: name,
       };
       return { __esModule: true, default: name,
         Tooltip: 'Tooltip', FieldHelp: 'FieldHelp', Dialog: 'Dialog', ConfirmationDialog: 'ConfirmationDialog',
@@ -321,6 +328,33 @@ test('UI: siguiente sesión es borrador sin request; Guardar persiste control co
   assert.equal(body.parameters.__follow_up.referenceId, '1');
   assert.equal(body.parameters.__scalp_assessment.stage, 'II-2');
   assert.equal(body.finance_posting.enabled, false);
+  assert.equal(h.saved(), 1);
+});
+
+test('UI: editar observaciones conserva los bloques reales de parametros al guardar', async () => {
+  const block = treatmentParameters.formatParametersAsText('Kit PRP', { dose: 5 });
+  const originalNotes = treatmentParameters.joinTreatmentNotes([block], 'Observacion anterior');
+  const original = session({ notes: originalNotes });
+  const h = harness('capilar', [original]);
+  let tree = h.render();
+  h.all(tree).find(node => node.type === 'button' && node.props?.['data-treatment-id'] != null).props.onClick();
+  tree = h.render();
+  const notesInput = h.all(tree).find(node => node.props?.id === 'treatment-session-notes');
+  assert.equal(notesInput.props.value, 'Observacion anterior');
+  notesInput.props.onChange({ target: { value: 'Control sintetico actualizado' } });
+  tree = h.render();
+  assert.equal(h.all(tree).find(node => node.props?.id === 'treatment-session-notes').props.value, 'Control sintetico actualizado');
+  h.all(tree).filter(node => node.type === 'button' && String(node.props.className).includes('min-h-16'))[3].props.onClick();
+  tree = h.render();
+  const saveTooltip = h.all(tree).find(node => node.type === 'Tooltip' && node.props.content === 'Guardar');
+  await saveTooltip.props.children.props.onClick();
+  const writes = h.requests.filter(request => request.options?.method === 'POST');
+  assert.equal(writes.length, 1);
+  assert.match(writes[0].url, /action=updateTreatment/);
+  const body = JSON.parse(writes[0].options.body);
+  assert.equal(body.notes, treatmentParameters.joinTreatmentNotes([block], 'Control sintetico actualizado'));
+  assert.equal(body.parameters.__scalp_assessment.stage, assessment.stage);
+  assert.equal(original.notes, originalNotes);
   assert.equal(h.saved(), 1);
 });
 

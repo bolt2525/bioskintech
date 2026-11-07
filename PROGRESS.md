@@ -1,5 +1,8 @@
 # Progreso de BioSkinTech App
 
+- ✅ 2026-11-07 Seguimiento: helpers reales probados.
+- Harness actualizado para usar los helpers reales de notas; regresión de edición/guardado conserva parámetros y observaciones sin modificar el historial original.
+- QA: 52 pruebas de seguimiento, paquetes y finanzas aprobadas; sin cambios de runtime ni servicios reales. Skill `testing-validation` aplicada.
 - ✅ 2026-11-07 Tratamientos: guardado de zonas largas.
 - Ampliados procedimiento y zona tratada a `TEXT`, con migración idempotente para esquemas existentes.
 - ✅ 2026-11-06 Examen: máscara recuperada automáticamente.
